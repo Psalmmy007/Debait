@@ -5,7 +5,7 @@
   --line: rgba(255, 255, 255, 0.06);
   --ink: #eef1f8;
   --grey: #8a91a6;
-  --dim: #5c6378;
+  --dim: #7d849a;
   --blue: #4c6fe6;
   --blue-hi: #93a8f0;
   --shade: rgba(0, 0, 0, 0.5);
@@ -49,3 +49,5 @@ button { font: inherit; color: inherit; }
 .chip[data-src='on-device'] i { background: #2fd18a; }
 .chip[data-src='cloud'] i { background: var(--blue-hi); }
 .chip[data-src='none'] i { background: var(--bait); }
+
+button:focus-visible { outline: 2px solid var(--blue-hi); outline-offset: 2px; }

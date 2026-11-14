@@ -83,6 +83,14 @@ export function createOrb(overlay, { onClick, onDoubleClick }) {
   });
   addEventListener('resize', () => { pos = fromRatio(); place(); });
 
+  // First time only: show the label for a few seconds, so double-click isn't a hidden feature.
+  chrome.storage.local.get('orbHintSeen').then(({ orbHintSeen }) => {
+    if (orbHintSeen) return;
+    setTimeout(() => wrap.classList.add('hint'), 1800);
+    setTimeout(() => wrap.classList.remove('hint'), 8000);
+    chrome.storage.local.set({ orbHintSeen: true });
+  });
+
   // cancel our own WAAPI animations but keep the CSS wobble running
   const cancelJs = () => orb.getAnimations().forEach((a) => { if (!('animationName' in a)) a.cancel(); });
 

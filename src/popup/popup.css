@@ -6,7 +6,7 @@ header { display: flex; align-items: center; justify-content: space-between; }
 .brand b { font: 750 21px/1 var(--brand); letter-spacing: -0.02em; }
 
 .today { margin-top: 18px; padding: 16px; border-radius: 22px; background: var(--bg); box-shadow: var(--raise); }
-.kicker { font-size: 10.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--grey); }
+.kicker { font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--grey); }
 .big { display: flex; align-items: baseline; margin-top: 8px; color: var(--bait); }
 .big b { font: 800 54px/0.9 var(--brand); letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
 .big span { font: 700 24px/1 var(--brand); margin-left: 2px; }

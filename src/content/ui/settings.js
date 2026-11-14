@@ -50,7 +50,6 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
     el.className = 'panel';
     el.setAttribute('role', 'dialog');
     el.setAttribute('aria-label', 'Debait settings');
-    if (orbCenter().x < innerWidth / 2) el.classList.add('left');
 
     el.innerHTML = `
       <div class="p-head">
@@ -102,6 +101,23 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
       <p class="p-foot">Double-click the ball anytime · <kbd>Esc</kbd> to close</p>`;
 
     layer.appendChild(el);
+
+    // sit beside the orb (not under it); fall back to the screen edge if there's no room
+    const c = orbCenter();
+    const ORB_HALF = 30;
+    const GAP = 14;
+    const W = el.offsetWidth;
+    if (c.x >= innerWidth / 2) {
+      let right = innerWidth - (c.x - ORB_HALF) + GAP;
+      if (innerWidth - right - W < 12) right = 12;
+      el.style.right = `${right}px`;
+    } else {
+      let left = c.x + ORB_HALF + GAP;
+      if (left + W > innerWidth - 12) left = 12;
+      el.style.left = `${left}px`;
+      el.style.right = 'auto';
+    }
+
     onOpenChange?.(true);
     refresh();
     loadToday();

@@ -4,6 +4,8 @@ import { mockEngine } from '../src/engine/mockEngine.js';
 import { MSG, normalizeResult } from '../src/engine/contract.js';
 
 const store = JSON.parse(localStorage.getItem('debait-preview') || '{}');
+// The preview has no toolbar popup to bring the orb back, so it always starts visible.
+if (store.settings) store.settings.showOrb = true;
 const listeners = [];
 
 globalThis.chrome = {
