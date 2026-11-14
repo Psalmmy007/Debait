@@ -1,0 +1,88 @@
+/* Tags: small keycaps that sit after each headline.
+   Black = bait. White = debaited. Quiet grey = clean. */
+.tag {
+  --face: linear-gradient(180deg, #2c2c31 0%, #121214 100%);
+  --rim: inset 0 1px 0 rgba(255, 255, 255, 0.22), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --edge: #000;
+  --drop: rgba(0, 0, 0, 0.5);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 4px 0 7px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--face);
+  color: #fff;
+  font: 600 11.5px/1 var(--ui);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  cursor: pointer;
+  vertical-align: middle;
+  box-shadow: var(--rim), 0 2px 0 var(--edge), 0 6px 12px -4px var(--drop);
+  transition: transform 0.16s var(--out), box-shadow 0.16s var(--out);
+  -webkit-font-smoothing: antialiased;
+}
+.tag:hover { transform: translateY(-1.5px); box-shadow: var(--rim), 0 3.5px 0 var(--edge), 0 12px 18px -6px var(--drop); }
+.tag:active { transform: translateY(1.5px); box-shadow: var(--rim), 0 0.5px 0 var(--edge), 0 2px 4px -2px var(--drop); }
+.tag:focus-visible { outline: 2px solid #fff; outline-offset: 2px; box-shadow: var(--rim), 0 0 0 5px #000; }
+/* on dark pages the black keycap needs a brighter rim to stand off the background */
+.tag[data-tone='dark'] { --rim: inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 0 0 1px rgba(255, 255, 255, 0.22); }
+
+.tag .ico { width: 12px; height: 12px; flex: none; }
+.tag .ico svg { width: 12px; height: 12px; }
+.tag:hover .ico { animation: tag-nudge 0.5s var(--out); }
+.tag .score {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: #fff;
+  color: #000;
+  font: 750 11px/1 var(--brand);
+  font-variant-numeric: tabular-nums;
+}
+
+/* still being read */
+.tag.pending { padding-right: 8px; color: #d4d4d8; }
+.tag.pending .ico circle { animation: tag-blink 1s ease-in-out infinite; }
+.tag.pending .ico circle:nth-child(2) { animation-delay: 0.15s; }
+.tag.pending .ico circle:nth-child(3) { animation-delay: 0.3s; }
+.tag.pending .score { display: none; }
+
+/* nothing wrong here: stay out of the way */
+.tag[data-kind='clean'] {
+  --face: rgba(9, 9, 11, 0.06);
+  --rim: inset 0 0 0 1px rgba(9, 9, 11, 0.1);
+  --edge: transparent;
+  --drop: transparent;
+  height: 22px;
+  padding-right: 8px;
+  color: #3f3f46;
+  font-weight: 550;
+}
+.tag[data-kind='clean'][data-tone='dark'] {
+  --face: rgba(255, 255, 255, 0.1);
+  --rim: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+  color: #e4e4e7;
+}
+.tag[data-kind='clean'] .score { display: none; }
+
+/* rewritten: the keycap flips over to its white side */
+.tag.debaited {
+  --face: linear-gradient(180deg, #ffffff 0%, #e6e6eb 100%);
+  --rim: inset 0 1px 0 #fff, 0 0 0 1px rgba(9, 9, 11, 0.14);
+  --edge: #9d9da7;
+  --drop: rgba(0, 0, 0, 0.35);
+  padding-right: 8px;
+  color: #09090b;
+}
+.tag.debaited .score { display: none; }
+
+@keyframes tag-nudge { 0% { transform: rotate(0) scale(1); } 35% { transform: rotate(-14deg) scale(1.2); } 70% { transform: rotate(8deg) scale(1.05); } 100% { transform: rotate(0) scale(1); } }
+@keyframes tag-blink { 0%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .tag, .tag * { animation: none !important; transition: none !important; }
+}

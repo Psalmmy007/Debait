@@ -22,8 +22,8 @@ export function injectPageStyles() {
     @font-face { font-family: 'Debait Inter'; src: url('${url('inter.woff2')}') format('woff2'); font-weight: 100 900; font-display: swap; }
     @font-face { font-family: 'Debait Bricolage'; src: url('${url('bricolage.woff2')}') format('woff2'); font-weight: 200 800; font-display: swap; }
     @font-face { font-family: 'Debait Newsreader'; src: url('${url('newsreader.woff2')}') format('woff2'); font-weight: 200 800; font-display: swap; }
-    ::highlight(debait-bait) { background-color: rgba(255, 181, 165, 0.78); color: inherit; }
-    ::highlight(debait-hot) { background-color: #ff9d86; color: inherit; }
+    ::highlight(debait-bait) { background-color: rgba(128, 128, 128, 0.2); color: inherit; text-decoration: underline 2px; text-decoration-color: currentColor; }
+    ::highlight(debait-hot) { background-color: rgba(128, 128, 128, 0.42); color: inherit; text-decoration: underline 2px; text-decoration-color: currentColor; }
   `;
   (document.head || document.documentElement).appendChild(style);
 }
@@ -87,41 +87,61 @@ export function paintHighlights(records, { enabled, hotRecord } = {}) {
   CSS.highlights.set('debait-hot', hot);
 }
 
-// ---------- the swap ----------
+// ---------- the swap: the old headline decodes into the new one ----------
 
-const OUT = [
-  { opacity: 1, filter: 'blur(0px)', transform: 'translateY(0)' },
-  { opacity: 0, filter: 'blur(6px)', transform: 'translateY(-5px)' },
-];
-const IN = [
-  { opacity: 0, filter: 'blur(7px)', transform: 'translateY(9px)', textShadow: '0 0 14px rgba(47,91,255,0.75)' },
-  { opacity: 1, filter: 'blur(0px)', transform: 'translateY(0)', textShadow: '0 0 0 rgba(47,91,255,0)' },
-];
+const GLYPHS = '░▒▓/\\|=+-_*#<>';
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function morphText(el, replace, { delay = 0 } = {}) {
-  if (reducedMotion()) {
-    replace();
-    return;
-  }
-  await el.animate(OUT, { duration: 240, delay, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' }).finished.catch(() => {});
-  replace();
-  el.getAnimations().forEach((a) => a.cancel());
-  await el.animate(IN, { duration: 760, easing: SPRING }).finished.catch(() => {});
+function decode(el, from, to, delay) {
+  return new Promise((resolve) => {
+    const node = document.createTextNode(from);
+    const go = () => {
+      el.replaceChildren(node);
+      const len = Math.max(from.length, to.length);
+      const dur = Math.min(1150, 520 + len * 7);
+      // each character resolves at its own moment, roughly left to right
+      const at = Array.from({ length: len }, (_, i) => Math.min(0.97, (i / len) * 0.72 + Math.random() * 0.22));
+      const start = performance.now();
+      const tick = (now) => {
+        const p = Math.min(1, (now - start) / dur);
+        let out = '';
+        for (let i = 0; i < len; i++) {
+          if (p >= at[i]) out += to[i] ?? '';
+          else if (p >= at[i] - 0.3) out += (to[i] === ' ' || from[i] === ' ') ? ' ' : GLYPHS[(Math.random() * GLYPHS.length) | 0];
+          else out += from[i] ?? '';
+        }
+        node.data = out;
+        if (p < 1) requestAnimationFrame(tick);
+        else { node.data = to; resolve(); }
+      };
+      requestAnimationFrame(tick);
+    };
+    if (delay > 0) wait(delay).then(go);
+    else go();
+  });
 }
 
-export function swapToRewrite(rec, opts) {
-  if (rec.state !== 'scored') return Promise.resolve();
+export async function swapToRewrite(rec, { delay = 0 } = {}) {
+  if (rec.state !== 'scored') return;
   rec.original = [...rec.el.childNodes].map((n) => n.cloneNode(true));
   rec.state = 'debaited';
-  return morphText(rec.el, () => {
+  const from = rec.el.textContent.replace(/\s+/g, ' ').trim();
+  if (reducedMotion()) {
     rec.el.replaceChildren(document.createTextNode(rec.result.honest_rewrite));
-  }, opts);
+    return;
+  }
+  rec.animating = true;
+  await decode(rec.el, from, rec.result.honest_rewrite, delay);
+  rec.animating = false;
 }
 
-export function swapToOriginal(rec, opts) {
-  if (rec.state !== 'debaited' || !rec.original) return Promise.resolve();
+export async function swapToOriginal(rec, { delay = 0 } = {}) {
+  if (rec.state !== 'debaited' || !rec.original) return;
   rec.state = 'scored';
-  return morphText(rec.el, () => {
-    rec.el.replaceChildren(...rec.original.map((n) => n.cloneNode(true)));
-  }, opts);
+  const restore = () => rec.el.replaceChildren(...rec.original.map((n) => n.cloneNode(true)));
+  if (reducedMotion()) return restore();
+  rec.animating = true;
+  await decode(rec.el, rec.el.textContent, rec.text, delay);
+  restore(); // put back the original markup (links, emoji, mentions)
+  rec.animating = false;
 }

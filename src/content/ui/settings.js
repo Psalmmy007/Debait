@@ -1,19 +1,25 @@
 // Settings panel: double-click (or right-click) the orb.
-// It pours out of the orb like liquid and drains back into it when closed.
+// It opens out of the orb and folds back into it when closed.
 import { MSG } from '../../engine/contract.js';
 import { getSettings, setSettings, getRecentStats } from '../../shared/storage.js';
-import { SPRING, SOFT, reducedMotion } from './page.js';
+import { reducedMotion } from './page.js';
+import { ICON, SOURCE } from './icons.js';
 
-const SRC_LABEL = { 'on-device': 'On-device AI', cloud: 'Cloud AI', mock: 'Mock engine', none: 'AI not ready' };
+const OUT = 'cubic-bezier(0.16, 1, 0.3, 1)';
 
 const SWITCHES = [
-  { key: 'showTags', title: 'Show tags', hint: 'Rage, Fear, Envy, Clean pills and highlights' },
+  { key: 'showTags', title: 'Show tags', hint: 'Labels and highlights on headlines' },
   { key: 'autoDebait', title: 'Debait automatically', hint: 'Rewrite bait the moment it appears' },
   { key: 'localOnly', title: 'Local only', hint: 'Never send headlines to the cloud' },
-  { key: 'showOrb', title: 'Show the Debait ball', hint: 'Bring it back from the toolbar popup' },
+  { key: 'showOrb', title: 'Show the orb', hint: 'Bring it back from the toolbar popup' },
 ];
 
-const CLOSE_ICON = '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 2l10 10M12 2L2 12"/></svg>';
+const LEGEND = [
+  ['rage', 'Rage', '#fff'],
+  ['fear', 'Fear', '#a1a1aa'],
+  ['envy', 'Envy', '#5f5f68'],
+  ['clean', 'Clean', 'repeating-linear-gradient(-45deg, rgba(255,255,255,.45) 0 2px, transparent 2px 4px)'],
+];
 
 /**
  * @param layer       shadow-root container for the panel
@@ -29,7 +35,7 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
   const pct = (n, total) => (total ? Math.round((n / total) * 100) : 0);
 
   function clipFrames(open) {
-    // circle grows from the orb's position (in the panel's own coordinates)
+    // a circle that grows out of the orb (in the panel's own coordinates)
     const r = el.getBoundingClientRect();
     const c = orbCenter();
     const ox = c.x - r.left;
@@ -38,9 +44,9 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
       Math.hypot(ox, oy), Math.hypot(ox - r.width, oy),
       Math.hypot(ox, oy - r.height), Math.hypot(ox - r.width, oy - r.height),
     );
-    const small = `circle(22px at ${ox}px ${oy}px)`;
-    const big = `circle(${far + 20}px at ${ox}px ${oy}px)`;
-    return open ? [{ clipPath: small, opacity: 0.4 }, { clipPath: big, opacity: 1 }] : [{ clipPath: big, opacity: 1 }, { clipPath: small, opacity: 0 }];
+    const small = `circle(28px at ${ox}px ${oy}px)`;
+    const big = `circle(${far + 24}px at ${ox}px ${oy}px)`;
+    return open ? [{ clipPath: small }, { clipPath: big }] : [{ clipPath: big, opacity: 1 }, { clipPath: small, opacity: 0 }];
   }
 
   async function open() {
@@ -53,40 +59,33 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
 
     el.innerHTML = `
       <div class="p-head">
-        <div class="p-brand"><span class="mini-orb"></span><b>Debait</b></div>
-        <button class="p-close" data-act="close" aria-label="Close settings">${CLOSE_ICON}</button>
+        <div class="p-brand"><span class="p-logo"></span><div><b>Debait</b><small>Nutrition facts for your feed</small></div></div>
+        <button class="icon-btn" data-act="close" aria-label="Close settings">${ICON.close}</button>
       </div>
 
       <div class="p-meta">
         <span class="chip" data-src="none"><i></i><span>Checking AI…</span></span>
-        <span class="p-site">on ${location.hostname.replace(/^www\./, '')}</span>
+        <span class="p-site">${location.hostname.replace(/^www\./, '')}</span>
       </div>
 
-      <div class="p-card">
-        <div class="p-kicker">This page</div>
-        <div class="p-stats">
-          <div class="p-stat hot"><b data-v="bait">0</b><span>bait headlines</span></div>
-          <div class="p-stat cool"><b data-v="debaited">0</b><span>debaited</span></div>
+      <section class="p-sec">
+        <h4>This page</h4>
+        <div class="p-split">
+          <div class="p-num"><b data-v="bait">0</b><span>bait</span></div>
+          <div class="p-num"><b data-v="debaited">0</b><span>debaited</span></div>
+          <div class="p-num dim"><b data-v="scanned">0</b><span>read</span></div>
         </div>
-        <button class="p-main" data-act="toggle">Debait this page</button>
-      </div>
+        <button class="btn primary p-main" data-act="toggle">Debait this page</button>
+      </section>
 
-      <div class="p-card">
-        <div class="p-kicker">Today</div>
-        <div class="p-stats">
-          <div class="p-stat hot"><b><span data-v="todayPct">0</span><small>%</small></b><span>of headlines were bait</span></div>
-          <div class="p-stat"><b data-v="todayTotal">0</b><span>headlines read</span></div>
-        </div>
-        <div class="p-bar"><span data-k="rage"></span><span data-k="fear"></span><span data-k="envy"></span><span data-k="clean"></span></div>
-        <div class="p-legend">
-          <span><i style="background:#ff4d2e"></i>Rage <b data-v="rage">0</b></span>
-          <span><i style="background:#ff7a1a"></i>Fear <b data-v="fear">0</b></span>
-          <span><i style="background:#e8366d"></i>Envy <b data-v="envy">0</b></span>
-          <span><i style="background:#2f5bff"></i>Clean <b data-v="clean">0</b></span>
-        </div>
-      </div>
+      <section class="p-sec">
+        <h4>Today</h4>
+        <div class="p-today"><b><span data-v="todayPct">0</span><small>%</small></b><span data-v="todayLine">of headlines were bait</span></div>
+        <div class="p-bar">${LEGEND.map(([k]) => `<span data-k="${k}"></span>`).join('')}</div>
+        <div class="p-legend">${LEGEND.map(([k, name, bg]) => `<span><i style="background:${bg}"></i>${name} <b data-v="${k}">0</b></span>`).join('')}</div>
+      </section>
 
-      <div class="p-group">
+      <section class="p-sec">
         <h4>Settings</h4>
         ${SWITCHES.map((s) => `
           <label class="p-row">
@@ -94,18 +93,18 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
             <input type="checkbox" data-setting="${s.key}" ${settings[s.key] ? 'checked' : ''} />
             <span class="sw"></span>
           </label>`).join('')}
-      </div>
+      </section>
 
-      <button class="p-link" data-act="facts">Weekly Mind Facts <span>→</span></button>
+      <button class="p-link" data-act="facts">Weekly Mind Facts ${ICON.arrow}</button>
       <p class="p-note" hidden></p>
-      <p class="p-foot">Double-click the ball anytime · <kbd>Esc</kbd> to close</p>`;
+      <p class="p-foot"><kbd>2×</kbd> click the orb <span aria-hidden="true">·</span> <kbd>Esc</kbd> to close</p>`;
 
     layer.appendChild(el);
 
     // sit beside the orb (not under it); fall back to the screen edge if there's no room
     const c = orbCenter();
-    const ORB_HALF = 30;
-    const GAP = 14;
+    const ORB_HALF = 28;
+    const GAP = 16;
     const W = el.offsetWidth;
     if (c.x >= innerWidth / 2) {
       let right = innerWidth - (c.x - ORB_HALF) + GAP;
@@ -123,14 +122,13 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
     loadToday();
     loadEngine();
 
-    // pour out of the orb
     if (!reducedMotion()) {
-      el.animate(clipFrames(true), { duration: 820, easing: SOFT });
-      const parts = el.querySelectorAll('.p-head, .p-meta, .p-card, .p-group h4, .p-row, .p-link, .p-foot');
+      el.animate(clipFrames(true), { duration: 700, easing: OUT });
+      const parts = el.querySelectorAll('.p-head, .p-meta, .p-sec h4, .p-split, .p-main, .p-today, .p-bar, .p-legend, .p-row, .p-link, .p-foot');
       parts.forEach((p, i) => {
         p.animate(
-          [{ opacity: 0, transform: 'translateY(10px) scale(0.98)', filter: 'blur(4px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }],
-          { duration: 640, delay: 90 + i * 38, easing: SPRING, fill: 'backwards' },
+          [{ opacity: 0, transform: 'translateY(8px)', filter: 'blur(4px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }],
+          { duration: 520, delay: 60 + i * 28, easing: OUT, fill: 'backwards' },
         );
       });
     }
@@ -149,7 +147,7 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
     document.removeEventListener('pointerdown', onOutside, true);
     document.removeEventListener('keydown', onKey, true);
     if (!reducedMotion()) {
-      await el.animate(clipFrames(false), { duration: 420, easing: 'cubic-bezier(.5,0,.75,0)', fill: 'forwards' }).finished.catch(() => {});
+      await el.animate(clipFrames(false), { duration: 380, easing: 'cubic-bezier(0.7, 0, 0.84, 0)', fill: 'forwards' }).finished.catch(() => {});
     }
     el.remove();
     el = null;
@@ -175,7 +173,7 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
     }
     if (act === 'facts') {
       const res = await chrome.runtime.sendMessage({ type: 'debait/openSidePanel' }).catch(() => null);
-      if (!res?.ok) {
+      if (!res?.ok && el) {
         const note = el.querySelector('.p-note');
         note.hidden = false;
         note.textContent = 'Click the Debait icon in the toolbar, then "Open Weekly Mind Facts".';
@@ -193,15 +191,17 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
   /** Updates the "This page" numbers and the main button. */
   function refresh() {
     if (!el) return;
-    const { bait, debaited } = getPage();
+    const { bait, debaited, scanned } = getPage();
     el.querySelector('[data-v="bait"]').textContent = bait;
     el.querySelector('[data-v="debaited"]').textContent = debaited;
+    el.querySelector('[data-v="scanned"]').textContent = scanned;
     const btn = el.querySelector('.p-main');
     const restore = bait === 0 && debaited > 0;
-    btn.classList.toggle('restore', restore);
-    btn.textContent = restore ? 'Restore originals' : bait > 0 ? `Debait ${bait} headline${bait === 1 ? '' : 's'}` : 'Nothing to debait here';
+    btn.classList.toggle('primary', !restore);
+    btn.innerHTML = restore
+      ? 'Restore originals'
+      : bait > 0 ? `Debait ${bait} headline${bait === 1 ? '' : 's'} ${ICON.arrow}` : 'Nothing to debait here';
     btn.disabled = !restore && bait === 0;
-    btn.style.opacity = btn.disabled ? '0.5' : '';
   }
 
   async function loadToday() {
@@ -209,7 +209,9 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
     if (!el) return;
     const bait = t.rage + t.fear + t.envy;
     el.querySelector('[data-v="todayPct"]').textContent = pct(bait, t.total);
-    el.querySelector('[data-v="todayTotal"]').textContent = t.total.toLocaleString();
+    el.querySelector('[data-v="todayLine"]').textContent = t.total
+      ? `of ${t.total.toLocaleString()} headlines were bait`
+      : 'No headlines read yet today';
     for (const k of ['rage', 'fear', 'envy', 'clean']) {
       el.querySelector(`[data-v="${k}"]`).textContent = t[k];
       const bar = el.querySelector(`.p-bar [data-k="${k}"]`);
@@ -223,7 +225,7 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
     const s = res?.status || { source: 'none' };
     const chip = el.querySelector('.chip');
     chip.dataset.src = s.source;
-    chip.querySelector('span').textContent = SRC_LABEL[s.source] || s.source;
+    chip.querySelector('span').textContent = SOURCE[s.source] || s.source;
     chip.title = s.message || '';
   }
 

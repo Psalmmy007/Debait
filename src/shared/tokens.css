@@ -1,53 +1,50 @@
-/* Debait design tokens (popup + side panel) — dark neumorphism, black and blue. */
+/* Debait tokens for the popup and side panel. Black and white only:
+   depth comes from light, crisp edges and real shadows. */
 :root {
-  --bg: #14161d;
-  --bg-lo: #0c0d12;
-  --line: rgba(255, 255, 255, 0.06);
-  --ink: #eef1f8;
-  --grey: #8a91a6;
-  --dim: #7d849a;
-  --blue: #4c6fe6;
-  --blue-hi: #93a8f0;
-  --shade: rgba(0, 0, 0, 0.5);
-  --bait: #e8694f;
-  --rage: #e8694f;
-  --fear: #e39a55;
-  --envy: #dc6c95;
-  --clean: #4c6fe6;
-  --raise: 8px 8px 20px rgba(0, 0, 0, 0.5), -6px -6px 16px rgba(255, 255, 255, 0.03);
-  --raise-sm: 3px 3px 7px rgba(0, 0, 0, 0.55), -2px -2px 6px rgba(255, 255, 255, 0.035);
-  --press: inset 4px 4px 10px rgba(0, 0, 0, 0.55), inset -3px -3px 8px rgba(255, 255, 255, 0.03);
-  --press-sm: inset 2px 2px 5px rgba(0, 0, 0, 0.6), inset -2px -2px 4px rgba(255, 255, 255, 0.04);
+  --s0: #060607;
+  --s1: #0e0e10;
+  --s2: #151517;
+  --hair: rgba(255, 255, 255, 0.09);
+  --ink: #fafafa;
+  --ink-2: #a8a8b0;
+  --ink-3: #8c8c95;
   --ui: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --brand: 'Bricolage Grotesque Variable', 'Inter Variable', system-ui, sans-serif;
   --serif: 'Newsreader Variable', Georgia, serif;
   --spring: linear(0, 0.009, 0.035 2.1%, 0.141, 0.281 6.7%, 0.723 12.9%, 0.938 16.7%, 1.017, 1.077, 1.121, 1.149 24.3%, 1.159, 1.163, 1.161, 1.154 29.9%, 1.129 32.8%, 1.051 39.6%, 1.017 43.1%, 0.991, 0.977 51%, 0.974 53.8%, 0.975 57.1%, 0.997 69.8%, 1.003 76.9%, 1.004 83.8%, 1);
+  --out: cubic-bezier(0.16, 1, 0.3, 1);
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--ui); -webkit-font-smoothing: antialiased; }
+html, body { margin: 0; background: #0a0a0c; color: var(--ink); font-family: var(--ui); -webkit-font-smoothing: antialiased; }
 button { font: inherit; color: inherit; }
+button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 
-/* logo: a dark pod with a satin blue sphere */
-.mini-orb {
-  position: relative; width: 34px; height: 34px; flex: none; border-radius: 50%;
-  background: linear-gradient(145deg, #20232d, #0c0d12); box-shadow: var(--raise-sm);
+/* logo: a small glass sphere */
+.logo {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 50%;
+  background:
+    radial-gradient(38% 28% at 38% 24%, rgba(255, 255, 255, 0.9), transparent 70%),
+    radial-gradient(circle at 50% 62%, #75757d 0%, #2a2a2e 45%, #050506 82%);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14), 0 6px 12px -4px rgba(0, 0, 0, 0.7);
 }
-.mini-orb::before {
-  content: ''; position: absolute; inset: 5px; border-radius: 50%;
-  background: radial-gradient(115% 115% at 34% 22%, #8ea3ee 0%, #4a66d6 38%, #25388f 72%, #101945 100%);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1), inset 0 -3px 5px rgba(0, 0, 0, 0.4);
-}
-@keyframes mini-breathe { 50% { scale: 1.06; } }
 
 .chip {
-  display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 12px;
-  border-radius: 999px; background: var(--bg); box-shadow: var(--press-sm);
-  font-size: 11.5px; font-weight: 600; color: var(--grey);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 0 0 1px var(--hair);
+  font-size: 11.5px;
+  font-weight: 550;
+  color: var(--ink-2);
 }
-.chip i { width: 7px; height: 7px; border-radius: 50%; background: #7d8499; }
-.chip[data-src='on-device'] i { background: #2fd18a; }
-.chip[data-src='cloud'] i { background: var(--blue-hi); }
-.chip[data-src='none'] i { background: var(--bait); }
-
-button:focus-visible { outline: 2px solid var(--blue-hi); outline-offset: 2px; }
+.chip i { width: 6px; height: 6px; border-radius: 50%; background: #fff; }
+.chip[data-src='mock'] i, .chip[data-src='none'] i { background: transparent; box-shadow: inset 0 0 0 1.5px var(--ink-3); }
+.chip[data-src='cloud'] i { background: var(--ink-2); }

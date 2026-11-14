@@ -7,7 +7,7 @@
 </head>
 <body>
   <header>
-    <div class="brand"><div class="mini-orb"></div><b>Debait</b></div>
+    <div class="brand"><div class="logo"></div><b>Debait</b></div>
     <span class="chip" id="engine" data-src="mock"><i></i><span>Checking…</span></span>
   </header>
 
@@ -32,13 +32,13 @@
   </div>
 
   <section class="switches">
-    <label><span>Show the Debait ball<small>Floating orb you can drag anywhere</small></span><input type="checkbox" data-setting="showOrb" /><i></i></label>
-    <label><span>Show tags<small>Rage, Fear, Envy, Clean pills + highlights</small></span><input type="checkbox" data-setting="showTags" /><i></i></label>
+    <label><span>Show the orb<small>Floating sphere you can drag anywhere</small></span><input type="checkbox" data-setting="showOrb" /><i></i></label>
+    <label><span>Show tags<small>Labels and highlights on headlines</small></span><input type="checkbox" data-setting="showTags" /><i></i></label>
     <label><span>Debait automatically<small>Rewrite bait as soon as it appears</small></span><input type="checkbox" data-setting="autoDebait" /><i></i></label>
     <label><span>Local only<small>Never send headlines to the cloud</small></span><input type="checkbox" data-setting="localOnly" /><i></i></label>
   </section>
 
-  <button class="link" id="openFacts">Open Weekly Mind Facts →</button>
+  <button class="link" id="openFacts">Weekly Mind Facts <span aria-hidden="true">→</span></button>
 
   <script type="module" src="./popup.js"></script>
 </body>

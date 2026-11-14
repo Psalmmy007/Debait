@@ -1,9 +1,17 @@
-// The floating layer: one Shadow DOM root holding the orb, the ripple and the card.
-import css from '../styles/ui.css?inline';
-import { SPRING, SOFT, reducedMotion } from './page.js';
+// The floating layer: one Shadow DOM root holding the orb, the card and the settings panel,
+// plus a second host for the page-wide wave (it needs its own blend mode to invert the page).
+import tokens from '../styles/tokens.css?inline';
+import orbCss from '../styles/orb.css?inline';
+import cardCss from '../styles/card.css?inline';
+import panelCss from '../styles/panel.css?inline';
+import tagCss from '../styles/tag.css?inline';
+import { SPRING, reducedMotion } from './page.js';
+import { createOrbRenderer } from './orb-gl.js';
 
-const ORB = 60;
-const MARGIN = 10;
+const ORB = 56;
+const MARGIN = 16;
+// visible width, not counting the page's scrollbar
+const viewW = () => document.documentElement.clientWidth || innerWidth;
 
 export function createOverlay() {
   const host = document.createElement('debait-root');
@@ -12,19 +20,15 @@ export function createOverlay() {
     'all: initial !important; position: fixed !important; inset: 0 !important; z-index: 2147483646 !important; pointer-events: none !important; display: block !important;';
   const shadow = host.attachShadow({ mode: 'open' });
   shadow.innerHTML = `
-    <style>${css}</style>
-    <div class="ripple-layer"></div>
+    <style>${tokens}${orbCss}${tagCss}${cardCss}${panelCss}</style>
     <div class="card-layer"></div>
     <div class="panel-layer"></div>
     <div class="orb-wrap" data-state="idle">
-      <div class="orb-glow"></div>
-      <button class="orb" aria-label="Debait this page"><span class="orb-clip">
-        <span class="orb-base"></span>
-        <span class="orb-swirl"><i class="cloud c1"></i><i class="cloud c2"></i><i class="cloud c3"></i><i class="cloud c4"></i><i class="cloud c5"></i></span>
-        <span class="orb-sheen"></span>
-        <span class="orb-grain"></span>
-        <span class="orb-edge"></span>
-      </span></button>
+      <span class="orb-shadow"></span>
+      <svg class="orb-ring" viewBox="0 0 68 68" aria-hidden="true"><circle class="track" cx="34" cy="34" r="32"/><circle class="arc" cx="34" cy="34" r="32"/></svg>
+      <button class="orb" aria-label="Debait this page">
+        <span class="orb-body"><span class="orb-fallback"></span><canvas class="orb-gl"></canvas></span>
+      </button>
       <span class="orb-badge"></span>
       <span class="orb-tip"></span>
     </div>`;
@@ -32,51 +36,57 @@ export function createOverlay() {
   return {
     host,
     shadow,
-    rippleLayer: shadow.querySelector('.ripple-layer'),
     cardLayer: shadow.querySelector('.card-layer'),
-    panelLayer: shadow.querySelector(".panel-layer"),
+    panelLayer: shadow.querySelector('.panel-layer'),
     orbWrap: shadow.querySelector('.orb-wrap'),
   };
 }
 
 // ============================================================
-// ORB: drag anywhere, squishes like liquid, click = Debait page
+// ORB: drag anywhere, click = Debait page, double-click = settings
 // ============================================================
 export function createOrb(overlay, { onClick, onDoubleClick }) {
   const wrap = overlay.orbWrap;
   const orb = wrap.querySelector('.orb');
   const badge = wrap.querySelector('.orb-badge');
   const tip = wrap.querySelector('.orb-tip');
+  const canvas = wrap.querySelector('.orb-gl');
+
+  const gl = createOrbRenderer(canvas, ORB);
+  if (gl) {
+    wrap.classList.add('has-gl');
+    gl.start();
+  }
 
   // position kept as a fraction of the free space, so it survives window resizes
   let pos = { x: 0, y: 0 };
-  let ratio = { x: 1, y: 0.78 };
+  let ratio = { x: 1, y: 0.8 };
 
   const clamp = (p) => ({
-    x: Math.min(Math.max(p.x, MARGIN), innerWidth - ORB - MARGIN),
+    x: Math.min(Math.max(p.x, MARGIN), viewW() - ORB - MARGIN),
     y: Math.min(Math.max(p.y, MARGIN), innerHeight - ORB - MARGIN),
   });
   const fromRatio = () => clamp({
-    x: MARGIN + ratio.x * (innerWidth - ORB - 2 * MARGIN),
+    x: MARGIN + ratio.x * (viewW() - ORB - 2 * MARGIN),
     y: MARGIN + ratio.y * (innerHeight - ORB - 2 * MARGIN),
   });
   const toRatio = () => ({
-    x: (pos.x - MARGIN) / Math.max(1, innerWidth - ORB - 2 * MARGIN),
+    x: (pos.x - MARGIN) / Math.max(1, viewW() - ORB - 2 * MARGIN),
     y: (pos.y - MARGIN) / Math.max(1, innerHeight - ORB - 2 * MARGIN),
   });
   const place = () => {
     wrap.style.transform = `translate3d(${pos.x}px, ${pos.y}px, 0)`;
-    wrap.classList.toggle('tip-right', pos.x < 220);
+    wrap.classList.toggle('tip-right', pos.x < 240);
   };
 
   chrome.storage.local.get('orbPos').then(({ orbPos }) => {
     if (orbPos) ratio = orbPos;
     pos = fromRatio();
     place();
-    // drop-in entrance
+    // entrance: rises in from a blur, then settles
     if (!reducedMotion()) {
       orb.animate(
-        [{ transform: 'scale(0.2)', opacity: 0, filter: 'blur(6px)' }, { transform: 'scale(1)', opacity: 1, filter: 'blur(0)' }],
+        [{ transform: 'scale(0.4)', opacity: 0, filter: 'blur(8px)' }, { transform: 'scale(1)', opacity: 1, filter: 'blur(0)' }],
         { duration: 900, easing: SPRING },
       );
     }
@@ -91,10 +101,35 @@ export function createOrb(overlay, { onClick, onDoubleClick }) {
     chrome.storage.local.set({ orbHintSeen: true });
   });
 
-  // cancel our own WAAPI animations but keep the CSS wobble running
+  // The light on the glass follows your cursor around the page.
+  let lightRaf = 0;
+  let lastPointer = null;
+  addEventListener('pointermove', (e) => {
+    lastPointer = e;
+    if (lightRaf || !gl) return;
+    lightRaf = requestAnimationFrame(() => {
+      lightRaf = 0;
+      const c = center();
+      const dx = (lastPointer.clientX - c.x) / 500;
+      const dy = (lastPointer.clientY - c.y) / 500;
+      gl.setLight(Math.max(-1, Math.min(1, dx)), Math.max(-1, Math.min(1, -dy)));
+    });
+  }, { passive: true });
+
+  // Hovering wakes it up: the smoke moves faster.
+  wrap.addEventListener('pointerenter', () => gl?.setBoost(2.2));
+  wrap.addEventListener('pointerleave', () => gl?.setBoost(1));
+
+  // Save battery: stop drawing when the tab is hidden.
+  document.addEventListener('visibilitychange', () => {
+    if (!gl) return;
+    if (document.hidden || wrap.hidden) gl.stop();
+    else gl.start();
+  });
+
   const cancelJs = () => orb.getAnimations().forEach((a) => { if (!('animationName' in a)) a.cancel(); });
 
-  // ---- drag with squash & stretch ----
+  // ---- drag: the ball leans into the motion and the smoke inside lags behind ----
   let drag = null;
   orb.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
@@ -112,7 +147,7 @@ export function createOrb(overlay, { onClick, onDoubleClick }) {
       vx: 0,
       vy: 0,
     };
-    orb.animate([{ transform: 'scale(1)' }, { transform: 'scale(0.9)' }], { duration: 160, easing: 'ease-out', fill: 'forwards' });
+    orb.animate([{ transform: 'scale(1)' }, { transform: 'scale(0.92)' }], { duration: 140, easing: 'ease-out', fill: 'forwards' });
   });
 
   orb.addEventListener('pointermove', (e) => {
@@ -124,7 +159,6 @@ export function createOrb(overlay, { onClick, onDoubleClick }) {
     }
     const now = performance.now();
     const dt = Math.max(1, now - drag.lt);
-    // smoothed velocity in px/ms
     drag.vx = drag.vx * 0.7 + ((e.clientX - drag.lx) / dt) * 0.3;
     drag.vy = drag.vy * 0.7 + ((e.clientY - drag.ly) / dt) * 0.3;
     drag.lx = e.clientX;
@@ -134,12 +168,12 @@ export function createOrb(overlay, { onClick, onDoubleClick }) {
     pos = clamp({ x: e.clientX - drag.dx, y: e.clientY - drag.dy });
     place();
 
-    // stretch along the direction of travel, like a drop of water
     const speed = Math.min(Math.hypot(drag.vx, drag.vy), 3);
-    const s = speed * 0.09;
+    const s = speed * 0.07;
     const ang = (Math.atan2(drag.vy, drag.vx) * 180) / Math.PI;
     cancelJs();
-    orb.style.transform = `rotate(${ang}deg) scale(${0.92 + s}, ${0.92 - s * 0.7}) rotate(${-ang}deg)`;
+    orb.style.transform = `rotate(${ang}deg) scale(${0.95 + s}, ${0.95 - s * 0.6}) rotate(${-ang}deg)`;
+    gl?.setVelocity(Math.max(-1.5, Math.min(1.5, -drag.vx)), Math.max(-1.5, Math.min(1.5, drag.vy)));
   });
 
   const release = (e) => {
@@ -147,13 +181,13 @@ export function createOrb(overlay, { onClick, onDoubleClick }) {
     const wasDrag = drag.moved;
     drag = null;
     wrap.classList.remove('dragging');
-    const from = orb.style.transform || 'scale(0.9)';
+    const from = orb.style.transform || 'scale(0.92)';
     orb.style.transform = '';
     cancelJs();
-    // jelly settle
+    gl?.setVelocity(0, 0);
     orb.animate(
-      [{ transform: from }, { transform: 'scale(1.08, 0.94)', offset: 0.35 }, { transform: 'scale(0.97, 1.03)', offset: 0.65 }, { transform: 'scale(1)' }],
-      { duration: 650, easing: 'ease-out' },
+      [{ transform: from }, { transform: 'scale(1.06, 0.95)', offset: 0.35 }, { transform: 'scale(0.98, 1.02)', offset: 0.7 }, { transform: 'scale(1)' }],
+      { duration: 600, easing: 'ease-out' },
     );
     if (wasDrag) {
       ratio = toRatio();
@@ -165,7 +199,7 @@ export function createOrb(overlay, { onClick, onDoubleClick }) {
   orb.addEventListener('pointerup', release);
   orb.addEventListener('pointercancel', release);
 
-  // one click = Debait the page, double-click = settings.
+  // One click = Debait the page, double-click = settings.
   // A single click waits a moment to make sure it isn't the start of a double-click.
   let clickTimer = null;
   function tap() {
@@ -180,7 +214,6 @@ export function createOrb(overlay, { onClick, onDoubleClick }) {
       }, 230);
     }
   }
-  // right-click also opens settings
   orb.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     onDoubleClick(center());
@@ -197,94 +230,93 @@ export function createOrb(overlay, { onClick, onDoubleClick }) {
     return { x: pos.x + ORB / 2, y: pos.y + ORB / 2 };
   }
 
+  const HINT = '<em><kbd>2×</kbd> click for settings</em>';
   let lastCount = -1;
   return {
     center,
-    setVisible(v) { wrap.hidden = !v; },
+    setVisible(v) {
+      wrap.hidden = !v;
+      if (!gl) return;
+      if (v && !document.hidden) gl.start();
+      else gl.stop();
+    },
     /** state: idle | busy | bait | calm */
     update({ state, bait, debaited, scanned }) {
       wrap.dataset.state = state;
+      gl?.setMood(state);
       const count = state === 'calm' ? debaited : bait;
       badge.textContent = String(count);
-      badge.classList.toggle('show', state === 'calm' ? debaited > 0 : bait > 0);
-      if (count !== lastCount && lastCount !== -1 && !reducedMotion()) {
-        badge.animate([{ transform: 'scale(1.35)' }, { transform: 'scale(1)' }], { duration: 500, easing: SPRING });
+      badge.classList.toggle('show', count > 0);
+      if (count !== lastCount && lastCount !== -1 && count > 0 && !reducedMotion()) {
+        badge.animate([{ transform: 'scale(1.3)' }, { transform: 'scale(1)' }], { duration: 450, easing: SPRING });
       }
       lastCount = count;
       if (state === 'calm') {
-        tip.innerHTML = `Restore originals<small>${debaited} headline${debaited === 1 ? '' : 's'} debaited</small>`;
+        tip.innerHTML = `Restore originals<small>${debaited} headline${debaited === 1 ? '' : 's'} debaited</small>${HINT}`;
       } else if (bait > 0) {
-        tip.innerHTML = `Debait this page<small>${bait} bait of ${scanned} headlines</small>`;
+        tip.innerHTML = `Debait this page<small>${bait} bait of ${scanned} headlines</small>${HINT}`;
       } else if (state === 'busy') {
-        tip.innerHTML = 'Reading headlines…';
+        tip.innerHTML = `Reading headlines…${HINT}`;
       } else {
-        tip.innerHTML = `Debait<small>${scanned ? `${scanned} headlines, all clean` : 'Looking for headlines'}</small>`;
+        tip.innerHTML = `Debait<small>${scanned ? `${scanned} headlines, all clean` : 'Looking for headlines'}</small>${HINT}`;
       }
-      tip.insertAdjacentHTML('beforeend', '<em>Double-click for settings</em>');
     },
     setPanelOpen(open) { wrap.classList.toggle('panel-open', open); },
     pulse() {
+      gl?.pulse();
       if (reducedMotion()) return;
       orb.animate(
-        [{ transform: 'scale(1)' }, { transform: 'scale(1.18, 0.86)', offset: 0.25 }, { transform: 'scale(0.92, 1.08)', offset: 0.55 }, { transform: 'scale(1)' }],
-        { duration: 700, easing: 'ease-out' },
+        [{ transform: 'scale(1)' }, { transform: 'scale(0.86)', offset: 0.2 }, { transform: 'scale(1.08)', offset: 0.55 }, { transform: 'scale(1)' }],
+        { duration: 650, easing: 'ease-out' },
       );
     },
   };
 }
 
 // ============================================================
-// RIPPLE: a liquid wave + bubbles spreading from the orb
+// WAVE: thin rings that invert the page as they pass,
+// so they show up on any site, light or dark.
 // ============================================================
-export function playRipple(layer, origin, { undo = false } = {}) {
-  const R = Math.hypot(Math.max(origin.x, innerWidth - origin.x), Math.max(origin.y, innerHeight - origin.y));
-  const duration = 1150;
+let fxHost = null;
+function fxLayer() {
+  if (fxHost?.isConnected) return fxHost.shadowRoot.firstElementChild;
+  fxHost = document.createElement('debait-fx');
+  fxHost.style.cssText =
+    'all: initial !important; position: fixed !important; inset: 0 !important; z-index: 2147483645 !important; pointer-events: none !important; display: block !important; mix-blend-mode: difference !important;';
+  const root = fxHost.attachShadow({ mode: 'open' });
+  root.innerHTML = '<div style="position:absolute;inset:0;overflow:hidden"></div>';
+  document.documentElement.appendChild(fxHost);
+  return root.firstElementChild;
+}
+
+export function playRipple(origin, { undo = false } = {}) {
+  const R = Math.hypot(Math.max(origin.x, innerWidth - origin.x), Math.max(origin.y, innerHeight - origin.y)) + 40;
+  const duration = 1250;
   if (reducedMotion()) return { R, duration: 0 };
 
-  const make = (cls, size) => {
+  const layer = fxLayer();
+  const ring = (delay, width, alpha) => {
     const el = document.createElement('div');
-    el.className = cls;
-    el.style.left = `${origin.x}px`;
-    el.style.top = `${origin.y}px`;
-    el.style.width = el.style.height = `${size}px`;
+    const size = R * 2;
+    // a hairline white ring: under "difference" it inverts whatever is beneath it
+    const edge = (width / R) * 50;
+    el.style.cssText = `position:absolute;left:${origin.x}px;top:${origin.y}px;width:${size}px;height:${size}px;border-radius:50%;` +
+      `background:radial-gradient(circle closest-side, transparent ${100 - edge * 2}%, rgba(255,255,255,${alpha}) ${100 - edge}%, transparent 100%);` +
+      'transform:translate(-50%,-50%) scale(0);will-change:transform,opacity';
     layer.appendChild(el);
-    return el;
+    const frames = [
+      { transform: 'translate(-50%, -50%) scale(0.02)', opacity: 1 },
+      { transform: 'translate(-50%, -50%) scale(1)', opacity: 0.15 },
+    ];
+    el.animate(undo ? [...frames].reverse() : frames, {
+      duration: duration + delay * 0.6,
+      delay,
+      easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+      fill: 'both',
+    }).finished.then(() => el.remove());
   };
-
-  const grow = [
-    { transform: 'translate(-50%, -50%) scale(0)', opacity: 1 },
-    { transform: 'translate(-50%, -50%) scale(1)', opacity: 0 },
-  ];
-  const shrink = [...grow].reverse();
-  const frames = undo ? shrink : grow;
-
-  const wash = make('wash', R * 2);
-  wash.animate(frames, { duration: duration * 0.9, easing: 'cubic-bezier(.2,.7,.2,1)', fill: 'forwards' }).finished.then(() => wash.remove());
-
-  [0, 140, 300].forEach((delay, i) => {
-    const w = make(undo ? 'wave undo' : 'wave', R * 2.3);
-    w.animate(frames, { duration: duration + i * 120, delay, easing: 'cubic-bezier(.22,.8,.25,1)', fill: 'both' })
-      .finished.then(() => w.remove());
-  });
-
-  // little bubbles floating out
-  if (!undo) {
-    for (let i = 0; i < 14; i++) {
-      const size = 5 + Math.random() * 13;
-      const b = make('bubble', size);
-      const a = Math.random() * Math.PI * 2;
-      const dist = 60 + Math.random() * 220;
-      const tx = Math.cos(a) * dist;
-      const ty = Math.sin(a) * dist - 40 * Math.random();
-      b.animate(
-        [
-          { transform: 'translate(-50%, -50%) scale(0.2)', opacity: 0 },
-          { transform: `translate(calc(-50% + ${tx * 0.35}px), calc(-50% + ${ty * 0.35}px)) scale(1)`, opacity: 0.95, offset: 0.3 },
-          { transform: `translate(calc(-50% + ${tx}px), calc(-50% + ${ty}px)) scale(0.6)`, opacity: 0 },
-        ],
-        { duration: 900 + Math.random() * 700, delay: Math.random() * 180, easing: SOFT, fill: 'both' },
-      ).finished.then(() => b.remove());
-    }
-  }
+  ring(0, 2.5, 1);
+  ring(120, 1.2, 0.7);
+  ring(260, 0.8, 0.45);
   return { R, duration };
 }

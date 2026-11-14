@@ -91,7 +91,7 @@ async function start() {
       const existing = records.get(el);
       if (existing) {
         // sites like X reuse elements for new posts: rescore if the text changed
-        if (existing.state === 'debaited' || textOf(el) === existing.text || textOf(el) === existing.result?.honest_rewrite) continue;
+        if (existing.animating || existing.state === 'debaited' || textOf(el) === existing.text || textOf(el) === existing.result?.honest_rewrite) continue;
         existing.tag?.remove();
         records.delete(el);
       }
@@ -186,8 +186,8 @@ async function start() {
     const done = all.filter((r) => r.state === 'debaited');
 
     if (bait.length) {
-      // the blue wave flows out from the orb; each headline flips when the wave reaches it
-      const { R, duration } = playRipple(overlay.rippleLayer, origin);
+      // the wave rolls out from the orb; each headline decodes when the wave reaches it
+      const { R, duration } = playRipple(origin);
       const jobs = bait.map((rec) => {
         const delay = duration ? Math.min(1, distanceFrom(origin, rec.el) / R) * duration * 0.75 : 0;
         setTimeout(() => rec.tag?.setDebaited(true, rec.result), delay + 240);
@@ -198,7 +198,7 @@ async function start() {
       chrome.runtime.sendMessage({ type: 'debait/debaited', count: bait.length });
     } else if (done.length) {
       // undo: the wave flows back into the orb
-      const { R, duration } = playRipple(overlay.rippleLayer, origin, { undo: true });
+      const { R, duration } = playRipple(origin, { undo: true });
       const jobs = done.map((rec) => {
         const delay = duration ? (1 - Math.min(1, distanceFrom(origin, rec.el) / R)) * duration * 0.6 : 0;
         setTimeout(() => rec.tag?.setDebaited(false, rec.result), delay + 240);

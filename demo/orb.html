@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Debait orb lab</title>
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; grid-template-columns: 1fr 1fr; font: 13px system-ui, sans-serif; }
+    .half { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; place-items: center; align-content: center; padding: 32px; }
+    .light { background: #fff; color: #111; }
+    .dark { background: #050506; color: #eee; }
+    figure { margin: 0; text-align: center; }
+    canvas { width: 180px; height: 180px; display: block; border-radius: 50%; cursor: pointer; }
+    figcaption { margin-top: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; font-size: 11px; opacity: .7; }
+  </style>
+</head>
+<body>
+  <div class="half light" data-side></div>
+  <div class="half dark" data-side></div>
+  <script type="module">
+    // Shows the orb big, in every mood, on a light and a dark page. Click an orb to send a pulse through it.
+    import { createOrbRenderer, MOODS } from '../src/content/ui/orb-gl.js';
+    const orbs = [];
+    for (const side of document.querySelectorAll('[data-side]')) {
+      for (const mood of Object.keys(MOODS)) {
+        const fig = document.createElement('figure');
+        const canvas = document.createElement('canvas');
+        fig.append(canvas);
+        fig.insertAdjacentHTML('beforeend', `<figcaption>${mood}</figcaption>`);
+        side.append(fig);
+        const orb = createOrbRenderer(canvas, 180);
+        if (!orb) { fig.append('WebGL unavailable'); continue; }
+        orb.setMood(mood);
+        orb.start();
+        canvas.addEventListener('click', () => orb.pulse());
+        orbs.push({ orb, canvas });
+      }
+    }
+    addEventListener('pointermove', (e) => {
+      for (const { orb, canvas } of orbs) {
+        const b = canvas.getBoundingClientRect();
+        const dx = e.clientX - (b.left + b.width / 2), dy = e.clientY - (b.top + b.height / 2);
+        orb.setLight(Math.max(-1, Math.min(1, dx / 420)), Math.max(-1, Math.min(1, -dy / 420)));
+      }
+    });
+    window.__orbs = orbs;
+  </script>
+</body>
+</html>
