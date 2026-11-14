@@ -3,6 +3,13 @@
 The UI is done against a **mock engine**. Your job is to replace it with Firebase AI Logic.
 You only touch `src/engine/`. Nothing in the UI changes.
 
+**Your web analyzer is still here.** `index.html`, `src/main.js` and `src/firebase.js` are
+untouched. Run it with `npm run dev` (http://localhost:5173). The extension builds separately with
+`npm run build`. To move the AI into the extension, reuse `src/firebase.js` and your prompt from
+`src/main.js` inside `src/engine/firebaseEngine.js`, mapping your fields to the shape below.
+For example, `neutralRewrite` becomes `honest_rewrite`. The extension also needs `kind`, `score`
+and exact `triggers` words for the tags and highlights.
+
 ## Where the engine runs
 
 `src/offscreen/` is an offscreen document: a hidden extension page with a DOM.
