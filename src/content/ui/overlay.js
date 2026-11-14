@@ -2,7 +2,7 @@
 import css from '../styles/ui.css?inline';
 import { SPRING, SOFT, reducedMotion } from './page.js';
 
-const ORB = 54;
+const ORB = 52;
 const MARGIN = 10;
 
 export function createOverlay() {
@@ -15,17 +15,15 @@ export function createOverlay() {
     <style>${css}</style>
     <div class="ripple-layer"></div>
     <div class="card-layer"></div>
+    <div class="panel-layer"></div>
     <div class="orb-wrap" data-state="idle">
       <div class="orb-glow"></div>
       <button class="orb" aria-label="Debait this page"><span class="orb-clip">
-        <span class="orb-core"></span>
-        <span class="orb-iris"></span>
-        <span class="orb-liquid"></span>
-        <span class="orb-liquid l2"></span>
-        <span class="orb-shine"></span>
-        <span class="orb-spark"></span>
-        <span class="orb-halo"></span>
-        <span class="orb-rim"></span>
+        <span class="orb-base"></span>
+        <span class="orb-swirl"><i class="cloud c1"></i><i class="cloud c2"></i><i class="cloud c3"></i><i class="cloud c4"></i><i class="cloud c5"></i></span>
+        <span class="orb-sheen"></span>
+        <span class="orb-grain"></span>
+        <span class="orb-edge"></span>
       </span></button>
       <span class="orb-badge"></span>
       <span class="orb-tip"></span>
@@ -36,6 +34,7 @@ export function createOverlay() {
     shadow,
     rippleLayer: shadow.querySelector('.ripple-layer'),
     cardLayer: shadow.querySelector('.card-layer'),
+    panelLayer: shadow.querySelector(".panel-layer"),
     orbWrap: shadow.querySelector('.orb-wrap'),
   };
 }
@@ -43,7 +42,7 @@ export function createOverlay() {
 // ============================================================
 // ORB: drag anywhere, squishes like liquid, click = Debait page
 // ============================================================
-export function createOrb(overlay, { onClick }) {
+export function createOrb(overlay, { onClick, onDoubleClick }) {
   const wrap = overlay.orbWrap;
   const orb = wrap.querySelector('.orb');
   const badge = wrap.querySelector('.orb-badge');
@@ -152,15 +151,37 @@ export function createOrb(overlay, { onClick }) {
       ratio = toRatio();
       chrome.storage.local.set({ orbPos: ratio });
     } else {
-      onClick(center());
+      tap();
     }
   };
   orb.addEventListener('pointerup', release);
   orb.addEventListener('pointercancel', release);
+
+  // one click = Debait the page, double-click = settings.
+  // A single click waits a moment to make sure it isn't the start of a double-click.
+  let clickTimer = null;
+  function tap() {
+    if (clickTimer) {
+      clearTimeout(clickTimer);
+      clickTimer = null;
+      onDoubleClick(center());
+    } else {
+      clickTimer = setTimeout(() => {
+        clickTimer = null;
+        onClick(center());
+      }, 230);
+    }
+  }
+  // right-click also opens settings
+  orb.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    onDoubleClick(center());
+  });
   orb.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      onClick(center());
+      if (e.shiftKey) onDoubleClick(center());
+      else onClick(center());
     }
   });
 
@@ -176,7 +197,7 @@ export function createOrb(overlay, { onClick }) {
     update({ state, bait, debaited, scanned }) {
       wrap.dataset.state = state;
       const count = state === 'calm' ? debaited : bait;
-      badge.textContent = state === 'calm' ? '✓' : String(bait);
+      badge.textContent = String(count);
       badge.classList.toggle('show', state === 'calm' ? debaited > 0 : bait > 0);
       if (count !== lastCount && lastCount !== -1 && !reducedMotion()) {
         badge.animate([{ transform: 'scale(1.35)' }, { transform: 'scale(1)' }], { duration: 500, easing: SPRING });
@@ -191,7 +212,9 @@ export function createOrb(overlay, { onClick }) {
       } else {
         tip.innerHTML = `Debait<small>${scanned ? `${scanned} headlines, all clean` : 'Looking for headlines'}</small>`;
       }
+      tip.insertAdjacentHTML('beforeend', '<em>Double-click for settings</em>');
     },
+    setPanelOpen(open) { wrap.classList.toggle('panel-open', open); },
     pulse() {
       if (reducedMotion()) return;
       orb.animate(

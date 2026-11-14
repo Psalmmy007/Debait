@@ -6,6 +6,7 @@ import { injectPageStyles, paintHighlights, swapToRewrite, swapToOriginal } from
 import { createOverlay, createOrb, playRipple } from './ui/overlay.js';
 import { createTag } from './ui/tag.js';
 import { openCard, closeCard } from './ui/card.js';
+import { createSettingsPanel } from './ui/settings.js';
 
 const BATCH = 8;
 const MIN_LEN = 12;
@@ -31,11 +32,31 @@ async function start() {
   let stats = { hits: 0, scored: 0 };
 
   const overlay = createOverlay();
-  const orb = createOrb(overlay, { onClick: (origin) => toggleDebaitPage(origin) });
+  const orb = createOrb(overlay, {
+    onClick: (origin) => toggleDebaitPage(origin),
+    onDoubleClick: () => { closeCard(); panel.toggle(); },
+  });
+  const panel = createSettingsPanel(overlay.panelLayer, {
+    getPage: pageCounts,
+    onToggle: () => toggleDebaitPage(orb.center()),
+    orbCenter: () => orb.center(),
+    onOpenChange: (open) => orb.setPanelOpen(open),
+  });
   orb.setVisible(settings.showOrb);
 
   // ---------- helpers ----------
   const paint = (hotRecord) => paintHighlights(records.values(), { enabled: settings.showTags, hotRecord });
+
+  function pageCounts() {
+    let bait = 0, debaited = 0, scanned = 0;
+    for (const r of records.values()) {
+      if (!r.result) continue;
+      scanned++;
+      if (r.state === 'debaited') debaited++;
+      else if (r.result.kind !== 'clean') bait++;
+    }
+    return { bait, debaited, scanned };
+  }
 
   function refreshOrb() {
     let bait = 0, debaited = 0, scanned = 0;
@@ -47,6 +68,7 @@ async function start() {
     }
     const state = inflight > 0 && bait === 0 ? 'busy' : bait > 0 ? 'bait' : debaited > 0 ? 'calm' : 'idle';
     orb.update({ state, bait, debaited, scanned });
+    panel.refresh();
   }
 
   // ---------- finding headlines ----------
