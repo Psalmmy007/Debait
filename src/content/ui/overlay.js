@@ -2,7 +2,7 @@
 import css from '../styles/ui.css?inline';
 import { SPRING, SOFT, reducedMotion } from './page.js';
 
-const ORB = 52;
+const ORB = 60;
 const MARGIN = 10;
 
 export function createOverlay() {
