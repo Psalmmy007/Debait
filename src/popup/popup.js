@@ -1,0 +1,82 @@
+import '@fontsource-variable/inter';
+import '@fontsource-variable/bricolage-grotesque';
+import { MSG } from '../engine/contract.js';
+import { getSettings, setSettings, getRecentStats } from '../shared/storage.js';
+
+const $ = (s) => document.querySelector(s);
+const SRC_LABEL = { 'on-device': 'On-device', cloud: 'Cloud', mock: 'Mock engine', none: 'Not ready' };
+
+async function renderToday() {
+  const [today] = (await getRecentStats(1));
+  const bait = today.rage + today.fear + today.envy;
+  const pct = today.total ? Math.round((bait / today.total) * 100) : 0;
+  countUp($('#pct'), pct);
+  $('#sub').textContent = today.total
+    ? `of ${today.total} headline${today.total === 1 ? '' : 's'} today were bait`
+    : 'No headlines read yet today';
+  for (const k of ['rage', 'fear', 'envy', 'clean']) {
+    $(`#bar [data-k='${k}']`).style.width = today.total ? `${(today[k] / today.total) * 100}%` : '0';
+    $(`#legend [data-k='${k}'] b`).textContent = today[k];
+  }
+}
+
+async function renderEngine() {
+  const chip = $('#engine');
+  try {
+    const res = await chrome.runtime.sendMessage({ type: MSG.STATUS });
+    const s = res?.status || { source: 'none', ready: false };
+    chip.dataset.src = s.source;
+    chip.querySelector('span').textContent = SRC_LABEL[s.source] || s.source;
+    chip.title = s.message || '';
+    $('#turnOn').hidden = s.ready;
+  } catch {
+    chip.dataset.src = 'none';
+    chip.querySelector('span').textContent = 'Not ready';
+  }
+}
+
+async function renderSwitches() {
+  const settings = await getSettings();
+  for (const input of document.querySelectorAll('[data-setting]')) {
+    input.checked = !!settings[input.dataset.setting];
+    input.addEventListener('change', () => setSettings({ [input.dataset.setting]: input.checked }).then(renderEngine));
+  }
+}
+
+$('#debaitPage').addEventListener('click', async () => {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  try {
+    await chrome.tabs.sendMessage(tab.id, { type: 'debait/togglePage' });
+    window.close();
+  } catch {
+    $('#debaitPage').textContent = 'Debait does not run on this site yet';
+  }
+});
+
+// Must run from a click: Chrome only downloads Gemini Nano after a user gesture.
+$('#turnOn').addEventListener('click', async () => {
+  $('#turnOn').textContent = 'Turning on…';
+  await chrome.runtime.sendMessage({ type: MSG.INIT });
+  $('#turnOn').textContent = 'Turn on Debait';
+  renderEngine();
+});
+
+$('#openFacts').addEventListener('click', async () => {
+  const win = await chrome.windows.getCurrent();
+  await chrome.sidePanel.open({ windowId: win.id });
+  window.close();
+});
+
+function countUp(el, to) {
+  const start = performance.now();
+  const tick = (t) => {
+    const p = Math.min(1, (t - start) / 800);
+    el.textContent = String(Math.round(to * (1 - Math.pow(1 - p, 3))));
+    if (p < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+renderToday();
+renderEngine();
+renderSwitches();

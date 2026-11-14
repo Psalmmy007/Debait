@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Feedly Daily — Debait demo feed</title>
+  <style>
+    :root { --ink: #0f1419; --grey: #536471; --line: #eff3f4; --bg: #f7f9f9; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+    header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 24px; padding: 12px 24px; background: rgba(255,255,255,.85); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+    header b { font-size: 18px; letter-spacing: -.02em; }
+    header nav { display: flex; gap: 18px; color: var(--grey); font-size: 14px; }
+    header nav span:first-child { color: var(--ink); font-weight: 600; }
+    main { display: grid; grid-template-columns: minmax(0, 600px) 340px; gap: 28px; max-width: 1000px; margin: 24px auto; padding: 0 20px; }
+    @media (max-width: 960px) { main { grid-template-columns: 1fr; } }
+    h2.section { margin: 26px 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--grey); }
+    h2.section:first-child { margin-top: 0; }
+    .post { display: flex; gap: 12px; padding: 14px 16px; background: #fff; border: 1px solid var(--line); border-radius: 14px; margin-bottom: 10px; }
+    .avatar { width: 40px; height: 40px; flex: none; border-radius: 50%; }
+    .who { font-size: 14px; color: var(--grey); }
+    .who b { color: var(--ink); }
+    .post p { margin: 4px 0 8px; font-size: 15px; }
+    .meta { display: flex; gap: 26px; color: var(--grey); font-size: 13px; }
+    .videos { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+    .video .thumb { aspect-ratio: 16/9; border-radius: 12px; }
+    .video h3 { margin: 8px 0 2px; font-size: 15px; font-weight: 600; line-height: 1.3; }
+    .video .ch { font-size: 13px; color: var(--grey); }
+    aside .box { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+    aside article { padding: 12px 0; border-bottom: 1px solid var(--line); }
+    aside article:last-child { border-bottom: 0; }
+    aside .kick { font-size: 12px; color: #b80000; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+    aside a { color: inherit; text-decoration: none; }
+    aside h4 { margin: 4px 0 0; font: 600 17px/1.3 Georgia, 'Times New Roman', serif; }
+    .hint { margin: 14px 0 0; font-size: 12px; color: var(--grey); }
+  </style>
+</head>
+<body>
+  <header>
+    <b>feedly daily</b>
+    <nav><span>For you</span><span>Following</span><span>Videos</span><span>News</span></nav>
+  </header>
+
+  <main>
+    <section>
+      <h2 class="section">Posts</h2>
+
+      <div class="post">
+        <div class="avatar" style="background:linear-gradient(135deg,#ffb199,#ff0844)"></div>
+        <div>
+          <div class="who"><b>Politics Now</b> @politicsnow · 2h</div>
+          <p data-debait-headline>Senator DESTROYS reporter in brutal 30-second clip — you won't believe how it ends</p>
+          <div class="meta"><span>💬 4.1K</span><span>🔁 12K</span><span>♥ 48K</span></div>
+        </div>
+      </div>
+
+      <div class="post">
+        <div class="avatar" style="background:linear-gradient(135deg,#a1c4fd,#c2e9fb)"></div>
+        <div>
+          <div class="who"><b>Metro Desk</b> @metrodesk · 3h</div>
+          <p data-debait-headline>City council approves new bike lanes on Main Street</p>
+          <div class="meta"><span>💬 38</span><span>🔁 61</span><span>♥ 402</span></div>
+        </div>
+      </div>
+
+      <div class="post">
+        <div class="avatar" style="background:linear-gradient(135deg,#f6d365,#fda085)"></div>
+        <div>
+          <div class="who"><b>Wellness Daily</b> @wellnessdaily · 4h</div>
+          <p data-debait-headline>This common breakfast food is silently killing you</p>
+          <div class="meta"><span>💬 2.2K</span><span>🔁 9.8K</span><span>♥ 31K</span></div>
+        </div>
+      </div>
+
+      <div class="post">
+        <div class="avatar" style="background:linear-gradient(135deg,#d4fc79,#96e6a1)"></div>
+        <div>
+          <div class="who"><b>Hustle Hub</b> @hustlehub · 5h</div>
+          <p data-debait-headline>22-year-old retires as a millionaire while you're still stuck at your 9-to-5</p>
+          <div class="meta"><span>💬 1.7K</span><span>🔁 5.4K</span><span>♥ 22K</span></div>
+        </div>
+      </div>
+
+      <div class="post">
+        <div class="avatar" style="background:linear-gradient(135deg,#ff9a9e,#fecfef)"></div>
+        <div>
+          <div class="who"><b>The Unfiltered</b> @unfiltered · 6h</div>
+          <p data-debait-headline>The radical left's WAR on your car is here. They're coming for your engine next</p>
+          <div class="meta"><span>💬 9.3K</span><span>🔁 27K</span><span>♥ 64K</span></div>
+        </div>
+      </div>
+
+      <h2 class="section">Videos</h2>
+      <div class="videos">
+        <div class="video">
+          <div class="thumb" style="background:linear-gradient(135deg,#fa709a,#fee140)"></div>
+          <h3 data-debait-headline>I tried the diet doctors are TERRIFIED of (shocking results)</h3>
+          <div class="ch">Fit with Jay · 2.1M views</div>
+        </div>
+        <div class="video">
+          <div class="thumb" style="background:linear-gradient(135deg,#e0c3fc,#8ec5fc)"></div>
+          <h3 data-debait-headline>How I learned to bake sourdough in a week</h3>
+          <div class="ch">Slow Kitchen · 340K views</div>
+        </div>
+        <div class="video">
+          <div class="thumb" style="background:linear-gradient(135deg,#f093fb,#f5576c)"></div>
+          <h3 data-debait-headline>Billionaires don't want you to know this one secret</h3>
+          <div class="ch">Money Mindset · 5.6M views</div>
+        </div>
+        <div class="video">
+          <div class="thumb" style="background:linear-gradient(135deg,#ff0844,#ffb199)"></div>
+          <h3 data-debait-headline>Economy on the brink of TOTAL COLLAPSE — experts are panicking</h3>
+          <div class="ch">Market Alarm · 3.3M views</div>
+        </div>
+      </div>
+    </section>
+
+    <aside>
+      <h2 class="section">News</h2>
+      <div class="box">
+        <article><a href="#"><div class="kick">Sport</div><h4 data-debait-headline>Fans furious as star player SLAMS the coach in explosive rant</h4></a></article>
+        <article><a href="#"><div class="kick">Science</div><h4 data-debait-headline>Scientists map a new species of deep-sea coral off Indonesia</h4></a></article>
+        <article><a href="#"><div class="kick">Money</div><h4 data-debait-headline>Your neighbours are getting richer than you — here's why</h4></a></article>
+        <article><a href="#"><div class="kick">Local</div><h4 data-debait-headline>Local library extends weekend opening hours</h4></a></article>
+        <article><a href="#"><div class="kick">Health</div><h4 data-debait-headline>Deadly new virus could be in your home RIGHT NOW, warn experts</h4></a></article>
+      </div>
+      <p class="hint">Debait demo feed. All posts are made up.</p>
+    </aside>
+  </main>
+  <script type="module">
+    // ?preview = run the Debait UI here without the extension (for UI work).
+    if (new URLSearchParams(location.search).has('preview')) {
+      document.documentElement.dataset.debaitPreview = '';
+      import('./preview.js');
+    }
+  </script>
+</body>
+</html>

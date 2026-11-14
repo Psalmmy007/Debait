@@ -1,0 +1,7 @@
+node_modules/
+dist/
+public/fonts/
+.env
+.env.local
+src/engine/firebaseConfig.local.js
+.DS_Store
