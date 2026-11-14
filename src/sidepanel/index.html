@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Weekly Mind Facts</title>
+  <link rel="stylesheet" href="./sidepanel.css" />
+</head>
+<body>
+  <div class="label">
+    <h1>Mind Facts</h1>
+    <p class="period" id="period">Weekly · last 7 days</p>
+    <div class="rule thick"></div>
+
+    <div class="row big"><span>Headlines read</span><b id="total">0</b></div>
+    <div class="rule mid"></div>
+
+    <div class="row hero"><span>Bait</span><b><em id="baitPct">0</em>%</b></div>
+    <div class="rule"></div>
+
+    <div class="kinds" id="kinds">
+      <div class="row kind" data-k="rage"><span><i></i>Rage</span><span class="meter"><s></s></span><b>0%</b></div>
+      <div class="row kind" data-k="fear"><span><i></i>Fear</span><span class="meter"><s></s></span><b>0%</b></div>
+      <div class="row kind" data-k="envy"><span><i></i>Envy</span><span class="meter"><s></s></span><b>0%</b></div>
+      <div class="row kind" data-k="clean"><span><i></i>Clean</span><span class="meter"><s></s></span><b>0%</b></div>
+    </div>
+    <div class="rule mid"></div>
+
+    <h2>Bait by day</h2>
+    <div class="days" id="days"></div>
+    <p class="note" id="calmest"></p>
+    <div class="rule mid"></div>
+
+    <h2>Top bait sources</h2>
+    <ol class="sources" id="sources"></ol>
+    <div class="rule mid"></div>
+
+    <div class="row"><span>Headlines debaited</span><b id="debaited">0</b></div>
+    <div class="rule thick"></div>
+
+    <div class="tip" id="tip"></div>
+    <p class="foot">Counts stay on this device. Debait never uploads your browsing history.</p>
+  </div>
+
+  <button class="demo" id="seed">Load demo week</button>
+  <script type="module" src="./sidepanel.js"></script>
+</body>
+</html>

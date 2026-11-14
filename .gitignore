@@ -23,3 +23,9 @@ dist-ssr
 *.sln
 *.sw?
 .env.local
+
+# Debait extension
+public/fonts/
+.env
+src/engine/firebaseConfig.local.js
+dist-web

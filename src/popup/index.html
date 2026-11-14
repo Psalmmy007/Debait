@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Debait</title>
+  <link rel="stylesheet" href="./popup.css" />
+</head>
+<body>
+  <header>
+    <div class="brand"><div class="mini-orb"></div><b>Debait</b></div>
+    <span class="chip" id="engine" data-src="mock"><i></i><span>Checking…</span></span>
+  </header>
+
+  <section class="today">
+    <div class="kicker">Today</div>
+    <div class="big"><b id="pct">0</b><span>%</span></div>
+    <p id="sub">of your headlines were bait</p>
+    <div class="bar" id="bar">
+      <span data-k="rage"></span><span data-k="fear"></span><span data-k="envy"></span><span data-k="clean"></span>
+    </div>
+    <ul class="legend" id="legend">
+      <li data-k="rage"><i></i>Rage <b>0</b></li>
+      <li data-k="fear"><i></i>Fear <b>0</b></li>
+      <li data-k="envy"><i></i>Envy <b>0</b></li>
+      <li data-k="clean"><i></i>Clean <b>0</b></li>
+    </ul>
+  </section>
+
+  <div class="actions">
+    <button class="primary" id="debaitPage">Debait this page</button>
+    <button id="turnOn" hidden>Turn on Debait</button>
+  </div>
+
+  <section class="switches">
+    <label><span>Show the Debait ball<small>Floating orb you can drag anywhere</small></span><input type="checkbox" data-setting="showOrb" /><i></i></label>
+    <label><span>Show tags<small>Rage, Fear, Envy, Clean pills + highlights</small></span><input type="checkbox" data-setting="showTags" /><i></i></label>
+    <label><span>Debait automatically<small>Rewrite bait as soon as it appears</small></span><input type="checkbox" data-setting="autoDebait" /><i></i></label>
+    <label><span>Local only<small>Never send headlines to the cloud</small></span><input type="checkbox" data-setting="localOnly" /><i></i></label>
+  </section>
+
+  <button class="link" id="openFacts">Open Weekly Mind Facts →</button>
+
+  <script type="module" src="./popup.js"></script>
+</body>
+</html>
