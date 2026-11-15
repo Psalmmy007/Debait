@@ -47,8 +47,37 @@ const adapters = [
   },
 ];
 
+// ---------- every other website ----------
+// Finds headline-like text: article headings and headline links, skipping menus, footers,
+// buttons and forms. Keeps the innermost match (a heading inside a link, not both).
+const SKIP = 'nav, footer, header nav, aside nav, [role="navigation"], [role="menu"], [role="banner"] nav, form, button, [contenteditable="true"], debait-tag, debait-root, [aria-hidden="true"], code, pre';
+const CANDIDATES = 'h1, h2, h3, [role="heading"], article a[href], main li a[href], [class*="headline" i], [class*="title" i] > a[href]';
+
+function looksLikeHeadline(el) {
+  if (el.closest(SKIP)) return false;
+  if (!el.offsetParent && getComputedStyle(el).position !== 'fixed') return false; // hidden
+  const t = textOf(el);
+  if (t.length < 25 || t.length > 200) return false;
+  const words = t.split(' ').length;
+  if (words < 4 || words > 32) return false;
+  if (/^(sign in|log in|subscribe|cookie|accept|skip to|menu|share|read more)/i.test(t)) return false;
+  return true;
+}
+
+const generic = {
+  name: 'generic',
+  match: () => true,
+  find: (root) => {
+    const found = [...root.querySelectorAll(CANDIDATES)].filter(looksLikeHeadline);
+    const set = new Set(found);
+    // drop an element if another match sits inside it (keep the innermost)
+    const inner = found.filter((el) => !found.some((o) => o !== el && el.contains(o)));
+    return inner.filter((el) => set.has(el)).slice(0, 150);
+  },
+};
+
 export function getAdapter(hostname) {
-  return adapters.find((a) => a.match(hostname)) || null;
+  return adapters.find((a) => a.match(hostname)) || generic;
 }
 
 export { textOf };

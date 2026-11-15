@@ -10,7 +10,7 @@ const CANNED = {
       { word: 'brutal', why: 'violence framing' },
       { word: "you won't believe", why: 'curiosity bait' },
     ],
-    honest_rewrite: "Senator disagrees with a reporter's question in a 30-second exchange",
+    honest_rewrite: "Senator pushes back on reporter in tense 30-second clip",
   },
   'this common breakfast food is silently killing you': {
     kind: 'fear', score: 86,
@@ -18,7 +18,7 @@ const CANNED = {
       { word: 'silently killing you', why: 'fear of hidden harm' },
       { word: 'common', why: 'makes it feel like it applies to you' },
     ],
-    honest_rewrite: 'Study links very high intake of processed cereals to modest health risks',
+    honest_rewrite: "This common breakfast food may carry health risks, a study suggests",
   },
   "22-year-old retires as a millionaire while you're still stuck at your 9-to-5": {
     kind: 'envy', score: 78,
@@ -26,7 +26,7 @@ const CANNED = {
       { word: 'millionaire', why: 'status envy' },
       { word: "while you're still stuck", why: 'comparison jab aimed at you' },
     ],
-    honest_rewrite: '22-year-old says they saved aggressively and invested early',
+    honest_rewrite: "22-year-old retires early after years of saving, while most still work 9-to-5",
   },
   "the radical left's war on your car is here. they're coming for your engine next": {
     kind: 'rage', score: 94,
@@ -35,7 +35,7 @@ const CANNED = {
       { word: 'WAR', why: 'conflict framing' },
       { word: 'coming for your', why: 'personal threat' },
     ],
-    honest_rewrite: 'Proposed city rules would phase in stricter emissions limits for new cars',
+    honest_rewrite: "New car emissions rules are coming, and critics say engines could be next",
   },
   'i tried the diet doctors are terrified of (shocking results)': {
     kind: 'fear', score: 72,
@@ -43,7 +43,7 @@ const CANNED = {
       { word: 'TERRIFIED', why: 'borrowed fear from authority' },
       { word: 'shocking', why: 'shock bait' },
     ],
-    honest_rewrite: 'I followed a low-carb diet for 30 days — here is what changed',
+    honest_rewrite: "I tried the diet doctors debate (my honest results)",
   },
   "billionaires don't want you to know this one secret": {
     kind: 'envy', score: 83,
@@ -52,7 +52,7 @@ const CANNED = {
       { word: "don't want you to know", why: 'conspiracy hook' },
       { word: 'secret', why: 'curiosity bait' },
     ],
-    honest_rewrite: 'A simple explanation of how index funds work',
+    honest_rewrite: "One investing habit wealthy people often use",
   },
   'economy on the brink of total collapse — experts are panicking': {
     kind: 'fear', score: 88,
@@ -61,7 +61,7 @@ const CANNED = {
       { word: 'TOTAL COLLAPSE', why: 'doom exaggeration' },
       { word: 'panicking', why: 'contagious fear' },
     ],
-    honest_rewrite: 'Economists expect slower growth next quarter; views on risk vary',
+    honest_rewrite: "Economy could slow down, some experts warn",
   },
   'fans furious as star player slams the coach in explosive rant': {
     kind: 'rage', score: 76,
@@ -70,7 +70,7 @@ const CANNED = {
       { word: 'SLAMS', why: 'outrage trigger' },
       { word: 'explosive rant', why: 'drama framing' },
     ],
-    honest_rewrite: "Player publicly criticizes the coach's decisions after Sunday's loss",
+    honest_rewrite: "Fans react as star player criticizes the coach after the game",
   },
   "your neighbours are getting richer than you — here's why": {
     kind: 'envy', score: 69,
@@ -78,7 +78,7 @@ const CANNED = {
       { word: 'richer than you', why: 'comparison jab aimed at you' },
       { word: "here's why", why: 'curiosity bait' },
     ],
-    honest_rewrite: 'Average household income in the region rose 3% last year',
+    honest_rewrite: "Your neighbours' incomes are rising — here's why",
   },
   'deadly new virus could be in your home right now, warn experts': {
     kind: 'fear', score: 90,
@@ -86,8 +86,20 @@ const CANNED = {
       { word: 'Deadly', why: 'fear trigger' },
       { word: 'in your home RIGHT NOW', why: 'false urgency, aimed at you' },
     ],
-    honest_rewrite: 'Health officials share tips for reducing common household germs',
+    honest_rewrite: "New virus is spreading; experts explain how to stay safe at home",
   },
+};
+
+// Calm replacements: same meaning, no emotional charge ('' = drop the hook entirely).
+const CALM = {
+  destroy: 'criticize', destroys: 'criticizes', destroying: 'criticizing', slams: 'criticizes',
+  furious: 'upset', outrage: 'criticism', disgusting: 'controversial', humiliates: 'challenges',
+  'war on': 'debate over', betrayal: 'reversal', radical: '', owned: 'answered',
+  'killing you': 'linked to health risks', deadly: 'serious', terrifying: 'concerning', warning: 'note',
+  collapse: 'slowdown', crisis: 'problem', shocking: 'surprising', danger: 'risk', panic: 'concern',
+  'right now': '', millionaire: 'wealthy', billionaire: 'very wealthy person', 'richer than you': 'earning more',
+  secret: 'tip', "don't want you to know": 'rarely mention', luxury: 'high-end', 'while you': 'while others',
+  "you won't believe": '',
 };
 
 // Simple word list for headlines that aren't in the demo.
@@ -142,16 +154,19 @@ function heuristic(text) {
     return { kind: 'clean', score: Math.min(18, raw), triggers: [], honest_rewrite: text };
   }
 
-  // Rough rewrite: drop the trigger words, calm the caps. The real model does this properly.
+  // Rewrite: keep the sentence, swap each loaded word for a calm one, drop pure hooks.
   let rewrite = text;
   for (const t of triggers) {
-    rewrite = rewrite.replace(new RegExp(t.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), '');
+    const calm = CALM[t.word.toLowerCase()];
+    const re = new RegExp(t.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    if (calm !== undefined) rewrite = rewrite.replace(re, calm);
   }
   rewrite = rewrite
-    .replace(/!+/g, '.')
-    .replace(/\b[A-Z]{3,}\b/g, (w) => w.toLowerCase())
+    .replace(/!+/g, '')
+    .replace(/\b[A-Z]{3,}\b/g, (w) => w.charAt(0) + w.slice(1).toLowerCase())
+    .replace(/\s+([,.:;—-])/g, '$1')
+    .replace(/^[\s,.:;—-]+|[\s,:;—-]+$/g, '')
     .replace(/\s{2,}/g, ' ')
-    .replace(/\s+([,.—-])/g, '$1')
     .trim();
   if (!rewrite) rewrite = text;
   rewrite = rewrite.charAt(0).toUpperCase() + rewrite.slice(1);

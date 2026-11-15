@@ -116,6 +116,16 @@ export function openCard(layer, rec, rect, { onDebait, onRestore }) {
     countUp(num, r.score, 900, 120);
   }
 
+  // a gentle 3D tilt that follows the cursor
+  el.addEventListener('pointermove', (e) => {
+    if (reducedMotion()) return;
+    const r = el.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width - 0.5;
+    const y = (e.clientY - r.top) / r.height - 0.5;
+    el.style.transform = `perspective(900px) rotateX(${(-y * 4).toFixed(2)}deg) rotateY(${(x * 4).toFixed(2)}deg)`;
+  });
+  el.addEventListener('pointerleave', () => { el.style.transform = ''; });
+
   el.addEventListener('click', (e) => {
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (act === 'debait') { closeCard(); onDebait(); }

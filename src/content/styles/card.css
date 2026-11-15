@@ -132,3 +132,24 @@
   color: #09090b;
 }
 .btn svg { width: 12px; height: 12px; }
+
+/* ---- depth pass: roomier glass card ---- */
+.card {
+  width: 384px;
+  padding: 22px;
+  border-radius: 26px;
+  background:
+    radial-gradient(120% 60% at 20% 0%, rgba(255, 255, 255, 0.07), transparent 60%),
+    rgba(14, 14, 17, 0.9);
+  backdrop-filter: blur(24px) saturate(1.5);
+  font-size: 13.5px;
+  line-height: 1.5;
+  transition: transform 0.25s var(--out);
+  will-change: transform;
+}
+.card-headline { margin-top: 18px; font-size: 18.5px; line-height: 1.4; }
+.card-section { margin-top: 22px; }
+.ingredients li { padding: 10px 0; }
+.honest { padding: 15px 16px 16px; border-radius: 16px; font-size: 16px; line-height: 1.45; }
+.card-foot { margin-top: 20px; }
+.btn { height: 36px; padding: 0 16px; border-radius: 999px; }

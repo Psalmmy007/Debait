@@ -8,7 +8,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
     try {
       if (msg.type === MSG.SCORE) {
-        const raw = await engine.scoreHeadlines(msg.texts, { localOnly: msg.localOnly });
+        const raw = await engine.scoreHeadlines(msg.texts, { localOnly: msg.localOnly, debugToken: msg.debugToken });
         const results = msg.texts.map((t, i) => normalizeResult(raw?.[i], t));
         sendResponse({ ok: true, results });
       } else if (msg.type === MSG.STATUS) {

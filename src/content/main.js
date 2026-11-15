@@ -7,6 +7,8 @@ import { createOverlay, createOrb, playRipple } from './ui/overlay.js';
 import { createTag } from './ui/tag.js';
 import { openCard, closeCard } from './ui/card.js';
 import { createSettingsPanel } from './ui/settings.js';
+import { createVoice } from './ui/voice.js';
+import { setSettings } from '../shared/storage.js';
 
 const BATCH = 8;
 const MIN_LEN = 12;
@@ -23,6 +25,11 @@ if (adapter && !window.__debaitLoaded && !(isPreviewPage && chrome.runtime?.id))
 
 async function start() {
   let settings = await getSettings();
+  const host = location.hostname.replace(/^www./, '');
+  onSettingsChange((next) => {
+    if (next.disabledSites.includes(host) !== settings.disabledSites.includes(host)) location.reload();
+  });
+  if (settings.disabledSites.includes(host)) return; // switched off for this site
   injectPageStyles();
 
   /** @type {Map<Element, {el, text, result, state, tag, original}>} */
@@ -43,6 +50,43 @@ async function start() {
     onOpenChange: (open) => orb.setPanelOpen(open),
   });
   orb.setVisible(settings.showOrb);
+
+  // ---------- voice mode ----------
+  const voice = createVoice({ onCommand: onVoice, onState: (s) => orb.setVoice(s) });
+  if (settings.voice) voice.start();
+
+  function kinds() {
+    const k = { rage: 0, fear: 0, envy: 0 };
+    for (const r of records.values()) if (r.result && r.state === 'scored' && r.result.kind !== 'clean') k[r.result.kind]++;
+    return k;
+  }
+  async function onVoice(cmd) {
+    const { bait, debaited, scanned } = pageCounts();
+    if (cmd === 'debait') {
+      if (bait > 0) {
+        toggleDebaitPage(orb.center());
+        voice.say(`Done. I calmed down ${bait} headline${bait === 1 ? '' : 's'}.`);
+      } else voice.say(debaited ? 'This page is already calm.' : "I don't see any bait on this page.");
+    } else if (cmd === 'restore') {
+      if (debaited > 0 && bait === 0) { toggleDebaitPage(orb.center()); voice.say('Here are the original headlines.'); }
+      else voice.say('Nothing to undo right now.');
+    } else if (cmd === 'summary') {
+      if (!scanned) return voice.say("I'm still reading this page.");
+      const k = kinds();
+      const parts = [['rage', k.rage], ['fear', k.fear], ['envy', k.envy]].filter(([, n]) => n).map(([w, n]) => `${n} ${w}`);
+      voice.say(bait
+        ? `I read ${scanned} headlines. ${bait} are bait: ${parts.join(', ')}. Say debait to calm them down.`
+        : debaited ? `I read ${scanned} headlines, and I've already calmed the bait down.` : `I read ${scanned} headlines. This page looks clean.`);
+    } else if (cmd === 'settings') {
+      panel.open();
+      voice.say('Here are your settings.');
+    } else if (cmd === 'off') {
+      await voice.say('Okay, I stopped listening.');
+      setSettings({ voice: false });
+    } else if (cmd === 'hello') {
+      voice.say("Hi, I'm Debait. You can say: debait this page, undo, or how bad is this page.");
+    }
+  }
 
   // ---------- helpers ----------
   const paint = (hotRecord) => paintHighlights(records.values(), { enabled: settings.showTags, hotRecord });
@@ -214,6 +258,10 @@ async function start() {
     const prev = settings;
     settings = next;
     orb.setVisible(next.showOrb);
+    if (prev.voice !== next.voice) {
+      if (next.voice) { voice.start(); voice.say("I'm listening. Say debait this page, or ask how bad this page is."); }
+      else voice.stop();
+    }
     if (prev.showTags !== next.showTags) {
       for (const r of records.values()) r.tag?.setVisible(next.showTags);
       paint();

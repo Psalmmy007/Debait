@@ -31,6 +31,8 @@ export function createOverlay() {
         <span class="orb-body"><span class="orb-fallback"></span><canvas class="orb-gl"></canvas></span>
       </button>
       <span class="orb-badge"></span>
+      <span class="orb-mic" aria-hidden="true"></span>
+      <div class="voice-bubble" role="status" aria-live="polite"></div>
       <span class="orb-tip"></span>
     </div>`);
   document.documentElement.appendChild(host);
@@ -263,6 +265,31 @@ export function createOrb(overlay, { onClick, onDoubleClick }) {
       }
     },
     setPanelOpen(open) { wrap.classList.toggle('panel-open', open); },
+    /** voice state: idle | listening | heard | speaking | error */
+    setVoice({ mode, text }) {
+      const bubble = wrap.querySelector('.voice-bubble');
+      wrap.dataset.voice = mode;
+      gl?.setBoost(mode === 'speaking' ? 2.6 : mode === 'listening' ? 1.4 : 1);
+      if (mode === 'idle') { bubble.classList.remove('show'); return; }
+      const label = { listening: 'Listening', heard: 'You said', speaking: 'Debait', error: 'Voice' }[mode];
+      bubble.replaceChildren();
+      const b = document.createElement('b');
+      b.textContent = label;
+      bubble.append(b);
+      if (mode === 'listening') {
+        const w = document.createElement('span');
+        w.className = 'wave';
+        for (let i = 0; i < 5; i++) w.append(document.createElement('i'));
+        bubble.append(w);
+      } else if (text) {
+        const p = document.createElement('span');
+        p.textContent = mode === 'heard' ? `“${text}”` : text;
+        bubble.append(p);
+      }
+      bubble.classList.add('show');
+      clearTimeout(this._vt);
+      if (mode === 'heard' || mode === 'error') this._vt = setTimeout(() => bubble.classList.remove('show'), 4000);
+    },
     pulse() {
       gl?.pulse();
       if (reducedMotion()) return;

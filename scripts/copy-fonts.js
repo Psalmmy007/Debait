@@ -3,6 +3,7 @@
 import { copyFileSync, mkdirSync } from 'node:fs';
 
 const fonts = {
+  'jakarta.woff2': '@fontsource-variable/plus-jakarta-sans/files/plus-jakarta-sans-latin-wght-normal.woff2',
   'inter.woff2': '@fontsource-variable/inter/files/inter-latin-wght-normal.woff2',
   'bricolage.woff2': '@fontsource-variable/bricolage-grotesque/files/bricolage-grotesque-latin-wght-normal.woff2',
   'newsreader.woff2': '@fontsource-variable/newsreader/files/newsreader-latin-wght-normal.woff2',

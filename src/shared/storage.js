@@ -5,6 +5,8 @@ export const DEFAULT_SETTINGS = {
   showTags: true,     // Rage / Fear / Envy / Clean pills
   autoDebait: false,  // rewrite bait as soon as it's scored
   localOnly: false,   // never use the cloud
+  voice: false,       // talk to Debait
+  disabledSites: [],  // hosts where Debait stays off
 };
 
 export async function getSettings() {

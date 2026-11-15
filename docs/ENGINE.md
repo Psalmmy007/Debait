@@ -74,3 +74,14 @@ Shapes are in `src/engine/contract.js`. One result looks like:
 - **On-device is single-turn.** Send each batch (≤ 8 headlines) as one prompt that asks for a JSON array.
 - **Local only:** when `localOnly` is true, never fall back to the cloud. Return `kind: "clean"`
   with a `source` of `"on-device"`, or throw if the model is unavailable.
+
+## Update: the engine is wired (Firebase AI Logic hybrid)
+
+`src/engine/firebaseEngine.js` now calls Gemini through Firebase AI Logic with
+`InferenceMode.PREFER_ON_DEVICE` (Gemini Nano when available, `gemini-3.5-flash-lite` in the cloud),
+or `ONLY_ON_DEVICE` when "Local only" is on. If a call fails, Debait falls back to the mock engine.
+
+**App Check is enforced on the project, so one step is needed:** open the Debait popup. It shows an
+App Check debug token with a Copy button. Add that token in Firebase console → App Check → Apps →
+(the web app) → Manage debug tokens. After that, Gemini answers and the popup chip says
+"On-device AI" or "Cloud AI".

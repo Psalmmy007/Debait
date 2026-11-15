@@ -1,3 +1,4 @@
+import '@fontsource-variable/plus-jakarta-sans';
 import '@fontsource-variable/inter';
 import '@fontsource-variable/bricolage-grotesque';
 import { MSG } from '../engine/contract.js';
@@ -29,6 +30,10 @@ async function renderEngine() {
     chip.querySelector('span').textContent = SRC_LABEL[s.source] || s.source;
     chip.title = s.message || '';
     $('#turnOn').hidden = s.ready;
+    if (s.needsAppCheck && res.debugToken) {
+      $('#setup').hidden = false;
+      $('#token').textContent = res.debugToken;
+    }
   } catch {
     chip.dataset.src = 'none';
     chip.querySelector('span').textContent = 'Not ready';
@@ -76,6 +81,28 @@ function countUp(el, to) {
   };
   requestAnimationFrame(tick);
 }
+
+$('#copyToken').addEventListener('click', async () => {
+  await navigator.clipboard.writeText($('#token').textContent);
+  $('#copyToken').textContent = 'Copied';
+});
+
+// Run on this site
+(async () => {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  let host = '';
+  try { host = new URL(tab.url).hostname.replace(/^www./, ''); } catch { /* chrome:// pages */ }
+  if (!host) { $('.site').hidden = true; return; }
+  $('#host').textContent = host;
+  const s = await getSettings();
+  $('#siteOn').checked = !s.disabledSites.includes(host);
+  $('#siteOn').addEventListener('change', async () => {
+    const cur = await getSettings();
+    const off = new Set(cur.disabledSites);
+    if ($('#siteOn').checked) off.delete(host); else off.add(host);
+    await setSettings({ disabledSites: [...off] });
+  });
+})();
 
 renderToday();
 renderEngine();

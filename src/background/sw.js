@@ -26,9 +26,18 @@ async function ensureOffscreen() {
   await creating;
 }
 
+// The App Check debug token for this install (register it in Firebase once).
+async function debugToken() {
+  const { appCheckDebugToken } = await chrome.storage.local.get('appCheckDebugToken');
+  if (appCheckDebugToken) return appCheckDebugToken;
+  const token = crypto.randomUUID();
+  await chrome.storage.local.set({ appCheckDebugToken: token });
+  return token;
+}
+
 async function toEngine(payload) {
   await ensureOffscreen();
-  const res = await chrome.runtime.sendMessage({ target: 'offscreen', ...payload });
+  const res = await chrome.runtime.sendMessage({ target: 'offscreen', debugToken: await debugToken(), ...payload });
   if (!res?.ok) throw new Error(res?.error || 'engine error');
   return res;
 }
@@ -86,10 +95,15 @@ async function scoreTexts(texts, host) {
   if (missing.length) {
     const { localOnly } = await getSettings();
     const { results } = await toEngine({ type: MSG.SCORE, texts: missing, localOnly });
-    missing.forEach((t, i) => c.set(t, results[i]));
+    const fresh = new Map();
+    missing.forEach((t, i) => {
+      fresh.set(t, results[i]);
+      if (results[i].source !== 'mock') c.set(t, results[i]); // never cache backup-engine guesses
+    });
+    var freshResults = fresh;
     saveCacheSoon();
   }
-  const out = texts.map((t) => c.get(t));
+  const out = texts.map((t) => c.get(t) || freshResults?.get(t));
   recordStats(out, host);
   return { results: out, cacheHits: texts.length - missing.length };
 }
@@ -105,7 +119,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: true, ...(await scoreTexts(msg.texts, host)) });
       } else if (msg.type === MSG.STATUS) {
         const { localOnly } = await getSettings();
-        sendResponse(await toEngine({ type: MSG.STATUS, localOnly }));
+        const res = await toEngine({ type: MSG.STATUS, localOnly });
+        sendResponse({ ...res, debugToken: await debugToken() });
       } else if (msg.type === MSG.INIT) {
         sendResponse(await toEngine({ type: MSG.INIT }));
       } else if (msg.type === 'debait/debaited') {

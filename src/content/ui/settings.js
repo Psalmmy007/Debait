@@ -9,6 +9,7 @@ import { setHTML } from './html.js';
 const OUT = 'cubic-bezier(0.16, 1, 0.3, 1)';
 
 const SWITCHES = [
+  { key: 'voice', title: 'Talk to Debait', hint: 'Say “debait this page”, “undo” or “how bad is this page?”' },
   { key: 'showTags', title: 'Show tags', hint: 'Labels and highlights on headlines' },
   { key: 'autoDebait', title: 'Debait automatically', hint: 'Rewrite bait the moment it appears' },
   { key: 'localOnly', title: 'Local only', hint: 'Never send headlines to the cloud' },
@@ -88,6 +89,11 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
 
       <section class="p-sec">
         <h4>Settings</h4>
+          <label class="p-row">
+            <span>Run on this site<small>${location.hostname.replace(/^www\./, '')}</small></span>
+            <input type="checkbox" data-site ${settings.disabledSites.includes(location.hostname.replace(/^www\./, '')) ? '' : 'checked'} />
+            <span class="sw"></span>
+          </label>
         ${SWITCHES.map((s) => `
           <label class="p-row">
             <span>${s.title}<small>${s.hint}</small></span>
@@ -183,6 +189,14 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
   }
 
   async function onChange(e) {
+    if (e.target.dataset?.site !== undefined) {
+      const host = location.hostname.replace(/^www\./, '');
+      const cur = await getSettings();
+      const off = new Set(cur.disabledSites);
+      if (e.target.checked) off.delete(host); else off.add(host);
+      await setSettings({ disabledSites: [...off] });
+      return;
+    }
     const key = e.target.dataset?.setting;
     if (!key) return;
     await setSettings({ [key]: e.target.checked });

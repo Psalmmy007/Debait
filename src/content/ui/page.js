@@ -19,6 +19,7 @@ export function injectPageStyles() {
   const style = document.createElement('style');
   style.id = 'debait-page-styles';
   style.textContent = `
+    @font-face { font-family: 'Debait Sans'; src: url('${url('jakarta.woff2')}') format('woff2'); font-weight: 200 800; font-display: swap; }
     @font-face { font-family: 'Debait Inter'; src: url('${url('inter.woff2')}') format('woff2'); font-weight: 100 900; font-display: swap; }
     @font-face { font-family: 'Debait Bricolage'; src: url('${url('bricolage.woff2')}') format('woff2'); font-weight: 200 800; font-display: swap; }
     @font-face { font-family: 'Debait Newsreader'; src: url('${url('newsreader.woff2')}') format('woff2'); font-weight: 200 800; font-display: swap; }

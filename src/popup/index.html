@@ -11,6 +11,14 @@
     <span class="chip" id="engine" data-src="mock"><i></i><span>Checking…</span></span>
   </header>
 
+  <section class="setup" id="setup" hidden>
+    <b>One step to turn on Gemini</b>
+    <p>Send this code to your teammate. They add it in Firebase console → App Check → Apps → Manage debug tokens. Until then Debait uses its backup engine.</p>
+    <div class="token"><code id="token"></code><button id="copyToken">Copy</button></div>
+  </section>
+
+  <label class="site"><span>Run on <b id="host">this site</b></span><input type="checkbox" id="siteOn" checked /><i></i></label>
+
   <section class="today">
     <div class="kicker">Today</div>
     <div class="big"><b id="pct">0</b><span>%</span></div>
@@ -32,6 +40,7 @@
   </div>
 
   <section class="switches">
+    <label><span>Talk to Debait<small>Voice commands, with a spoken reply</small></span><input type="checkbox" data-setting="voice" /><i></i></label>
     <label><span>Show the orb<small>Floating sphere you can drag anywhere</small></span><input type="checkbox" data-setting="showOrb" /><i></i></label>
     <label><span>Show tags<small>Labels and highlights on headlines</small></span><input type="checkbox" data-setting="showTags" /><i></i></label>
     <label><span>Debait automatically<small>Rewrite bait as soon as it appears</small></span><input type="checkbox" data-setting="autoDebait" /><i></i></label>

@@ -2,15 +2,8 @@ import { defineManifest } from '@crxjs/vite-plugin';
 import pkg from './package.json' with { type: 'json' };
 
 // Sites where Debait runs. localhost = the demo feed (npm run demo).
-export const SITES = [
-  'https://x.com/*',
-  'https://twitter.com/*',
-  'https://www.youtube.com/*',
-  'https://www.bbc.com/*',
-  'https://www.bbc.co.uk/*',
-  'http://localhost/*',
-  'http://127.0.0.1/*',
-];
+// Debait runs on every website (tuned finders for X, YouTube and BBC; a general one elsewhere).
+export const SITES = ['http://*/*', 'https://*/*'];
 
 export default defineManifest({
   manifest_version: 3,
