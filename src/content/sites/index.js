@@ -65,11 +65,27 @@ function looksLikeHeadline(el) {
   return true;
 }
 
+// post text on the big social sites (their own markup, checked first)
+const SOCIAL = [
+  'shreddit-post a[slot="title"]', '[id^="post-title"]', 'h3._eYtD2XCVieq6emjKBH3m',            // Reddit
+  'div[data-ad-preview="message"]', 'div[data-ad-comet-preview="message"]',                    // Facebook
+  '[data-e2e="video-desc"]', '[data-e2e="browse-video-desc"]', '[data-e2e="search-card-desc"]', // TikTok
+  '.update-components-text', '.feed-shared-update-v2__description',                            // LinkedIn
+  'article h1', 'h1._ap3a', 'span._ap3a._aaco',                                                 // Instagram
+  'span[dir="auto"] > span[dir="auto"]',                                                       // Threads / Meta
+].join(', ');
+function looksLikePost(el) {
+  if (el.closest(SKIP)) return false;
+  const t = textOf(el);
+  return t.length >= 15 && t.length <= 320 && t.split(' ').length >= 3;
+}
+
 const generic = {
   name: 'generic',
   match: () => true,
   find: (root) => {
-    const found = [...root.querySelectorAll(CANDIDATES)].filter(looksLikeHeadline);
+    const social = [...root.querySelectorAll(SOCIAL)].filter(looksLikePost);
+    const found = [...social, ...[...root.querySelectorAll(CANDIDATES)].filter(looksLikeHeadline)];
     const set = new Set(found);
     // drop an element if another match sits inside it (keep the innermost)
     const inner = found.filter((el) => !found.some((o) => o !== el && el.contains(o)));

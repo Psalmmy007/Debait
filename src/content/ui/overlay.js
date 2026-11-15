@@ -48,7 +48,7 @@ export function createOverlay() {
 // ============================================================
 // ORB: drag anywhere, click = Debait page, double-click = settings
 // ============================================================
-export function createOrb(overlay, { onClick, onDoubleClick }) {
+export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
   const wrap = overlay.orbWrap;
   const orb = wrap.querySelector('.orb');
   const badge = wrap.querySelector('.orb-badge');
@@ -202,20 +202,20 @@ export function createOrb(overlay, { onClick, onDoubleClick }) {
   orb.addEventListener('pointerup', release);
   orb.addEventListener('pointercancel', release);
 
-  // One click = Debait the page, double-click = settings.
-  // A single click waits a moment to make sure it isn't the start of a double-click.
+  // 1 click = Debait the page, 2 clicks = settings, 3 clicks = talk to Debait (voice call).
+  // Waits a moment after the last click to count them.
   let clickTimer = null;
+  let clicks = 0;
   function tap() {
-    if (clickTimer) {
-      clearTimeout(clickTimer);
-      clickTimer = null;
-      onDoubleClick(center());
-    } else {
-      clickTimer = setTimeout(() => {
-        clickTimer = null;
-        onClick(center());
-      }, 230);
-    }
+    clicks++;
+    clearTimeout(clickTimer);
+    clickTimer = setTimeout(() => {
+      const n = clicks;
+      clicks = 0;
+      if (n >= 3) onTripleClick?.(center());
+      else if (n === 2) onDoubleClick(center());
+      else onClick(center());
+    }, 260);
   }
   orb.addEventListener('contextmenu', (e) => {
     e.preventDefault();
@@ -233,7 +233,7 @@ export function createOrb(overlay, { onClick, onDoubleClick }) {
     return { x: pos.x + ORB / 2, y: pos.y + ORB / 2 };
   }
 
-  const HINT = '<em><kbd>2×</kbd> click for settings</em>';
+  const HINT = '<em><kbd>2×</kbd> settings &nbsp; <kbd>3×</kbd> talk to Debait</em>';
   let lastCount = -1;
   return {
     center,

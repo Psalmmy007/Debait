@@ -41,6 +41,13 @@ async function start() {
   const orb = createOrb(overlay, {
     onClick: (origin) => toggleDebaitPage(origin),
     onDoubleClick: () => { closeCard(); panel.toggle(); },
+    onTripleClick: async () => {
+      closeCard();
+      panel.close();
+      const s = await getSettings();
+      await setSettings({ voice: !s.voice });
+      if (s.voice) onCallState({ state: 'ended' });
+    },
   });
   const panel = createSettingsPanel(overlay.panelLayer, {
     getPage: pageCounts,
@@ -182,12 +189,16 @@ async function start() {
 
   // ---------- scoring ----------
   let flushTimer = null;
+  // throttle, not debounce: busy pages that never stop changing must still get scored
   function flushSoon() {
-    clearTimeout(flushTimer);
-    flushTimer = setTimeout(flush, 120);
+    if (flushTimer || flushing) return;
+    flushTimer = setTimeout(() => { flushTimer = null; flush(); }, 120);
   }
+  let flushing = false;
 
   async function flush() {
+    if (flushing) return;
+    flushing = true;
     while (queue.length) {
       const batch = queue.splice(0, BATCH);
       inflight++;
@@ -206,6 +217,7 @@ async function start() {
         inflight--;
       }
     }
+    flushing = false;
     paint();
     refreshOrb();
   }
@@ -302,8 +314,10 @@ async function start() {
   // ---------- go ----------
   scan();
   let scanTimer = null;
-  new MutationObserver(() => {
-    clearTimeout(scanTimer);
-    scanTimer = setTimeout(scan, 400);
-  }).observe(document.body, { childList: true, subtree: true, characterData: true });
+  // rescan at most every 600ms while the page changes (infinite scroll, live updates)
+  new MutationObserver((muts) => {
+    if (scanTimer) return;
+    if (muts.every((m) => m.target.nodeName === 'DEBAIT-TAG' || m.target.closest?.('debait-tag'))) return;
+    scanTimer = setTimeout(() => { scanTimer = null; scan(); }, 600);
+  }).observe(document.body, { childList: true, subtree: true });
 }

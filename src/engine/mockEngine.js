@@ -131,9 +131,10 @@ function heuristic(text) {
   const totals = { rage: 0, fear: 0, envy: 0 };
   const triggers = [];
 
-  for (const [phrase, kind, why, weight] of LEXICON) {
+  const byLength = [...LEXICON].sort((a, b) => b[0].length - a[0].length);
+  for (const [phrase, kind, why, weight] of byLength) {
     const i = lower.indexOf(phrase);
-    if (i !== -1 && !triggers.some((t) => t.word.toLowerCase().includes(phrase))) {
+    if (i !== -1 && !triggers.some((t) => t.word.toLowerCase().includes(phrase) || phrase.includes(t.word.toLowerCase()))) {
       totals[kind] += weight;
       triggers.push({ word: text.slice(i, i + phrase.length), why });
     }
