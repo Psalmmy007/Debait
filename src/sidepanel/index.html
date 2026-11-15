@@ -6,16 +6,37 @@
   <link rel="stylesheet" href="./sidepanel.css" />
 </head>
 <body>
+  <!-- soft moving light behind the glass -->
+  <div class="glow" aria-hidden="true"><i></i><i></i><i></i></div>
+
+  <header class="top">
+    <div class="brand"><span class="logo"></span><div><b>Weekly Mind Facts</b><small id="period">Last 7 days</small></div></div>
+    <span class="real" id="realChip">Real numbers</span>
+  </header>
+
   <p class="sample-note">Sample week: made-up numbers, not your reading.</p>
-  <div class="label">
+
+  <!-- shown when there are no real numbers yet -->
+  <section class="empty-state glass">
+    <h2>Your label is empty, for now</h2>
+    <p>Debait only counts headlines that Gemini actually checked, so these numbers are always real.</p>
+    <ol>
+      <li>Make sure Gemini is on (open the Debait popup).</li>
+      <li>Browse X, YouTube or the news as usual.</li>
+      <li>Come back here: your week fills in by itself.</li>
+    </ol>
+  </section>
+
+  <main class="label glass">
     <h1>Mind Facts</h1>
-    <p class="period" id="period">Weekly · last 7 days</p>
+    <p class="serving">Serving size: your feed this week</p>
     <div class="rule thick"></div>
 
-    <div class="row big"><span>Headlines read</span><b id="total">0</b></div>
+    <div class="row big"><span>Headlines checked</span><b id="total">0</b></div>
     <div class="rule mid"></div>
 
-    <div class="row hero"><span>Bait</span><b><em id="baitPct">0</em>%</b></div>
+    <div class="row hero"><span>Bait</span><b><em id="baitPct">0</em><small>%</small></b></div>
+    <p class="hint">Share of headlines written to make you angry, scared or envious.</p>
     <div class="rule"></div>
 
     <div class="kinds" id="kinds">
@@ -35,12 +56,12 @@
     <ol class="sources" id="sources"></ol>
     <div class="rule mid"></div>
 
-    <div class="row"><span>Headlines debaited</span><b id="debaited">0</b></div>
+    <div class="row big"><span>Headlines debaited</span><b id="debaited">0</b></div>
     <div class="rule thick"></div>
+    <p class="foot">Each headline counts once a day, and only when Gemini analysed it. Counts stay on this device; Debait never uploads your browsing history.</p>
+  </main>
 
-    <div class="tip" id="tip"></div>
-    <p class="foot">Real numbers only: each headline counts once a day, and only when Gemini analysed it. Counts stay on this device. Debait never uploads your browsing history.</p>
-  </div>
+  <section class="tip glass-dark" id="tip"></section>
 
   <button class="demo" id="seed">Show a sample week</button>
   <script type="module" src="./sidepanel.js"></script>

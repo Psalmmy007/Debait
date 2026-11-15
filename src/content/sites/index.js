@@ -36,6 +36,8 @@ const adapters = [
       // the title of the video being watched
       'ytd-watch-metadata h1 yt-formatted-string',
     ].join(', ')),
+    // YouTube cuts titles at two lines, which would hide a tag at the end: put it under the title
+    place: (el) => el.closest('h3, h1') || el,
   },
   {
     name: 'bbc',

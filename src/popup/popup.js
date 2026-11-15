@@ -125,6 +125,18 @@ $('#copyToken').addEventListener('click', async () => {
   });
 })();
 
+(async () => {
+  const { debaitErrors = [] } = await chrome.storage.local.get('debaitErrors');
+  const recent = debaitErrors.filter((e) => Date.now() - Date.parse(e.at) < 30 * 60 * 1000);
+  if (!recent.length) return;
+  $('#problems').hidden = false;
+  $('#problemList').textContent = recent.slice(0, 3).map((e) => `${e.where}: ${e.message.split('\n')[0]}`).join(' · ');
+  $('#copyProblems').addEventListener('click', async () => {
+    await navigator.clipboard.writeText(recent.map((e) => `[${e.at}] ${e.where}\n${e.message}`).join('\n\n'));
+    $('#copyProblems').textContent = 'Copied';
+  });
+})();
+
 renderToday();
 renderEngine();
 renderSwitches();

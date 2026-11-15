@@ -24,7 +24,8 @@ async function render() {
   const first = new Date(`${days[0].date}T12:00:00`);
   const last = new Date(`${days[6].date}T12:00:00`);
   const fmt = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  $('#period').textContent = `Weekly · ${fmt(first)} – ${fmt(last)}`;
+  $('#period').textContent = `${fmt(first)} – ${fmt(last)}`;
+  document.body.classList.toggle('empty', !showingSample && sum.total === 0);
   $('#total').textContent = sum.total.toLocaleString();
   $('#baitPct').textContent = pct(bait);
   $('#debaited').textContent = sum.debaited.toLocaleString();
@@ -50,7 +51,7 @@ async function render() {
   });
   $('#calmest').innerHTML = calmest >= 0
     ? `Calmest day: <b>${new Date(`${days[calmest].date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long' })}</b>`
-    : 'No data yet. Browse X, YouTube or BBC News with Debait on.';
+    : 'No days with real data yet.';
 
   // sources
   const top = Object.entries(sum.sources).sort((a, b) => b[1] - a[1]).slice(0, 5);

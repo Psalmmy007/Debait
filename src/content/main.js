@@ -17,9 +17,18 @@ const adapter = getAdapter(location.hostname);
 // In demo preview mode the page runs its own copy of the UI, so the real extension stays out.
 // (The real extension has chrome.runtime.id; the preview's fake chrome object doesn't.)
 const isPreviewPage = 'debaitPreview' in document.documentElement.dataset;
+// Status marks on the page (data-debait-*), so problems can be diagnosed from any tab.
+const mark = (k, v) => { try { document.documentElement.setAttribute(`data-debait-${k}`, String(v).slice(0, 400)); } catch { /* page blocks attributes */ } };
+const report = (err) => {
+  const message = String(err?.stack || err?.message || err).slice(0, 600);
+  mark('error', message);
+  try { chrome.runtime.sendMessage({ type: 'debait/error', where: `content ${location.hostname}`, message }).catch(() => {}); } catch { /* extension reloaded */ }
+};
+mark('loaded', chrome.runtime?.getManifest?.().version || 'yes');
+
 if (adapter && !window.__debaitLoaded && !(isPreviewPage && chrome.runtime?.id)) {
   window.__debaitLoaded = true;
-  start();
+  start().then(() => mark('started', Date.now()), report);
 }
 
 async function start() {
@@ -176,7 +185,7 @@ async function start() {
   }
 
   function mountTag(rec) {
-    rec.tag = createTag(rec.el, {
+    rec.tag = createTag(adapter.place?.(rec.el) || rec.el, {
       onClick: (rect) => {
         if (!rec.result) return;
         paint(rec);
@@ -239,7 +248,7 @@ async function start() {
     rec.result = result;
     rec.state = 'scored';
     rec.tag?.setResult(result);
-    if (settings.autoDebait && result.kind !== 'clean') {
+    if (settings.autoDebait && result.kind !== 'clean' && result.source !== 'mock') {
       swapToRewrite(rec).then(() => rec.tag?.setDebaited(true, result));
     }
   }

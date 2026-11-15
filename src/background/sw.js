@@ -3,6 +3,37 @@ import { MSG } from '../engine/contract.js';
 import { getSettings, dayKey, emptyDay } from '../shared/storage.js';
 
 const OFFSCREEN_URL = 'src/offscreen/index.html';
+
+// ---------- problems log (shown in the popup) ----------
+async function logError(where, message) {
+  const { debaitErrors = [] } = await chrome.storage.local.get('debaitErrors');
+  debaitErrors.unshift({ at: new Date().toISOString(), where, message: String(message).slice(0, 600) });
+  await chrome.storage.local.set({ debaitErrors: debaitErrors.slice(0, 15) });
+}
+self.addEventListener('error', (e) => { logError('background', e.message || e.error); });
+self.addEventListener('unhandledrejection', (e) => { logError('background', e.reason?.stack || e.reason); });
+
+// ---------- developer convenience: reload when a new build lands in dist/ ----------
+const UNPACKED = !('update_url' in chrome.runtime.getManifest());
+let buildStamp = null;
+async function checkBuild() {
+  if (!UNPACKED) return;
+  try {
+    const s = await (await fetch(chrome.runtime.getURL('build.json'), { cache: 'no-store' })).text();
+    if (buildStamp && s !== buildStamp) chrome.runtime.reload();
+    buildStamp = s;
+  } catch { /* no stamp yet */ }
+}
+checkBuild();
+chrome.alarms?.create('debait-build-check', { periodInMinutes: 0.5 });
+chrome.alarms?.onAlarm.addListener((a) => { if (a.name === 'debait-build-check') checkBuild(); });
+
+// ---------- put Debait into tabs that were already open (after install, update or reload) ----------
+chrome.runtime.onInstalled.addListener(async () => {
+  const files = chrome.runtime.getManifest().content_scripts?.[0]?.js || [];
+  const tabs = await chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] });
+  for (const t of tabs) chrome.scripting.executeScript({ target: { tabId: t.id }, files }).catch(() => {});
+});
 const CACHE_MAX = 3000;
 
 // ---------- offscreen engine host ----------
@@ -159,6 +190,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
 // ---------- message router ----------
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.target === 'offscreen') return false; // not for us
+  checkBuild();
+  if (msg?.type === 'debait/error') { logError(msg.where, msg.message); sendResponse({ ok: true }); return false; }
 
   (async () => {
     try {
