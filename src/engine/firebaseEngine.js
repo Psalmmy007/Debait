@@ -5,7 +5,7 @@ import { initializeAppCheck, CustomProvider, getToken } from 'firebase/app-check
 import { getAI, getGenerativeModel, GoogleAIBackend, InferenceMode, Schema } from 'firebase/ai';
 import { firebaseConfig, CLOUD_MODEL } from './firebaseConfig.js';
 
-import { createFirebaseAccess } from './authPolicy.js';
+import { createFirebaseAccess, installationTypeFromWorker } from './authPolicy.js';
 import { aiError } from './errors.js';
 import { createHeadlineEngine } from './inference.js';
 
@@ -17,6 +17,7 @@ const access = createFirebaseAccess({
   env: import.meta.env,
   manifest: globalThis.chrome?.runtime?.getManifest?.(),
   globals: globalThis,
+  getInstallType: () => installationTypeFromWorker(),
 });
 export async function getAi(debugToken) {
   try { return await access.getAi(debugToken); } catch (error) { throw aiError(error); }

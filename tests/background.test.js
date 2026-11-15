@@ -16,6 +16,7 @@ async function fixture(t, { localOnly = false, voice = false, cache = [], engine
   globalThis.chrome = {
     management: { getSelf: async () => ({ installType: 'development' }) },
     runtime: {
+      id: 'test',
       getManifest: () => debug ? {} : ({ update_url: 'https://example.com/update' }),
       onInstalled: { addListener() {} },
       getURL: p => `chrome-extension://test/${p}`,
@@ -82,7 +83,8 @@ async function fixture(t, { localOnly = false, voice = false, cache = [], engine
   const send = (msg, host = 'example.com') => new Promise(resolve => router(msg, { tab: { id: 1, url: `https://${host}` } }, resolve));
   const settings = patch => chrome.storage.local.set({ settings: { ...data.settings, ...patch } });
   const sendPopup = msg => new Promise(resolve => router(msg, { url: chrome.runtime.getURL('src/popup/index.html') }, resolve));
-  return { send, sendPopup, settings, data, messages, tabs, closed: () => closed };
+  const sendOffscreen = msg => new Promise(resolve => router(msg, { id: chrome.runtime.id, url: chrome.runtime.getURL('src/offscreen/index.html') }, resolve));
+  return { send, sendPopup, sendOffscreen, settings, data, messages, tabs, closed: () => closed };
 }
 
 test('Local Only re-scores cached cloud and legacy mock answers on device', async t => {
@@ -278,4 +280,18 @@ test('an explicit unpacked debug build shares its synthetic setup credential onl
   const popupResponse = await f.sendPopup({ type: 'debait/status' });
   assert.equal(popupResponse.debugToken, 'test-only-debug');
   assert.equal(f.data.appCheckDebugToken, undefined);
+});
+
+test('the service worker uses getSelf to answer the authenticated offscreen installation query', async t => {
+  const f = await fixture(t);
+  let queried = false;
+  chrome.management.getSelf = async () => { queried = true; return { installType: 'development' }; };
+  const response = await f.sendOffscreen({ type: 'debait/installation-type' });
+  assert.equal(queried, true); assert.deepEqual(response, { ok: true, installType: 'development' });
+});
+
+test('website content scripts cannot supply or obtain trusted installation metadata', async t => {
+  const f = await fixture(t);
+  const response = await f.send({ type: 'debait/installation-type', installType: 'development' });
+  assert.equal(response.ok, false); assert.equal(response.installType, undefined);
 });

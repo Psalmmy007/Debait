@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createFirebaseAccess, debugAppCheckAllowed } from '../src/engine/authPolicy.js';
+import { createFirebaseAccess, debugAppCheckAllowed, installationType, installationTypeFromWorker } from '../src/engine/authPolicy.js';
 import { aiError } from '../src/engine/errors.js';
 import { createDebugTokenStore } from '../src/engine/debugTokenStore.js';
 
@@ -66,7 +66,7 @@ test('failed token exchange can recover on retry without silently changing the i
 
 test('production without a trusted issuer fails before SDK initialization', async () => {
   const f = fixture({ env: { MODE: 'production', VITE_DEBAIT_APP_CHECK: 'debug' } });
-  await assert.rejects(f.access.getAi('test-installation'), /trusted App Check/);
+  await assert.rejects(f.access.getAi('test-installation'), /production-mode build/);
   assert.equal(f.calls.init, 0); assert.equal(f.globals.FIREBASE_APPCHECK_DEBUG_TOKEN, undefined);
 });
 
@@ -126,7 +126,7 @@ test('debug store does not remove the old credential if protected storage fails'
 
 test('a sideloaded packaged build without update_url still cannot use debug authentication', async () => {
   const f = fixture({ getInstallType: async () => 'normal' });
-  await assert.rejects(f.access.getAi('test-installation'), /trusted App Check/);
+  await assert.rejects(f.access.getAi('test-installation'), /unpacked development installation/);
   assert.equal(f.globals.FIREBASE_APPCHECK_DEBUG_TOKEN, undefined);
 });
 
@@ -134,4 +134,37 @@ test('production rejects even an empty string debug flag, matching the SDK activ
   const f = fixture({ env: { MODE: 'production' }, globals: { FIREBASE_APPCHECK_DEBUG_TOKEN: '' } });
   await assert.rejects(f.access.getAi(), /forbidden/);
   assert.equal(f.calls.init, 0);
+});
+
+test('the offscreen runtime-only API obtains installation type from the service worker', async () => {
+  const runtimeOnly = { runtime: { sendMessage: async message => {
+    assert.deepEqual(message, { type: 'debait/installation-type' });
+    return { ok: true, installType: await installationType({ management: { getSelf: async () => ({ installType: 'development' }) } }) };
+  } } };
+  assert.equal(runtimeOnly.management, undefined);
+  const f = fixture({ getInstallType: () => installationTypeFromWorker(runtimeOnly) });
+  assert.ok(await f.access.getAi('test-installation'));
+  assert.equal(f.access.debug, true);
+});
+
+test('a packaged installation relayed by the worker cannot enable debug authentication', async () => {
+  const f = fixture({ getInstallType: () => installationTypeFromWorker({ runtime: {
+    sendMessage: async () => ({ ok: true, installType: 'normal' }),
+  } }) });
+  await assert.rejects(f.access.getAi('test-installation'), /never allowed for packaged/);
+  assert.equal(f.calls.init, 0);
+});
+
+for (const reply of [undefined, { ok: false, installType: 'development' }, { ok: true, installType: 'invented' }]) {
+  test(`unverified worker installation data fails closed: ${JSON.stringify(reply)}`, async () => {
+    const getInstallType = () => installationTypeFromWorker({ runtime: { sendMessage: async () => reply } });
+    assert.equal(await getInstallType(), 'unknown');
+    const f = fixture({ getInstallType });
+    await assert.rejects(f.access.getAi('test-installation'), /did not verify/);
+    assert.equal(f.calls.init, 0);
+  });
+}
+
+test('an unreachable worker does not enable development authentication', async () => {
+  assert.equal(await installationTypeFromWorker({ runtime: { sendMessage: async () => { throw new Error('worker down'); } } }), 'unknown');
 });

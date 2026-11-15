@@ -39,8 +39,12 @@ tokens to that file, any Vite variable, or Git.
    cannot demonstrate Firebase execution.
 2. In desktop Chrome, open `chrome://extensions`, enable Developer mode, and load
    this checkout's `dist` directory unpacked. The code checks Chrome's installation
-   type using `chrome.management.getSelf()` as well as build intent and manifest
-   packaging. A store or sideloaded packaged install cannot use debug authentication.
+   type using `chrome.management.getSelf()` in the service worker, as well as build
+   intent and manifest packaging. The offscreen document obtains the result through
+   a worker message restricted to that document. Chrome does not require the broad
+   `management` permission for `getSelf()`; no new permissions are added. Offscreen
+   documents cannot call `chrome.management` directly. A store or sideloaded packaged
+   install cannot use debug authentication.
 3. Turn Local Only off. For a cloud-only development test, use a browser/profile
    where Nano is unavailable. Visit a supported public test page with a new headline,
    so a cache hit cannot be mistaken for a new Firebase request.
@@ -71,6 +75,20 @@ store exposed to content scripts. Development builds migrate and remove a legacy
 `chrome.storage.local` token; other builds remove that legacy value without using it.
 Only the extension popup receives the setup token. Signing out of Firebase Console
 is different from revoking an App Check debug credential.
+
+## Updating an existing unpacked development installation
+
+`VITE_DEBAIT_APP_CHECK=debug npm run build` is **not** a development-mode build:
+Vite still selects production mode. The flag alone must not enable debug authentication.
+Use `VITE_DEBAIT_APP_CHECK=debug npm run build:dev` instead.
+
+After updating this branch, rebuild with that command, click **Reload** on the existing
+Debait card in `chrome://extensions`, then refresh the test page. This loads the corrected
+worker and offscreen code. You do not need to remove/reinstall the extension or grant
+new permissions. Keep the same `dist` location so its development identity and stored
+debug token remain stable. Register a new token only if the installation's token changed.
+A successful build or installation-type check still does not prove App Check authentication;
+complete the Firebase Console and real-request verification steps above.
 
 ## Production strategy and release blocker
 
@@ -109,7 +127,11 @@ A production model/source label is not a substitute for that evidence.
 - https://firebase.google.com/docs/app-check/custom-provider
 - https://firebase.google.com/docs/ai-logic/hybrid-inference
 - https://developer.chrome.com/docs/extensions/reference/api/management#method-getSelf
+- https://developer.chrome.com/docs/extensions/reference/api/offscreen
+- https://github.com/chromium/chromium/blob/main/extensions/common/api/_api_features.json
 
-Documentation retrieval returned HTTP 403 in this environment. SDK compatibility
+Chrome/Firebase documentation pages returned HTTP 403 in this environment. The official
+Chromium API feature definitions were retrieved: `management.getSelf` has no permission
+dependency and runs in a privileged extension context, not an offscreen context. SDK compatibility
 was checked against installed Firebase 13.3.0 code/types; live documentation, Console
 configuration and server/browser runtime behavior still need review by the team.

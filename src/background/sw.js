@@ -265,7 +265,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   (async () => {
     try {
-      if (msg.type === MSG.SCORE) {
+      if (msg.type === 'debait/installation-type') {
+        const offscreen = sender.id === chrome.runtime.id && !sender.tab &&
+          sender.url === chrome.runtime.getURL(OFFSCREEN_URL);
+        if (!offscreen) throw new Error('Installation metadata is only available to the extension offscreen document.');
+        sendResponse({ ok: true, installType: await installationType() });
+      } else if (msg.type === MSG.SCORE) {
         const host = sender.tab?.url ? new URL(sender.tab.url).hostname.replace(/^www\./, '') : '';
         sendResponse({ ok: true, ...(await scoreTexts(msg.texts, host)) });
       } else if (msg.type === MSG.STATUS) {

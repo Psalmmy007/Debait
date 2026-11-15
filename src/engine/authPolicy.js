@@ -3,6 +3,16 @@ export async function installationType(chromeApi = globalThis.chrome) {
   try { return (await chromeApi.management.getSelf()).installType; } catch { return 'unknown'; }
 }
 
+// Offscreen documents can use runtime messaging, not chrome.management.
+// The service worker derives the answer from Chrome; callers never supply it.
+export async function installationTypeFromWorker(chromeApi = globalThis.chrome) {
+  try {
+    const reply = await chromeApi.runtime.sendMessage({ type: 'debait/installation-type' });
+    return reply?.ok === true && ['development', 'normal', 'sideload', 'admin', 'other'].includes(reply.installType)
+      ? reply.installType : 'unknown';
+  } catch { return 'unknown'; }
+}
+
 export function debugAppCheckAllowed(env, manifest, installType) {
   return ['development', 'demo'].includes(env?.MODE) &&
     env?.VITE_DEBAIT_APP_CHECK === 'debug' && installType === 'development' &&
@@ -23,7 +33,13 @@ export function createFirebaseAccess({ sdk, config, env, manifest, globals, prod
   return {
     get debug() { return debug === true; },
     async getAi(debugToken) {
+      if (env?.VITE_DEBAIT_APP_CHECK === 'debug' && !['development', 'demo'].includes(env?.MODE)) {
+        throw appCheckSetupError('Debug authentication was requested in a production-mode build. Rebuild with VITE_DEBAIT_APP_CHECK=debug npm run build:dev, then reload the unpacked extension.');
+      }
       if (debug === undefined) debug = debugAppCheckAllowed(env, manifest, await getInstallType());
+      if (env?.VITE_DEBAIT_APP_CHECK === 'debug' && !debug) {
+        throw appCheckSetupError('Development authentication is blocked: Chrome did not verify an unpacked development installation. Reload the extension and check its service worker. Debug authentication is never allowed for packaged installs.');
+      }
       if (!ai) {
         let provider;
         if (debug) {
