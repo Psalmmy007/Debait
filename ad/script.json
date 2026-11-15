@@ -1,0 +1,16 @@
+{
+  "voice": "en-US-AndrewMultilingualNeural",
+  "rate": "-6%",
+  "pitch": "-2Hz",
+  "lines": [
+    { "id": "read", "text": "You are what you read." },
+    { "id": "feed", "text": "And your feed is written to make you angry. Afraid. Envious." },
+    { "id": "clicks", "text": "Because every negative word in a headline gets more clicks." },
+    { "id": "meet", "text": "Meet Debait." },
+    { "id": "reads", "text": "It reads the headlines on your screen, and shows you exactly how they're trying to hook you." },
+    { "id": "click", "text": "Then, one click. And the bait is gone." },
+    { "id": "device", "text": "It runs right on your device, with Gemini Nano. Private. And free." },
+    { "id": "label", "text": "Food has a label. Now, so does your feed." },
+    { "id": "end", "text": "Debait. Nutrition facts for your feed." }
+  ]
+}

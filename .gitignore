@@ -32,3 +32,6 @@ dist-web
 
 # Third-party Claude skills (local only)
 .claude/skills/
+
+# Ad renders (large binaries)
+ad/out/

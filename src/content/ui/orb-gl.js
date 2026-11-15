@@ -121,14 +121,14 @@ void main() {
   gl_FragColor = vec4(vec3(col) * mask, mask);
 }`;
 
-export function createOrbRenderer(canvas, size = 56) {
+export function createOrbRenderer(canvas, size = 56, { dpr: forcedDpr, preserve = false } = {}) {
   let gl = null;
   try {
-    gl = canvas.getContext('webgl', { alpha: true, premultipliedAlpha: true, antialias: false, powerPreference: 'low-power' });
+    gl = canvas.getContext('webgl', { alpha: true, premultipliedAlpha: true, antialias: false, powerPreference: 'low-power', preserveDrawingBuffer: preserve });
   } catch { /* no WebGL */ }
   if (!gl) return null;
 
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const dpr = forcedDpr || Math.min(2, window.devicePixelRatio || 1);
   canvas.width = canvas.height = Math.round(size * dpr);
 
   let u = null;
@@ -224,5 +224,16 @@ export function createOrbRenderer(canvas, size = 56) {
     setLight(x, y) { tgt.lx = x; tgt.ly = y; },
     setVelocity(x, y) { tgt.vx = x; tgt.vy = y; },
     pulse() { pulse = 0.0001; pulsing = true; },
+    /** Draws one frame from explicit values, with no smoothing (used to render the video ad). */
+    drawFrame({ t, turb, bright, pulse: p = 0, lx = 0, ly = 0, vx = 0, vy = 0 }) {
+      if (lost) return;
+      gl.uniform1f(u.uT, t);
+      gl.uniform1f(u.uTurb, turb);
+      gl.uniform1f(u.uBright, bright);
+      gl.uniform1f(u.uPulse, p);
+      gl.uniform2f(u.uLight, lx, ly);
+      gl.uniform2f(u.uVel, vx, vy);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    },
   };
 }
