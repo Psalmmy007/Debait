@@ -33,7 +33,12 @@ function probe(text, opts) {
 /** @type {import('./contract.js').Engine} */
 export const engine = USE_MOCK ? mockEngine : {
   async scoreHeadlines(texts, opts) {
-    if (opts.localOnly) return firebaseEngine.scoreHeadlines(texts, opts); // on-device only: no backup guesses
+    if (opts.localOnly) {
+      // on-device only: no backup guesses, but never hang if Gemini Nano isn't ready
+      const st = await firebaseEngine.getStatus({ localOnly: true });
+      if (st.source !== 'on-device') throw new Error(`LOCAL_ONLY: ${st.message}`);
+      return withTimeout(firebaseEngine.scoreHeadlines(texts, opts), 30000);
+    }
     if (gemini !== 'ok') {
       probe(texts[0], opts);
       return mockEngine.scoreHeadlines(texts, opts);

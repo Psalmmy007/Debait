@@ -244,7 +244,7 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
       else gl.stop();
     },
     /** state: idle | busy | bait | calm */
-    update({ state, bait, debaited, scanned }) {
+    update({ state, bait, debaited, scanned, notice }) {
       wrap.dataset.state = state;
       gl?.setMood(state);
       const count = state === 'calm' ? debaited : bait;
@@ -254,7 +254,17 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
         badge.animate([{ transform: 'scale(1.3)' }, { transform: 'scale(1)' }], { duration: 450, easing: SPRING });
       }
       lastCount = count;
-      if (state === 'calm') {
+      if (notice) {
+        tip.replaceChildren();
+        const b = document.createElement('span');
+        b.textContent = 'Debait is paused';
+        const sm = document.createElement('small');
+        sm.textContent = notice;
+        sm.style.whiteSpace = 'normal';
+        sm.style.maxWidth = '240px';
+        tip.append(b, sm);
+        if (!wrap.dataset.noticeShown) { wrap.dataset.noticeShown = '1'; wrap.classList.add('hint'); setTimeout(() => wrap.classList.remove('hint'), 7000); }
+      } else if (state === 'calm') {
         setHTML(tip, `Restore originals<small>${debaited} headline${debaited === 1 ? '' : 's'} debaited</small>${HINT}`);
       } else if (bait > 0) {
         setHTML(tip, `Debait this page<small>${bait} bait of ${scanned} headlines</small>${HINT}`);

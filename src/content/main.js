@@ -36,6 +36,8 @@ async function start() {
   const queue = [];
   let inflight = 0;
   let stats = { hits: 0, scored: 0 };
+  let notice = '';     // why scoring is paused, shown on the orb
+  let retryTimer = null;
 
   const overlay = createOverlay();
   const orb = createOrb(overlay, {
@@ -135,7 +137,7 @@ async function start() {
       else if (r.result.kind !== 'clean') bait++;
     }
     const state = inflight > 0 && bait === 0 ? 'busy' : bait > 0 ? 'bait' : debaited > 0 ? 'calm' : 'idle';
-    orb.update({ state, bait, debaited, scanned });
+    orb.update({ state, bait, debaited, scanned, notice });
     panel.refresh();
   }
 
@@ -212,7 +214,17 @@ async function start() {
         console.debug(`[Debait] scored ${batch.length} (cache hits so far: ${stats.hits}/${stats.scored})`);
       } catch (err) {
         console.warn('[Debait] scoring failed:', err.message);
-        batch.forEach((rec) => { rec.queued = false; rec.tag?.remove(); records.delete(rec.el); });
+        // keep the records (no rescan loop), hide the waiting pills, tell the user why, retry in a minute
+        batch.forEach((rec) => { rec.queued = false; rec.failed = true; rec.tag?.setVisible(false); });
+        notice = /LOCAL_ONLY/.test(err.message)
+          ? 'Local only is on, but Gemini Nano is not downloaded yet. Open the Debait popup and click Turn on Debait, or turn off Local only.'
+          : 'Debait could not reach its AI. Retrying in a minute.';
+        clearTimeout(retryTimer);
+        retryTimer = setTimeout(() => {
+          notice = '';
+          for (const r of records.values()) if (r.failed && !r.result) { r.failed = false; r.tag?.setVisible(settings.showTags); r.queued = true; queue.push(r); }
+          flushSoon();
+        }, 60000);
       } finally {
         inflight--;
       }
@@ -287,6 +299,7 @@ async function start() {
     const prev = settings;
     settings = next;
     orb.setVisible(next.showOrb);
+    if (prev.localOnly !== next.localOnly && notice) { clearTimeout(retryTimer); notice = ''; for (const r of records.values()) if (r.failed && !r.result) { r.failed = false; r.tag?.setVisible(next.showTags); r.queued = true; queue.push(r); } flushSoon(); }
     if (prev.voice && !next.voice) onCallState({ state: 'ended' });
     if (prev.showTags !== next.showTags) {
       for (const r of records.values()) r.tag?.setVisible(next.showTags);

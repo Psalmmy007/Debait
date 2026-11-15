@@ -63,9 +63,27 @@ $('#debaitPage').addEventListener('click', async () => {
 
 // Must run from a click: Chrome only downloads Gemini Nano after a user gesture.
 $('#turnOn').addEventListener('click', async () => {
-  $('#turnOn').textContent = 'Turning on…';
-  await chrome.runtime.sendMessage({ type: MSG.INIT });
-  $('#turnOn').textContent = 'Turn on Debait';
+  const btn = $('#turnOn');
+  btn.disabled = true;
+  try {
+    if (typeof LanguageModel === 'undefined') throw new Error('This Chrome cannot run Gemini Nano (needs Chrome 138+ on a supported computer)');
+    const opts = { expectedInputs: [{ type: 'text', languages: ['en'] }], expectedOutputs: [{ type: 'text', languages: ['en'] }] };
+    const avail = await LanguageModel.availability(opts);
+    if (avail === 'unavailable') throw new Error('This computer cannot run Gemini Nano');
+    btn.textContent = 'Downloading Gemini Nano…';
+    const session = await LanguageModel.create({
+      ...opts,
+      monitor(m) {
+        m.addEventListener('downloadprogress', (e) => { btn.textContent = `Downloading Gemini Nano… ${Math.round(e.loaded * 100)}%`; });
+      },
+    });
+    session.destroy();
+    btn.textContent = 'Gemini Nano is ready';
+  } catch (err) {
+    btn.textContent = err.message.length > 60 ? 'Could not download Gemini Nano' : err.message;
+    btn.title = err.message;
+  }
+  btn.disabled = false;
   renderEngine();
 });
 
