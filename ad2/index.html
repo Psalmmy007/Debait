@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Debait ad</title>
+  <link rel="stylesheet" href="./ad.css" />
+</head>
+<body>
+  <div id="stage">
+    <!-- A: You are what you read -->
+    <div class="scene" id="A"><h1 class="hero" id="A-line"></h1></div>
+
+    <!-- B: angry / afraid / envious -->
+    <div class="scene" id="B">
+      <div class="feedwall" id="B-wall"></div>
+      <p class="lede" id="B-lede">It wants you</p>
+      <div class="bigword" id="B-w0">angry.</div>
+      <div class="bigword" id="B-w1">afraid.</div>
+      <div class="bigword" id="B-w2">envious.</div>
+    </div>
+
+    <!-- C: +2.3% -->
+    <div class="scene" id="C">
+      <div class="stat" id="C-num">+0.0%</div>
+      <p class="stat-sub" id="C-sub">more clicks for every negative word in a headline.</p>
+      <p class="source" id="C-src">Robertson et al., Nature Human Behaviour, 2023</p>
+    </div>
+
+    <!-- D: Meet Debait -->
+    <div class="scene" id="D"><div class="wordmark" id="D-mark">Debait</div></div>
+
+    <!-- E / F: the product -->
+    <div class="scene" id="E">
+      <div class="browser" id="E-browser">
+        <div class="chrome">
+          <span class="dots"><i></i><i></i><i></i></span>
+          <span class="url">worldreport.news</span>
+        </div>
+        <div class="viewport" id="E-view">
+          <div class="page" id="E-page"></div>
+          <div class="scan" id="E-scan"></div>
+          <div class="ring" id="E-ring"></div>
+        </div>
+      </div>
+      <div class="card" id="E-card"></div>
+      <svg class="cursor" id="E-cursor" viewBox="0 0 24 24"><path d="M5 2.5v17.2l4.3-4.1 2.8 6.4 3-1.3-2.8-6.3h6z" fill="#fff" stroke="#000" stroke-width="1.4" stroke-linejoin="round"/></svg>
+    </div>
+
+    <!-- G: on-device, private, free -->
+    <div class="scene" id="G">
+      <p class="small" id="G-nano">Gemini Nano, built into Chrome.</p>
+      <div class="triad"><span id="G-w0">On-device.</span><span id="G-w1">Private.</span><span id="G-w2">Free.</span></div>
+    </div>
+
+    <!-- H: the label -->
+    <div class="scene" id="H">
+      <div class="copy"><h2 id="H-l0">Food has a label.</h2><h2 id="H-l1">Now, your feed does too.</h2></div>
+      <div class="label" id="H-label"></div>
+    </div>
+
+    <!-- I: end card -->
+    <div class="scene" id="I">
+      <div class="wordmark" id="I-mark">Debait</div>
+      <p class="tagline" id="I-tag">Read the news. Not the bait.</p>
+      <p class="foot" id="I-foot">Chrome extension &nbsp;·&nbsp; Built with Firebase AI Logic and Gemini Nano</p>
+    </div>
+
+    <!-- the orb travels through every scene -->
+    <canvas id="orb"></canvas>
+    <div id="fade"></div>
+  </div>
+  <script type="module" src="./ad.js"></script>
+</body>
+</html>

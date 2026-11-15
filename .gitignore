@@ -35,3 +35,5 @@ dist-web
 
 # Ad renders (large binaries)
 ad/out/
+
+ad2/out/
