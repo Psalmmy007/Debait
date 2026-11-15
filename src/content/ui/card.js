@@ -1,5 +1,6 @@
 // The Ingredients card: why a headline is bait, word by word, plus what actually happened.
 import { reducedMotion } from './page.js';
+import { setHTML } from './html.js';
 import { ICON, LABEL, SOURCE } from './icons.js';
 
 const OUT = 'cubic-bezier(0.16, 1, 0.3, 1)';
@@ -52,7 +53,7 @@ export function openCard(layer, rec, rect, { onDebait, onRestore }) {
     : '<li class="none-row"><span class="none">No manipulative words found.</span></li>';
 
   const C = 2 * Math.PI * 30; // gauge circumference
-  el.innerHTML = `
+  setHTML(el, `
     <div class="card-head">
       <div>
         <div class="card-kicker">Ingredients</div>
@@ -73,7 +74,7 @@ export function openCard(layer, rec, rect, { onDebait, onRestore }) {
           ? '<button class="btn" data-act="restore">Show original</button>'
           : `<button class="btn" data-act="close">Keep</button><button class="btn primary" data-act="debait">Debait it ${ICON.arrow}</button>`}
       </div>
-    </div>`;
+    </div>`);
 
   layer.appendChild(el);
 

@@ -17,8 +17,10 @@ export default defineManifest({
   name: 'Debait',
   version: pkg.version,
   description: 'Nutrition facts for your feed. Tags bait headlines and rewrites them calmly, on-device.',
+  icons: { 16: 'icons/icon-16.png', 32: 'icons/icon-32.png', 48: 'icons/icon-48.png', 128: 'icons/icon-128.png' },
   action: {
     default_title: 'Debait',
+    default_icon: { 16: 'icons/icon-16.png', 32: 'icons/icon-32.png', 48: 'icons/icon-48.png', 128: 'icons/icon-128.png' },
     default_popup: 'src/popup/index.html',
   },
   background: {

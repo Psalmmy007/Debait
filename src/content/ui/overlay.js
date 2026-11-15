@@ -7,6 +7,7 @@ import panelCss from '../styles/panel.css?inline';
 import tagCss from '../styles/tag.css?inline';
 import { SPRING, reducedMotion } from './page.js';
 import { createOrbRenderer } from './orb-gl.js';
+import { setHTML, adoptCss } from './html.js';
 
 const ORB = 56;
 const MARGIN = 16;
@@ -19,8 +20,8 @@ export function createOverlay() {
   host.style.cssText =
     'all: initial !important; position: fixed !important; inset: 0 !important; z-index: 2147483646 !important; pointer-events: none !important; display: block !important;';
   const shadow = host.attachShadow({ mode: 'open' });
-  shadow.innerHTML = `
-    <style>${tokens}${orbCss}${tagCss}${cardCss}${panelCss}</style>
+  adoptCss(shadow, tokens + orbCss + tagCss + cardCss + panelCss);
+  setHTML(shadow, `
     <div class="card-layer"></div>
     <div class="panel-layer"></div>
     <div class="orb-wrap" data-state="idle">
@@ -31,7 +32,7 @@ export function createOverlay() {
       </button>
       <span class="orb-badge"></span>
       <span class="orb-tip"></span>
-    </div>`;
+    </div>`);
   document.documentElement.appendChild(host);
   return {
     host,
@@ -252,13 +253,13 @@ export function createOrb(overlay, { onClick, onDoubleClick }) {
       }
       lastCount = count;
       if (state === 'calm') {
-        tip.innerHTML = `Restore originals<small>${debaited} headline${debaited === 1 ? '' : 's'} debaited</small>${HINT}`;
+        setHTML(tip, `Restore originals<small>${debaited} headline${debaited === 1 ? '' : 's'} debaited</small>${HINT}`);
       } else if (bait > 0) {
-        tip.innerHTML = `Debait this page<small>${bait} bait of ${scanned} headlines</small>${HINT}`;
+        setHTML(tip, `Debait this page<small>${bait} bait of ${scanned} headlines</small>${HINT}`);
       } else if (state === 'busy') {
-        tip.innerHTML = `Reading headlines…${HINT}`;
+        setHTML(tip, `Reading headlines…${HINT}`);
       } else {
-        tip.innerHTML = `Debait<small>${scanned ? `${scanned} headlines, all clean` : 'Looking for headlines'}</small>${HINT}`;
+        setHTML(tip, `Debait<small>${scanned ? `${scanned} headlines, all clean` : 'Looking for headlines'}</small>${HINT}`);
       }
     },
     setPanelOpen(open) { wrap.classList.toggle('panel-open', open); },
@@ -284,7 +285,7 @@ function fxLayer() {
   fxHost.style.cssText =
     'all: initial !important; position: fixed !important; inset: 0 !important; z-index: 2147483645 !important; pointer-events: none !important; display: block !important; mix-blend-mode: difference !important;';
   const root = fxHost.attachShadow({ mode: 'open' });
-  root.innerHTML = '<div style="position:absolute;inset:0;overflow:hidden"></div>';
+  setHTML(root, '<div style="position:absolute;inset:0;overflow:hidden"></div>');
   document.documentElement.appendChild(fxHost);
   return root.firstElementChild;
 }

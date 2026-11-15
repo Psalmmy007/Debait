@@ -3,6 +3,7 @@ import tokens from '../styles/tokens.css?inline';
 import tagCss from '../styles/tag.css?inline';
 import { SPRING, reducedMotion } from './page.js';
 import { ICON, LABEL, SOURCE } from './icons.js';
+import { setHTML, adoptCss } from './html.js';
 
 /** Is this headline on a dark background? (Light text = dark page.) */
 function isDarkTone(el) {
@@ -17,7 +18,8 @@ export function createTag(anchor, { onClick }) {
   host.style.cssText =
     'all: initial !important; display: inline-block !important; margin: 4px 0 4px 8px !important; vertical-align: middle !important; line-height: 0 !important;';
   const shadow = host.attachShadow({ mode: 'open' });
-  shadow.innerHTML = `<style>${tokens}${tagCss}</style><button class="tag pending" type="button"><span class="ico">${ICON.dots}</span><span class="label">Reading</span><span class="score"></span></button>`;
+  adoptCss(shadow, tokens + tagCss);
+  setHTML(shadow, `<button class="tag pending" type="button"><span class="ico">${ICON.dots}</span><span class="label">Reading</span><span class="score"></span></button>`);
   anchor.insertAdjacentElement('afterend', host);
 
   const btn = shadow.querySelector('.tag');
@@ -69,7 +71,7 @@ export function createTag(anchor, { onClick }) {
       morph(() => {
         btn.classList.remove('pending', 'debaited');
         btn.dataset.kind = result.kind;
-        ico.innerHTML = ICON[result.kind];
+        setHTML(ico, ICON[result.kind]);
         label.textContent = LABEL[result.kind];
         score.textContent = result.kind === 'clean' ? '' : String(result.score);
         btn.title = `${LABEL[result.kind]}${result.kind === 'clean' ? '' : ` · bait score ${result.score}`} · ${SOURCE[result.source] || ''} · click for ingredients`;
@@ -79,7 +81,7 @@ export function createTag(anchor, { onClick }) {
     setDebaited(on, result) {
       morph(() => {
         btn.classList.toggle('debaited', on);
-        ico.innerHTML = on ? ICON.check : ICON[result.kind];
+        setHTML(ico, on ? ICON.check : ICON[result.kind]);
         label.textContent = on ? 'Debaited' : LABEL[result.kind];
       }, { flip: true });
     },

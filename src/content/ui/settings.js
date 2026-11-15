@@ -4,6 +4,7 @@ import { MSG } from '../../engine/contract.js';
 import { getSettings, setSettings, getRecentStats } from '../../shared/storage.js';
 import { reducedMotion } from './page.js';
 import { ICON, SOURCE } from './icons.js';
+import { setHTML } from './html.js';
 
 const OUT = 'cubic-bezier(0.16, 1, 0.3, 1)';
 
@@ -57,7 +58,7 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
     el.setAttribute('role', 'dialog');
     el.setAttribute('aria-label', 'Debait settings');
 
-    el.innerHTML = `
+    setHTML(el, `
       <div class="p-head">
         <div class="p-brand"><span class="p-logo"></span><div><b>Debait</b><small>Nutrition facts for your feed</small></div></div>
         <button class="icon-btn" data-act="close" aria-label="Close settings">${ICON.close}</button>
@@ -97,7 +98,7 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
 
       <button class="p-link" data-act="facts">Weekly Mind Facts ${ICON.arrow}</button>
       <p class="p-note" hidden></p>
-      <p class="p-foot"><kbd>2×</kbd> click the orb <span aria-hidden="true">·</span> <kbd>Esc</kbd> to close</p>`;
+      <p class="p-foot"><kbd>2×</kbd> click the orb <span aria-hidden="true">·</span> <kbd>Esc</kbd> to close</p>`);
 
     layer.appendChild(el);
 
@@ -198,9 +199,9 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
     const btn = el.querySelector('.p-main');
     const restore = bait === 0 && debaited > 0;
     btn.classList.toggle('primary', !restore);
-    btn.innerHTML = restore
+    setHTML(btn, restore
       ? 'Restore originals'
-      : bait > 0 ? `Debait ${bait} headline${bait === 1 ? '' : 's'} ${ICON.arrow}` : 'Nothing to debait here';
+      : bait > 0 ? `Debait ${bait} headline${bait === 1 ? '' : 's'} ${ICON.arrow}` : 'Nothing to debait here');
     btn.disabled = !restore && bait === 0;
   }
 
