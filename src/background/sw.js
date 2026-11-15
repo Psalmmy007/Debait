@@ -2,6 +2,7 @@
 import { MSG, normalizeResult } from '../engine/contract.js';
 import { getSettings, dayKey, emptyDay } from '../shared/storage.js';
 import { DEMO_MODE } from '../engine/mode.js';
+import { QUALITY_POLICY_VERSION } from '../engine/qualityPolicy.js';
 import { debugAppCheckAllowed, installationType } from '../engine/authPolicy.js';
 import { waitForEngineReady } from '../offscreen/readiness.js';
 import { createDebugTokenStore, readDebugToken, writeDebugToken } from '../engine/debugTokenStore.js';
@@ -101,18 +102,25 @@ async function toEngine(payload) {
 
 // ---------- cache (never score the same headline twice) ----------
 let cache = null; // Map<text, result>
+let cacheLoading;
 async function loadCache() {
   if (cache) return cache;
-  const { scoreCache = [] } = await chrome.storage.local.get('scoreCache');
-  cache = new Map(scoreCache);
-  return cache;
+  return cacheLoading ||= (async () => {
+    const { scoreCacheVersion } = await chrome.storage.local.get('scoreCacheVersion');
+    const { scoreCache = [] } = await chrome.storage.local.get('scoreCache');
+    const current = scoreCacheVersion === QUALITY_POLICY_VERSION;
+    if (!current) await chrome.storage.local.set({ scoreCache: [], scoreCacheVersion: QUALITY_POLICY_VERSION });
+    cache = new Map(current ? scoreCache : []);
+    return cache;
+  })().catch(error => { cacheLoading = undefined; throw error; });
 }
+
 let saveTimer = null;
 function saveCacheSoon() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     const entries = [...cache.entries()].slice(-CACHE_MAX);
-    chrome.storage.local.set({ scoreCache: entries });
+    chrome.storage.local.set({ scoreCache: entries, scoreCacheVersion: QUALITY_POLICY_VERSION });
   }, 1000);
 }
 

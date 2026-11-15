@@ -66,7 +66,7 @@ export function openCard(layer, rec, rect, { onDebait, onRestore }) {
     </div>
     <p class="card-headline">${markTriggers(rec.text, r.triggers)}</p>
     <div class="card-section"><h4>Why it pulls you in</h4><ul class="ingredients">${rows}</ul></div>
-    ${clean ? '' : `<div class="card-section"><h4>What actually happened</h4><div class="honest">${esc(r.honest_rewrite)}</div></div>`}
+    ${clean ? '' : `<div class="card-section"><h4>Suggested rewrite</h4><div class="honest">${esc(r.honest_rewrite)}</div><p>Wording suggestion only. Not a fact-check.</p></div>`}
     <div class="card-foot">
       <span class="source" data-src="${esc(r.source)}"><i></i>${esc(SOURCE[r.source] || r.source)}</span>
       <div class="btns">

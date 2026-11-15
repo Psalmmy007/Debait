@@ -1,14 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { QUALITY_POLICY_VERSION } from '../src/engine/qualityPolicy.js';
 import { readFile } from 'node:fs/promises';
 
 const tick = () => new Promise(r => setImmediate(r));
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { resolve, promise }; };
 const result = source => ({ kind: 'fear', score: 50, triggers: [], honest_rewrite: 'Calmer headline', source });
 let serial = 0;
-async function fixture(t, { localOnly = false, voice = false, cache = [], engine, contexts = true, create, statsVersion = 2, stats = {}, demo = false, debug = false } = {}) {
+async function fixture(t, { localOnly = false, voice = false, cache = [], engine, contexts = true, create, statsVersion = 2, stats = {}, demo = false, debug = false, scoreCacheVersion = QUALITY_POLICY_VERSION } = {}) {
   t.mock.timers.enable({ apis: ['setTimeout'] });
-  const data = { settings: { localOnly, voice }, scoreCache: cache, appCheckDebugToken: 'test-only', statsVersion, stats };
+  const data = { settings: { localOnly, voice }, scoreCache: cache, scoreCacheVersion, appCheckDebugToken: 'test-only', statsVersion, stats };
   let router, onSettings;
   const messages = [], tabs = [];
   let closed = 0;
@@ -295,4 +296,29 @@ test('website content scripts cannot supply or obtain trusted installation metad
   const f = await fixture(t);
   const response = await f.send({ type: 'debait/installation-type', installType: 'development' });
   assert.equal(response.ok, false); assert.equal(response.installType, undefined);
+});
+
+for (const version of [undefined, 'old-policy']) {
+  test(`outdated quality cache is invalidated before reuse: ${version}`, async t => {
+    const stats = { '2026-11-01': { total: 3, fear: 3, seen: ['existing'] } };
+    const f = await fixture(t, { scoreCacheVersion: version === undefined ? null : version,
+      cache: [['headline', { ...result('cloud'), honest_rewrite: 'Old misleading rewrite' }]], stats });
+    if (version === undefined) delete f.data.scoreCacheVersion;
+    const response = await f.send({ type: 'debait/score', texts: ['headline'] });
+    assert.equal(response.ok, true); assert.equal(response.cacheHits, 0);
+    assert.equal(response.results[0].honest_rewrite, 'Calmer headline');
+    assert.equal(f.data.scoreCacheVersion, QUALITY_POLICY_VERSION);
+    assert.deepEqual(f.data.scoreCache, []);
+    assert.deepEqual(f.data.stats['2026-11-01'], stats['2026-11-01']);
+    t.mock.timers.tick(1000); await tick();
+    assert.equal(f.data.scoreCache[0][1].honest_rewrite, 'Calmer headline');
+    assert.equal(f.data.scoreCacheVersion, QUALITY_POLICY_VERSION);
+  });
+}
+
+test('current-policy cache entries remain reusable', async t => {
+  const f = await fixture(t, { cache: [['headline', result('cloud')]] });
+  const response = await f.send({ type: 'debait/score', texts: ['headline'] });
+  assert.equal(response.ok, true); assert.equal(response.cacheHits, 1);
+  assert.ok(!f.messages.some(message => message.type === 'debait/score'));
 });

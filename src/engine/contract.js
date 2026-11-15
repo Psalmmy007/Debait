@@ -1,3 +1,5 @@
+import { preserveRewrite } from './qualityPolicy.js';
+
 // The one shape every Debait engine must follow.
 // The UI only ever talks to an engine through these three functions,
 // so the mock engine and the real Firebase engine are interchangeable.
@@ -51,6 +53,6 @@ export function normalizeResult(r, text) {
   const { kind, source } = r;
   const score = Math.max(0, Math.min(100, Math.round(r.score)));
   const triggers = r.triggers.filter(t => t.word.trim()).slice(0, 6);
-  const honest_rewrite = r.honest_rewrite.trim();
+  const honest_rewrite = preserveRewrite(text, r.honest_rewrite.trim(), kind);
   return { kind, score, triggers, honest_rewrite, source };
 }
