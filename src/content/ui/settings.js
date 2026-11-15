@@ -84,7 +84,7 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
         <h4>Today</h4>
         <div class="p-today"><b><span data-v="todayPct">0</span><small>%</small></b><span data-v="todayLine">of headlines were bait</span></div>
         <div class="p-bar">${LEGEND.map(([k]) => `<span data-k="${k}"></span>`).join('')}</div>
-        <div class="p-legend">${LEGEND.map(([k, name, bg]) => `<span><i style="background:${bg}"></i>${name} <b data-v="${k}">0</b></span>`).join('')}</div>
+        <div class="p-legend">${LEGEND.map(([k, name, bg]) => `<span><i data-k="${k}"></i>${name} <b data-v="${k}">0</b></span>`).join('')}</div>
       </section>
 
       <section class="p-sec">

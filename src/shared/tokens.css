@@ -1,26 +1,53 @@
-/* Debait tokens for the popup and side panel. Black and white only:
-   depth comes from light, crisp edges and real shadows. */
+/* Debait tokens for the popup and side panel: Apple's design language, light or dark with the system. */
 :root {
-  --s0: #060607;
-  --s1: #0e0e10;
-  --s2: #151517;
-  --hair: rgba(255, 255, 255, 0.09);
-  --ink: #fafafa;
-  --ink-2: #c8c8d0;
-  --ink-3: #a6a6b0;
-  --ui: 'Plus Jakarta Sans Variable', 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --brand: 'Plus Jakarta Sans Variable', 'Inter Variable', system-ui, sans-serif;
-  --serif: 'Newsreader Variable', Georgia, serif;
-  --spring: linear(0, 0.009, 0.035 2.1%, 0.141, 0.281 6.7%, 0.723 12.9%, 0.938 16.7%, 1.017, 1.077, 1.121, 1.149 24.3%, 1.159, 1.163, 1.161, 1.154 29.9%, 1.129 32.8%, 1.051 39.6%, 1.017 43.1%, 0.991, 0.977 51%, 0.974 53.8%, 0.975 57.1%, 0.997 69.8%, 1.003 76.9%, 1.004 83.8%, 1);
-  --out: cubic-bezier(0.16, 1, 0.3, 1);
-  color-scheme: dark;
+  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI Variable Text', 'Segoe UI', 'Plus Jakarta Sans Variable', system-ui, sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI Variable Display', 'Segoe UI', 'Plus Jakarta Sans Variable', system-ui, sans-serif;
+  --serif: 'New York', 'Newsreader Variable', Georgia, serif;
+  --page: #f2f2f7;
+  --label: #1d1d1f;
+  --label-2: #6e6e73;
+  --label-3: #86868b;
+  --group: #ffffff;
+  --fill: rgba(120, 120, 128, 0.12);
+  --fill-2: rgba(120, 120, 128, 0.07);
+  --sep: rgba(60, 60, 67, 0.14);
+  --button: #1d1d1f;
+  --button-label: #ffffff;
+  --toggle-on: #34c759;
+  --shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.05);
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --spring: linear(0, 0.006, 0.025 2.8%, 0.101 6.1%, 0.539 18.9%, 0.721 25.3%, 0.849 31.5%, 0.937 38.1%, 0.968 41.8%, 0.991 45.7%, 1.006 50.1%, 1.015 55%, 1.017 63.9%, 1.001 85.9%, 1);
+  /* older names */
+  --ui: var(--font);
+  --brand: var(--font-display);
+  --ink: var(--label);
+  --ink-2: var(--label-2);
+  --ink-3: var(--label-3);
+  --hair: var(--sep);
+  --out: var(--ease);
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #000000;
+    --label: #f5f5f7;
+    --label-2: #a1a1a6;
+    --label-3: #8e8e93;
+    --group: #1c1c1e;
+    --fill: rgba(120, 120, 128, 0.24);
+    --fill-2: rgba(120, 120, 128, 0.14);
+    --sep: rgba(84, 84, 88, 0.6);
+    --button: #f5f5f7;
+    --button-label: #1d1d1f;
+    --toggle-on: #30d158;
+    --shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.08);
+  }
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; background: #0a0a0c; color: var(--ink); font-family: var(--ui); -webkit-font-smoothing: antialiased; }
+html, body { margin: 0; background: var(--page); color: var(--label); font-family: var(--font); letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
 button { font: inherit; color: inherit; }
-button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+button:focus-visible { outline: 2px solid #0071e3; outline-offset: 2px; }
 
-/* logo: a small glass sphere */
 .logo {
   width: 30px;
   height: 30px;
@@ -29,22 +56,9 @@ button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
   background:
     radial-gradient(38% 28% at 38% 24%, rgba(255, 255, 255, 0.9), transparent 70%),
     radial-gradient(circle at 50% 62%, #75757d 0%, #2a2a2e 45%, #050506 82%);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14), 0 6px 12px -4px rgba(0, 0, 0, 0.7);
+  box-shadow: 0 0 0 0.5px var(--sep), 0 4px 10px -3px rgba(0, 0, 0, 0.35);
 }
-
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 26px;
-  padding: 0 10px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.05);
-  box-shadow: inset 0 0 0 1px var(--hair);
-  font-size: 11.5px;
-  font-weight: 550;
-  color: var(--ink-2);
-}
-.chip i { width: 6px; height: 6px; border-radius: 50%; background: #fff; }
-.chip[data-src='mock'] i, .chip[data-src='none'] i { background: transparent; box-shadow: inset 0 0 0 1.5px var(--ink-3); }
-.chip[data-src='cloud'] i { background: var(--ink-2); }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 11px; border-radius: 999px; background: var(--fill); font-size: 12px; font-weight: 600; color: var(--label); }
+.chip i { width: 6px; height: 6px; border-radius: 50%; background: var(--toggle-on); }
+.chip[data-src='mock'] i, .chip[data-src='none'] i { background: var(--label-3); }
+.chip[data-src='cloud'] i { background: #0a84ff; }
