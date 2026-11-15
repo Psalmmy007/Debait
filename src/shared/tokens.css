@@ -1,46 +1,50 @@
-/* Debait design tokens (popup + side panel). */
+/* Debait tokens for the popup and side panel. Black and white only:
+   depth comes from light, crisp edges and real shadows. */
 :root {
-  --bait: #ff4d2e;
-  --calm: #2f5bff;
-  --ink: #0b0d12;
-  --grey: #5b6170;
-  --line: #e4e6eb;
-  --marker: #ffb5a5;
-  --rage: #ff4d2e;
-  --fear: #ff7a1a;
-  --envy: #e8366d;
-  --clean: #2f5bff;
+  --s0: #060607;
+  --s1: #0e0e10;
+  --s2: #151517;
+  --hair: rgba(255, 255, 255, 0.09);
+  --ink: #fafafa;
+  --ink-2: #a8a8b0;
+  --ink-3: #8c8c95;
   --ui: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --brand: 'Bricolage Grotesque Variable', 'Inter Variable', system-ui, sans-serif;
   --serif: 'Newsreader Variable', Georgia, serif;
   --spring: linear(0, 0.009, 0.035 2.1%, 0.141, 0.281 6.7%, 0.723 12.9%, 0.938 16.7%, 1.017, 1.077, 1.121, 1.149 24.3%, 1.159, 1.163, 1.161, 1.154 29.9%, 1.129 32.8%, 1.051 39.6%, 1.017 43.1%, 0.991, 0.977 51%, 0.974 53.8%, 0.975 57.1%, 0.997 69.8%, 1.003 76.9%, 1.004 83.8%, 1);
+  --out: cubic-bezier(0.16, 1, 0.3, 1);
+  color-scheme: dark;
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; background: #fff; color: var(--ink); font-family: var(--ui); -webkit-font-smoothing: antialiased; }
+html, body { margin: 0; background: #0a0a0c; color: var(--ink); font-family: var(--ui); -webkit-font-smoothing: antialiased; }
 button { font: inherit; color: inherit; }
+button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 
-/* mini orb used as the logo */
-.mini-orb {
-  position: relative; width: 26px; height: 26px; border-radius: 50%; overflow: hidden; flex: none;
-  background: radial-gradient(circle at 32% 28%, #fff 0%, #e6e9f0 22%, #b3bacb 58%, #707990 100%);
-  box-shadow: inset -3px -4px 7px rgba(18,28,80,.35), inset 2px 3px 5px rgba(255,255,255,.8), 0 4px 10px -3px rgba(30,45,110,.4);
+/* logo: a small glass sphere */
+.logo {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 50%;
+  background:
+    radial-gradient(38% 28% at 38% 24%, rgba(255, 255, 255, 0.9), transparent 70%),
+    radial-gradient(circle at 50% 62%, #75757d 0%, #2a2a2e 45%, #050506 82%);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14), 0 6px 12px -4px rgba(0, 0, 0, 0.7);
 }
-.mini-orb::before {
-  content: ''; position: absolute; inset: -35%;
-  background: conic-gradient(#2f5bff, #6fc3ff, #a98bff, #ff9fd4, #8ff0d6, #2f5bff);
-  filter: blur(5px); mix-blend-mode: overlay; animation: mini-spin 9s linear infinite;
-}
-.mini-orb::after {
-  content: ''; position: absolute; top: 12%; left: 18%; width: 38%; height: 26%; border-radius: 50%;
-  background: radial-gradient(ellipse, rgba(255,255,255,.95), transparent 70%); transform: rotate(-24deg);
-}
-@keyframes mini-spin { to { transform: rotate(360deg); } }
 
 .chip {
-  display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px;
-  border: 1px solid var(--line); border-radius: 999px; font-size: 11.5px; font-weight: 600; color: var(--grey); background: #fff;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 0 0 1px var(--hair);
+  font-size: 11.5px;
+  font-weight: 550;
+  color: var(--ink-2);
 }
-.chip i { width: 7px; height: 7px; border-radius: 50%; background: #a9b1c2; box-shadow: 0 0 0 3px rgba(169,177,194,.22); }
-.chip[data-src='on-device'] i { background: #22b573; box-shadow: 0 0 0 3px rgba(34,181,115,.16); }
-.chip[data-src='cloud'] i { background: #7a8bff; box-shadow: 0 0 0 3px rgba(122,139,255,.18); }
-.chip[data-src='none'] i { background: var(--bait); box-shadow: 0 0 0 3px rgba(255,77,46,.16); }
+.chip i { width: 6px; height: 6px; border-radius: 50%; background: #fff; }
+.chip[data-src='mock'] i, .chip[data-src='none'] i { background: transparent; box-shadow: inset 0 0 0 1.5px var(--ink-3); }
+.chip[data-src='cloud'] i { background: var(--ink-2); }

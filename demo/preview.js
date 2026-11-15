@@ -4,6 +4,8 @@ import { mockEngine } from '../src/engine/mockEngine.js';
 import { MSG, normalizeResult } from '../src/engine/contract.js';
 
 const store = JSON.parse(localStorage.getItem('debait-preview') || '{}');
+// The preview has no toolbar popup to bring the orb back, so it always starts visible.
+if (store.settings) store.settings.showOrb = true;
 const listeners = [];
 
 globalThis.chrome = {
@@ -15,7 +17,8 @@ globalThis.chrome = {
         const raw = await mockEngine.scoreHeadlines(msg.texts, {});
         return { ok: true, cacheHits: 0, results: msg.texts.map((t, i) => normalizeResult(raw[i], t)) };
       }
-      return { ok: true };
+      if (msg.type === MSG.STATUS) return { ok: true, status: { ready: true, source: 'mock', message: 'Mock engine (preview)' } };
+      return { ok: false };
     },
   },
   storage: {

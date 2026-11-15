@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Debait pages preview</title>
+</head>
+<body>
+  <script type="module">
+    // Renders the real popup (?page=popup) or side panel (default) with fake Chrome APIs.
+    import './pages-preview.js';
+    import sideHtml from '../src/sidepanel/index.html?raw';
+    import popupHtml from '../src/popup/index.html?raw';
+    const page = new URLSearchParams(location.search).get('page') || 'sidepanel';
+    const html = page === 'popup' ? popupHtml : sideHtml;
+    document.body.innerHTML = html.match(/<body>([\s\S]*)<\/body>/)[1].replace(/<script[\s\S]*?<\/script>/g, '');
+    if (page === 'popup') {
+      await import('../src/popup/popup.css');
+      await import('../src/popup/popup.js');
+    } else {
+      document.body.style.maxWidth = '380px';
+      await import('../src/sidepanel/sidepanel.css');
+      await import('../src/sidepanel/sidepanel.js');
+    }
+  </script>
+</body>
+</html>

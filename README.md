@@ -14,10 +14,12 @@ history. A **Local only** switch turns the cloud off.
 
 ## What you see
 
-- **The Debait ball.** A tiny liquid orb floats on the page. Drag it anywhere. Click it and a blue
-  wave spreads across the page, rewriting every bait headline. Click again to restore the originals.
-- **Tags.** Each headline gets a Rage / Fear / Envy / Clean pill with its bait score.
-- **Highlights.** Manipulative words get a highlighter mark.
+- **The orb.** A small glass sphere of moving smoke (real-time WebGL) floats on the page. It's a
+  dark storm when the page is full of bait and a calm pearl once it's clean. Drag it anywhere.
+  Click it and a ring sweeps across the page while every bait headline decodes into an honest one.
+  Click again to restore the originals. Double-click for settings.
+- **Tags.** Each headline gets a Rage / Fear / Envy / Clean keycap with its bait score.
+- **Highlights.** Manipulative words are underlined.
 - **Ingredients card.** Click a tag to see why a headline is bait, word by word, and what actually happened.
 - **Popup.** Today's bait %, breakdown, switches, and which engine is running (on-device / cloud).
 - **Weekly Mind Facts.** A side panel laid out like a nutrition label for your week.
@@ -49,7 +51,11 @@ npm run demo
 
 This opens a fake feed at http://localhost:5180 with the extension's demo headlines.
 Add `?preview` to the URL (http://localhost:5180/?preview) to see the Debait UI **without
-installing the extension**, which is handy for UI work.
+installing the extension**, which is handy for UI work. Add `&dark` for a dark-mode feed.
+
+Design tools on the same server:
+- http://localhost:5180/orb.html shows the orb large, in every mood, on light and dark backgrounds.
+- http://localhost:5180/pages.html shows Weekly Mind Facts, and `pages.html?page=popup` the popup.
 
 ## Project layout
 

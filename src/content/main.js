@@ -6,6 +6,7 @@ import { injectPageStyles, paintHighlights, swapToRewrite, swapToOriginal } from
 import { createOverlay, createOrb, playRipple } from './ui/overlay.js';
 import { createTag } from './ui/tag.js';
 import { openCard, closeCard } from './ui/card.js';
+import { createSettingsPanel } from './ui/settings.js';
 
 const BATCH = 8;
 const MIN_LEN = 12;
@@ -31,11 +32,31 @@ async function start() {
   let stats = { hits: 0, scored: 0 };
 
   const overlay = createOverlay();
-  const orb = createOrb(overlay, { onClick: (origin) => toggleDebaitPage(origin) });
+  const orb = createOrb(overlay, {
+    onClick: (origin) => toggleDebaitPage(origin),
+    onDoubleClick: () => { closeCard(); panel.toggle(); },
+  });
+  const panel = createSettingsPanel(overlay.panelLayer, {
+    getPage: pageCounts,
+    onToggle: () => toggleDebaitPage(orb.center()),
+    orbCenter: () => orb.center(),
+    onOpenChange: (open) => orb.setPanelOpen(open),
+  });
   orb.setVisible(settings.showOrb);
 
   // ---------- helpers ----------
   const paint = (hotRecord) => paintHighlights(records.values(), { enabled: settings.showTags, hotRecord });
+
+  function pageCounts() {
+    let bait = 0, debaited = 0, scanned = 0;
+    for (const r of records.values()) {
+      if (!r.result) continue;
+      scanned++;
+      if (r.state === 'debaited') debaited++;
+      else if (r.result.kind !== 'clean') bait++;
+    }
+    return { bait, debaited, scanned };
+  }
 
   function refreshOrb() {
     let bait = 0, debaited = 0, scanned = 0;
@@ -47,6 +68,7 @@ async function start() {
     }
     const state = inflight > 0 && bait === 0 ? 'busy' : bait > 0 ? 'bait' : debaited > 0 ? 'calm' : 'idle';
     orb.update({ state, bait, debaited, scanned });
+    panel.refresh();
   }
 
   // ---------- finding headlines ----------
@@ -69,7 +91,7 @@ async function start() {
       const existing = records.get(el);
       if (existing) {
         // sites like X reuse elements for new posts: rescore if the text changed
-        if (existing.state === 'debaited' || textOf(el) === existing.text || textOf(el) === existing.result?.honest_rewrite) continue;
+        if (existing.animating || existing.state === 'debaited' || textOf(el) === existing.text || textOf(el) === existing.result?.honest_rewrite) continue;
         existing.tag?.remove();
         records.delete(el);
       }
@@ -164,8 +186,8 @@ async function start() {
     const done = all.filter((r) => r.state === 'debaited');
 
     if (bait.length) {
-      // the blue wave flows out from the orb; each headline flips when the wave reaches it
-      const { R, duration } = playRipple(overlay.rippleLayer, origin);
+      // the wave rolls out from the orb; each headline decodes when the wave reaches it
+      const { R, duration } = playRipple(origin);
       const jobs = bait.map((rec) => {
         const delay = duration ? Math.min(1, distanceFrom(origin, rec.el) / R) * duration * 0.75 : 0;
         setTimeout(() => rec.tag?.setDebaited(true, rec.result), delay + 240);
@@ -176,7 +198,7 @@ async function start() {
       chrome.runtime.sendMessage({ type: 'debait/debaited', count: bait.length });
     } else if (done.length) {
       // undo: the wave flows back into the orb
-      const { R, duration } = playRipple(overlay.rippleLayer, origin, { undo: true });
+      const { R, duration } = playRipple(origin, { undo: true });
       const jobs = done.map((rec) => {
         const delay = duration ? (1 - Math.min(1, distanceFrom(origin, rec.el) / R)) * duration * 0.6 : 0;
         setTimeout(() => rec.tag?.setDebaited(false, rec.result), delay + 240);

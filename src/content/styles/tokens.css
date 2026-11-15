@@ -1,0 +1,28 @@
+/* Debait on-page tokens. Black and white only; depth comes from light, edges and motion.
+   Everything lives inside Shadow DOM, so the host site can't touch it and it can't touch the host site. */
+:host {
+  --s0: #060607;
+  --s1: #0e0e10;
+  --s2: #151517;
+  --s3: #1e1e21;
+  --hair: rgba(255, 255, 255, 0.09);
+  --hair-hi: rgba(255, 255, 255, 0.18);
+  --ink: #fafafa;
+  --ink-2: #a8a8b0;
+  --ink-3: #8c8c95;
+  --paper: #ffffff;
+  --paper-ink: #09090b;
+  --paper-edge: #9d9da7;
+  --ui: 'Debait Inter', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --brand: 'Debait Bricolage', 'Debait Inter', system-ui, sans-serif;
+  --serif: 'Debait Newsreader', Georgia, 'Times New Roman', serif;
+  /* springy easing: overshoots a little, then settles */
+  --spring: linear(0, 0.009, 0.035 2.1%, 0.141, 0.281 6.7%, 0.723 12.9%, 0.938 16.7%, 1.017, 1.077, 1.121, 1.149 24.3%, 1.159, 1.163, 1.161, 1.154 29.9%, 1.129 32.8%, 1.051 39.6%, 1.017 43.1%, 0.991, 0.977 51%, 0.974 53.8%, 0.975 57.1%, 0.997 69.8%, 1.003 76.9%, 1.004 83.8%, 1);
+  --out: cubic-bezier(0.16, 1, 0.3, 1);
+  font-family: var(--ui);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+* { box-sizing: border-box; }
+button { font: inherit; color: inherit; margin: 0; }
+svg { display: block; }
