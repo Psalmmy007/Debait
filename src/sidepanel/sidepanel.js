@@ -8,8 +8,11 @@ const $ = (s) => document.querySelector(s);
 const KINDS = ['rage', 'fear', 'envy', 'clean'];
 const DAY = (key) => new Date(`${key}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short' });
 
+let showingSample = false;
+
 async function render() {
-  const days = await getRecentStats(7);
+  const days = showingSample ? sampleWeek() : await getRecentStats(7);
+  document.body.classList.toggle('sample', showingSample);
   const sum = { ...emptyDay() };
   for (const d of days) {
     for (const k of ['total', 'debaited', ...KINDS]) sum[k] += d[k];
@@ -59,28 +62,34 @@ async function render() {
   const worst = top.slice(0, 3).map(([h]) => h);
   const topKind = ['rage', 'fear', 'envy'].sort((a, b) => sum[b] - sum[a])[0];
   $('#tip').innerHTML = !sum.total
-    ? '<b>Suggestion</b>Turn on Debait and browse as usual. Your first label appears here.'
+    ? '<b>Suggestion</b>Browse as usual. Debait counts only headlines that Gemini actually checked, so your label fills up once Gemini is on.'
     : worst.length >= 2
       ? `<b>Suggestion</b>Mute these ${worst.length} sources: ${worst.join(', ')}. They served most of your ${topKind}.`
       : `<b>Suggestion</b>Your feed leans ${topKind}. Try “Debait automatically” for a calmer week.`;
 }
 
-// Fills the last 7 days with realistic numbers, for the demo video.
-$('#seed').addEventListener('click', async () => {
-  const stats = {};
+// A made-up week for previews and the demo video. It is only drawn on screen and never saved,
+// so it can't mix with your real numbers.
+function sampleWeek() {
+  const out = [];
   const shape = [0.46, 0.41, 0.52, 0.33, 0.24, 0.38, 0.44];
   for (let i = 6; i >= 0; i--) {
     const d = new Date();
     d.setDate(d.getDate() - i);
-    const total = 140 + Math.round(Math.random() * 120);
+    const total = [212, 188, 247, 176, 151, 203, 229][6 - i]; // fixed, so the demo looks the same every time
     const bait = Math.round(total * shape[6 - i]);
     const rage = Math.round(bait * 0.48), fear = Math.round(bait * 0.32), envy = bait - rage - fear;
-    stats[dayKey(d)] = {
-      total, rage, fear, envy, clean: total - bait, debaited: Math.round(bait * 0.6),
+    out.push({
+      date: dayKey(d), total, rage, fear, envy, clean: total - bait, debaited: Math.round(bait * 0.6),
       sources: { 'x.com': Math.round(bait * 0.45), 'youtube.com': Math.round(bait * 0.3), 'dailyoutrage.news': Math.round(bait * 0.15), 'bbc.com': Math.round(bait * 0.1) },
-    };
+    });
   }
-  await chrome.storage.local.set({ stats });
+  return out;
+}
+$('#seed').addEventListener('click', () => {
+  showingSample = !showingSample;
+  $('#seed').textContent = showingSample ? 'Back to my real week' : 'Show a sample week';
+  render();
 });
 
 chrome.storage.onChanged.addListener((c, area) => { if (area === 'local' && c.stats) render(); });

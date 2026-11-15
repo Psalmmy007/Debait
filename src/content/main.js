@@ -248,7 +248,7 @@ async function start() {
   function debaitOne(rec) {
     swapToRewrite(rec).then(() => { paint(); refreshOrb(); });
     setTimeout(() => rec.tag?.setDebaited(true, rec.result), 240);
-    chrome.runtime.sendMessage({ type: 'debait/debaited', count: 1 });
+    if (rec.result.source !== 'mock') chrome.runtime.sendMessage({ type: 'debait/debaited', count: 1 });
     refreshOrb();
   }
 
@@ -280,7 +280,8 @@ async function start() {
       });
       refreshOrb();
       Promise.all(jobs).then(() => { paint(); refreshOrb(); });
-      chrome.runtime.sendMessage({ type: 'debait/debaited', count: bait.length });
+      const real = bait.filter((r) => r.result.source !== 'mock').length;
+      if (real) chrome.runtime.sendMessage({ type: 'debait/debaited', count: real });
     } else if (done.length) {
       // undo: the wave flows back into the orb
       const { R, duration } = playRipple(origin, { undo: true });
