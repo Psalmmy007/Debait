@@ -8,7 +8,7 @@
   "scripts": {
     "test": "node --test",
     "fonts": "node scripts/copy-fonts.js",
-    "build": "npm run fonts && vite build",
+    "build": "npm run fonts && vite build && node scripts/stamp.js",
     "watch": "npm run fonts && vite build --watch",
     "demo": "vite --config demo/vite.config.js --open",
     "dev": "vite --config vite.web.config.js",

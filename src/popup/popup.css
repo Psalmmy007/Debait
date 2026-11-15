@@ -122,3 +122,13 @@ body { background: radial-gradient(130% 60% at 20% 0%, #26262c 0%, #0c0c0f 60%);
 .switches { margin-top: 14px; padding-top: 4px; padding-bottom: 4px; }
 .switches label { border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
 .switches label:last-child { border-bottom: 0; }
+
+/* ---- clearer text ---- */
+body { font-size: 14px; }
+.switches label, .site { font-size: 14px; }
+.switches small { font-size: 12.5px; line-height: 1.4; color: var(--ink-2); }
+.today p { font-size: 13.5px; color: var(--ink-2); }
+.legend { font-size: 12px; color: var(--ink-2); }
+.kicker { font-size: 11.5px; color: var(--ink-2); }
+.setup { font-size: 13px; }
+.chip { font-size: 12px; color: #e4e4e7; }

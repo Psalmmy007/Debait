@@ -245,3 +245,13 @@
 
 .p-sec { background: linear-gradient(160deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), inset 0 0 0 1px rgba(255, 255, 255, 0.07); }
 .p-link, .chip { background: linear-gradient(160deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 0 0 1px rgba(255, 255, 255, 0.08); }
+
+/* ---- clearer text ---- */
+.panel { font-size: 14px; }
+.p-row { font-size: 14px; }
+.p-row small { font-size: 12.5px; line-height: 1.4; color: var(--ink-2); }
+.p-sec h4, .p-kicker { font-size: 11.5px; color: var(--ink-2); }
+.p-num span, .p-stat > span { font-size: 12.5px; color: var(--ink-2); }
+.p-legend { font-size: 12px; }
+.p-brand small, .p-site, .p-foot { font-size: 12.5px; color: var(--ink-2); }
+.chip { font-size: 12px; color: #e4e4e7; }
