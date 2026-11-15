@@ -96,6 +96,6 @@ test('the installed Firebase integration fails closed with unconfigured producti
   // Loads the real installed SDK. This verifies a negative path only, not Firebase success.
   const { getAi } = await import('../src/engine/firebaseEngine.js');
   await assert.rejects(getAi(), error => {
-    assert.equal(error.code, 'debait/app-check-setup'); assert.match(error.message, /trusted App Check/); return true;
+    assert.equal(error.code, 'debait/app-check-setup'); assert.match(error.message, /installation|trusted App Check/); return true;
   });
 });

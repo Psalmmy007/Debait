@@ -40,7 +40,8 @@ tokens to that file, any Vite variable, or Git.
 2. In desktop Chrome, open `chrome://extensions`, enable Developer mode, and load
    this checkout's `dist` directory unpacked. The code checks Chrome's installation
    type using `chrome.management.getSelf()` in the service worker, as well as build
-   intent and manifest packaging. The offscreen document obtains the result through
+   intent and manifest packaging. The worker also reads manifest packaging (`getManifest()` is not available in
+   the offscreen context). The offscreen document obtains both results through
    a worker message restricted to that document. Chrome does not require the broad
    `management` permission for `getSelf()`; no new permissions are added. Offscreen
    documents cannot call `chrome.management` directly. A store or sideloaded packaged
@@ -89,6 +90,48 @@ new permissions. Keep the same `dist` location so its development identity and s
 debug token remain stable. Register a new token only if the installation's token changed.
 A successful build or installation-type check still does not prove App Check authentication;
 complete the Firebase Console and real-request verification steps above.
+
+## Communication and on-device retest
+
+The engine now waits for an offscreen readiness response before forwarding operations.
+A temporary missing worker response does not permanently disable development verification;
+it still denies that request and retries verification on a later request. Installation
+metadata must contain both Chrome's install type and worker-derived packaging information.
+No permissions or authentication requirements have been relaxed.
+
+After updating, rebuild with `VITE_DEBAIT_APP_CHECK=debug npm run build:dev`, reload the
+existing unpacked extension in `chrome://extensions`, and refresh **all test tabs**.
+Reloading an extension invalidates old content scripts; injecting new scripts does not
+reliably repair the old execution context. Current content scripts report a refresh
+instruction and stop retrying after context invalidation instead of throwing a raw
+`sendMessage` TypeError. Do not uninstall or clear storage just to perform this update.
+
+Check cloud authentication with a fresh public test headline and Local Only off on a
+profile where Nano is unavailable; do not use the mock preview as evidence. Then test
+Nano separately with Local Only on. All availability/create calls should specify English
+input **and output**. An availability result of `available` is not proof that a model
+session can execute.
+
+The message “model was available but there was not an execution config available”
+comes from the on-device execution path; this repository alone cannot establish why
+Chrome's configuration was unavailable. It is now reported separately from App Check.
+Do not disable enforcement or change browser security flags to hide it. If it persists,
+collect Chrome version and OS, whether the error is from the offscreen/popup/content
+context, and the redacted file/line/stack of the first error after a clean reload.
+In the offscreen console, this credential-free capability check may help:
+
+```js
+await LanguageModel.availability({
+  expectedInputs: [{ type: 'text', languages: ['en'] }],
+  expectedOutputs: [{ type: 'text', languages: ['en'] }]
+})
+```
+
+Share only the availability result and redacted diagnostics, never App Check tokens,
+provider payloads or authentication headers. The reported raw `sendMessage` error
+cannot be assigned to one original call site without its stack trace; context
+invalidation is handled defensively, not asserted as the proven origin of that report.
+Successful App Check/model execution must still be established from actual browser requests.
 
 ## Production strategy and release blocker
 

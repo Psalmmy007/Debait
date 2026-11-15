@@ -24,6 +24,7 @@ async function fixture(t, { localOnly = false, voice = false, cache = [], engine
       onMessage: { addListener: fn => { router = fn; } },
       sendMessage: async msg => {
         messages.push(msg);
+        if (msg.type === 'debait/engine-ready') return { ok: true, ready: true };
         if (msg.type === 'debait/mic-state') return { state: 'granted' };
         if (msg.type === 'debait/score') return engine ? engine(msg) : { ok: true, results: msg.texts.map(() => result(msg.localOnly ? 'on-device' : 'cloud')) };
         return { ok: true };
@@ -287,7 +288,7 @@ test('the service worker uses getSelf to answer the authenticated offscreen inst
   let queried = false;
   chrome.management.getSelf = async () => { queried = true; return { installType: 'development' }; };
   const response = await f.sendOffscreen({ type: 'debait/installation-type' });
-  assert.equal(queried, true); assert.deepEqual(response, { ok: true, installType: 'development' });
+  assert.equal(queried, true); assert.deepEqual(response, { ok: true, installType: 'development', hasUpdateUrl: true });
 });
 
 test('website content scripts cannot supply or obtain trusted installation metadata', async t => {

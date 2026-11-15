@@ -5,9 +5,10 @@ import { initializeAppCheck, CustomProvider, getToken } from 'firebase/app-check
 import { getAI, getGenerativeModel, GoogleAIBackend, InferenceMode, Schema } from 'firebase/ai';
 import { firebaseConfig, CLOUD_MODEL } from './firebaseConfig.js';
 
-import { createFirebaseAccess, installationTypeFromWorker } from './authPolicy.js';
+import { createFirebaseAccess, installationFromWorker } from './authPolicy.js';
 import { aiError } from './errors.js';
 import { createHeadlineEngine } from './inference.js';
+import { deviceAvailability } from './device.js';
 
 // Production intentionally has no default issuer: an authenticated server-side
 // attestation/token service must be provisioned and reviewed before connecting one.
@@ -15,9 +16,8 @@ const access = createFirebaseAccess({
   sdk: { initializeApp, initializeAppCheck, CustomProvider, getToken, getAI, GoogleAIBackend },
   config: firebaseConfig,
   env: import.meta.env,
-  manifest: globalThis.chrome?.runtime?.getManifest?.(),
   globals: globalThis,
-  getInstallType: () => installationTypeFromWorker(),
+  getInstallation: () => installationFromWorker(),
 });
 export async function getAi(debugToken) {
   try { return await access.getAi(debugToken); } catch (error) { throw aiError(error); }
@@ -82,14 +82,6 @@ HEADLINES:
 ${texts.map((t, i) => `${i + 1}. ${t}`).join('\n')}`;
 }
 
-async function deviceAvailability() {
-  try {
-    if (typeof LanguageModel === 'undefined') return 'unavailable';
-    return await LanguageModel.availability({ expectedInputs: LANG });
-  } catch {
-    return 'unavailable';
-  }
-}
 
 export const firebaseEngine = createHeadlineEngine({
   getAi, getDeviceAi, getGenerativeModel, InferenceMode,

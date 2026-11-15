@@ -5,12 +5,18 @@ export async function installationType(chromeApi = globalThis.chrome) {
 
 // Offscreen documents can use runtime messaging, not chrome.management.
 // The service worker derives the answer from Chrome; callers never supply it.
-export async function installationTypeFromWorker(chromeApi = globalThis.chrome) {
+export async function installationFromWorker(chromeApi = globalThis.chrome) {
   try {
     const reply = await chromeApi.runtime.sendMessage({ type: 'debait/installation-type' });
-    return reply?.ok === true && ['development', 'normal', 'sideload', 'admin', 'other'].includes(reply.installType)
-      ? reply.installType : 'unknown';
-  } catch { return 'unknown'; }
+    if (reply?.ok === true && typeof reply.hasUpdateUrl === 'boolean' &&
+        ['development', 'normal', 'sideload', 'admin', 'other'].includes(reply.installType)) {
+      return { installType: reply.installType, manifest: reply.hasUpdateUrl ? { update_url: true } : {} };
+    }
+  } catch { /* No trusted answer: fail closed, but allow a later retry. */ }
+  return undefined;
+}
+export async function installationTypeFromWorker(chromeApi = globalThis.chrome) {
+  return (await installationFromWorker(chromeApi))?.installType || 'unknown';
 }
 
 export function debugAppCheckAllowed(env, manifest, installType) {
@@ -26,7 +32,7 @@ export function appCheckSetupError(message) {
 // SDK dependencies are injected so the authentication boundary is testable offline.
 // A production provider must obtain short-lived tokens from a trusted issuer;
 // it must never mint tokens or contain a service-account key in this extension.
-export function createFirebaseAccess({ sdk, config, env, manifest, globals, productionProvider, getInstallType = installationType }) {
+export function createFirebaseAccess({ sdk, config, env, manifest, globals, productionProvider, getInstallType = installationType, getInstallation = async () => ({ installType: await getInstallType(), manifest }) }) {
   let ai, appCheck;
   let debug;
   let initialDebugToken;
@@ -36,7 +42,13 @@ export function createFirebaseAccess({ sdk, config, env, manifest, globals, prod
       if (env?.VITE_DEBAIT_APP_CHECK === 'debug' && !['development', 'demo'].includes(env?.MODE)) {
         throw appCheckSetupError('Debug authentication was requested in a production-mode build. Rebuild with VITE_DEBAIT_APP_CHECK=debug npm run build:dev, then reload the unpacked extension.');
       }
-      if (debug === undefined) debug = debugAppCheckAllowed(env, manifest, await getInstallType());
+      if (debug === undefined) {
+        const verified = await getInstallation();
+        if (!verified || verified.installType === 'unknown') {
+          throw appCheckSetupError('Chrome did not verify the installation: the extension worker is unavailable. Reload the extension and refresh the page, then retry.');
+        }
+        debug = debugAppCheckAllowed(env, verified.manifest, verified.installType);
+      }
       if (env?.VITE_DEBAIT_APP_CHECK === 'debug' && !debug) {
         throw appCheckSetupError('Development authentication is blocked: Chrome did not verify an unpacked development installation. Reload the extension and check its service worker. Debug authentication is never allowed for packaged installs.');
       }

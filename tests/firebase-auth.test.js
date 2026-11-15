@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createFirebaseAccess, debugAppCheckAllowed, installationType, installationTypeFromWorker } from '../src/engine/authPolicy.js';
+import { createFirebaseAccess, debugAppCheckAllowed, installationType, installationTypeFromWorker, installationFromWorker } from '../src/engine/authPolicy.js';
 import { aiError } from '../src/engine/errors.js';
 import { createDebugTokenStore } from '../src/engine/debugTokenStore.js';
 
@@ -139,7 +139,7 @@ test('production rejects even an empty string debug flag, matching the SDK activ
 test('the offscreen runtime-only API obtains installation type from the service worker', async () => {
   const runtimeOnly = { runtime: { sendMessage: async message => {
     assert.deepEqual(message, { type: 'debait/installation-type' });
-    return { ok: true, installType: await installationType({ management: { getSelf: async () => ({ installType: 'development' }) } }) };
+    return { ok: true, hasUpdateUrl: false, installType: await installationType({ management: { getSelf: async () => ({ installType: 'development' }) } }) };
   } } };
   assert.equal(runtimeOnly.management, undefined);
   const f = fixture({ getInstallType: () => installationTypeFromWorker(runtimeOnly) });
@@ -149,7 +149,7 @@ test('the offscreen runtime-only API obtains installation type from the service 
 
 test('a packaged installation relayed by the worker cannot enable debug authentication', async () => {
   const f = fixture({ getInstallType: () => installationTypeFromWorker({ runtime: {
-    sendMessage: async () => ({ ok: true, installType: 'normal' }),
+    sendMessage: async () => ({ ok: true, installType: 'normal', hasUpdateUrl: false }),
   } }) });
   await assert.rejects(f.access.getAi('test-installation'), /never allowed for packaged/);
   assert.equal(f.calls.init, 0);
@@ -167,4 +167,23 @@ for (const reply of [undefined, { ok: false, installType: 'development' }, { ok:
 
 test('an unreachable worker does not enable development authentication', async () => {
   assert.equal(await installationTypeFromWorker({ runtime: { sendMessage: async () => { throw new Error('worker down'); } } }), 'unknown');
+});
+
+test('runtime-only offscreen context verifies packaging without getManifest or management', async () => {
+  const api = { runtime: { sendMessage: async () => ({ ok: true, installType: 'development', hasUpdateUrl: false }) } };
+  const f = fixture({ manifest: undefined, getInstallation: () => installationFromWorker(api) });
+  assert.equal(api.runtime.getManifest, undefined); assert.equal(api.management, undefined);
+  assert.ok(await f.access.getAi('test-installation')); assert.equal(f.access.debug, true);
+});
+
+test('temporary verification failure does not permanently latch debug authentication off', async () => {
+  let available = false;
+  const f = fixture({ getInstallation: async () => available ? { installType: 'development', manifest: {} } : undefined });
+  await assert.rejects(f.access.getAi('test-installation'), /worker is unavailable/);
+  available = true;
+  assert.ok(await f.access.getAi('test-installation')); assert.equal(f.access.debug, true);
+});
+
+test('worker packaging metadata is required and cannot be guessed from installType alone', async () => {
+  assert.equal(await installationFromWorker({ runtime: { sendMessage: async () => ({ ok: true, installType: 'development' }) } }), undefined);
 });

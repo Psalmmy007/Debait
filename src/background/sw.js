@@ -3,6 +3,7 @@ import { MSG, normalizeResult } from '../engine/contract.js';
 import { getSettings, dayKey, emptyDay } from '../shared/storage.js';
 import { DEMO_MODE } from '../engine/mode.js';
 import { debugAppCheckAllowed, installationType } from '../engine/authPolicy.js';
+import { waitForEngineReady } from '../offscreen/readiness.js';
 import { createDebugTokenStore, readDebugToken, writeDebugToken } from '../engine/debugTokenStore.js';
 
 const OFFSCREEN_URL = 'src/offscreen/index.html';
@@ -57,7 +58,7 @@ async function ensureOffscreen() {
     contextTypes: ['OFFSCREEN_DOCUMENT'],
     documentUrls: [url],
   });
-  if (existing.length) return;
+  if (existing.length) return waitForEngineReady(message => chrome.runtime.sendMessage(message));
   if (!creating) {
     creating = chrome.offscreen
       .createDocument({
@@ -68,6 +69,7 @@ async function ensureOffscreen() {
       .finally(() => { creating = null; });
   }
   await creating;
+  await waitForEngineReady(message => chrome.runtime.sendMessage(message));
 }
 
 // Only unpacked, explicit debug builds create a development credential.
@@ -269,7 +271,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const offscreen = sender.id === chrome.runtime.id && !sender.tab &&
           sender.url === chrome.runtime.getURL(OFFSCREEN_URL);
         if (!offscreen) throw new Error('Installation metadata is only available to the extension offscreen document.');
-        sendResponse({ ok: true, installType: await installationType() });
+        sendResponse({ ok: true, installType: await installationType(), hasUpdateUrl: 'update_url' in chrome.runtime.getManifest() });
       } else if (msg.type === MSG.SCORE) {
         const host = sender.tab?.url ? new URL(sender.tab.url).hostname.replace(/^www\./, '') : '';
         sendResponse({ ok: true, ...(await scoreTexts(msg.texts, host)) });

@@ -1,3 +1,4 @@
+import { sendRuntimeMessage } from '../shared/messaging.js';
 // Debait content script: finds headlines, gets them scored, and runs the on-page UI.
 import { MSG } from '../engine/contract.js';
 import { getSettings, onSettingsChange } from '../shared/storage.js';
@@ -22,7 +23,7 @@ const mark = (k, v) => { try { document.documentElement.setAttribute(`data-debai
 const report = (err) => {
   const message = String(err?.stack || err?.message || err).slice(0, 600);
   mark('error', message);
-  try { chrome.runtime.sendMessage({ type: 'debait/error', where: `content ${location.hostname}`, message }).catch(() => {}); } catch { /* extension reloaded */ }
+  try { sendRuntimeMessage({ type: 'debait/error', where: `content ${location.hostname}`, message }).catch(() => {}); } catch { /* extension reloaded */ }
 };
 mark('loaded', chrome.runtime?.getManifest?.().version || 'yes');
 
@@ -45,6 +46,7 @@ async function start() {
   const queue = [];
   let inflight = 0;
   let stats = { hits: 0, scored: 0 };
+  let contextLost = false;
   let notice = '';     // why scoring is paused, shown on the orb
   let retryTimer = null;
 
@@ -107,7 +109,7 @@ async function start() {
       return { ok: true, setting: args.setting, on: !!args.on };
     }
     if (name === 'open_mind_facts') {
-      const res = await chrome.runtime.sendMessage({ type: 'debait/openSidePanel' }).catch(() => null);
+      const res = await sendRuntimeMessage({ type: 'debait/openSidePanel' }).catch(() => null);
       return res?.ok ? { ok: true } : { ok: false, tip: 'Tell the user to click the Debait icon, then Weekly Mind Facts.' };
     }
     return { error: 'unknown tool' };
@@ -121,7 +123,7 @@ async function start() {
     else orb.setVoice({ mode: 'idle' });
   }
   // a call may already be running when this page loads
-  if (settings.voice) chrome.runtime.sendMessage({ target: 'offscreen', type: 'debait/call-status' }).then((r) => r?.inCall && onCallState({ state: 'live' })).catch(() => {});
+  if (settings.voice) sendRuntimeMessage({ target: 'offscreen', type: 'debait/call-status' }).then((r) => r?.inCall && onCallState({ state: 'live' })).catch(() => {});
 
   // ---------- helpers ----------
   const paint = (hotRecord) => paintHighlights(records.values(), { enabled: settings.showTags, hotRecord });
@@ -208,14 +210,14 @@ async function start() {
   let flushing = false;
 
   async function flush() {
-    if (flushing) return;
+    if (flushing || contextLost) return;
     flushing = true;
     while (queue.length) {
       const batch = queue.splice(0, BATCH);
       inflight++;
       refreshOrb();
       try {
-        const res = await chrome.runtime.sendMessage({ type: MSG.SCORE, texts: batch.map((r) => r.text) });
+        const res = await sendRuntimeMessage({ type: MSG.SCORE, texts: batch.map((r) => r.text) });
         if (!res?.ok) throw new Error(res?.error || 'no response');
         stats.hits += res.cacheHits;
         stats.scored += batch.length;
@@ -229,6 +231,11 @@ async function start() {
           ? `Local only: analysis unavailable. ${err.message.replace(/^LOCAL_ONLY:\s*/, '')}`
           : `Analysis unavailable: ${err.message}. No classification was produced. Retrying in a minute.`;
         clearTimeout(retryTimer);
+        if (err.code === 'debait/context-unavailable') {
+          contextLost = true;
+          notice = err.message;
+          break; // A stale extension context cannot recover by retrying messages.
+        }
         retryTimer = setTimeout(() => {
           notice = '';
           for (const r of records.values()) if (r.failed && !r.result) { r.failed = false; r.tag?.setVisible(settings.showTags); r.queued = true; queue.push(r); }
@@ -257,7 +264,7 @@ async function start() {
   function debaitOne(rec) {
     swapToRewrite(rec).then(() => { paint(); refreshOrb(); });
     setTimeout(() => rec.tag?.setDebaited(true, rec.result), 240);
-    if (rec.result.source !== 'mock') chrome.runtime.sendMessage({ type: 'debait/debaited', count: 1 });
+    if (rec.result.source !== 'mock') sendRuntimeMessage({ type: 'debait/debaited', count: 1 }).catch(() => {});
     refreshOrb();
   }
 
@@ -290,7 +297,7 @@ async function start() {
       refreshOrb();
       Promise.all(jobs).then(() => { paint(); refreshOrb(); });
       const real = bait.filter((r) => r.result.source !== 'mock').length;
-      if (real) chrome.runtime.sendMessage({ type: 'debait/debaited', count: real });
+      if (real) sendRuntimeMessage({ type: 'debait/debaited', count: real }).catch(() => {});
     } else if (done.length) {
       // undo: the wave flows back into the orb
       const { R, duration } = playRipple(origin, { undo: true });

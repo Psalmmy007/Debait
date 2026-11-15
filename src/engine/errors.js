@@ -3,6 +3,10 @@ export function describeAiError(error) {
   const code = String(error?.code || '');
   const text = `${code} ${error?.message || ''}`;
   const status = error?.customData?.httpErrorCode;
+  if (/execution config/i.test(text)) return {
+    code: 'debait/device-config', needsAppCheck: false,
+    message: 'Chrome could not load the on-device model execution configuration. Check Chrome and its model setup. Local Only will not use cloud inference.',
+  };
   if (code === 'debait/app-check-setup') return { code, needsAppCheck: true, message: error.message };
   if (/app.?check|exchangeDebugToken/i.test(text)) return {
     code: 'debait/app-check', needsAppCheck: true,
