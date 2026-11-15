@@ -6,6 +6,7 @@ import { getLiveGenerativeModel, startAudioConversation, ResponseModality, Schem
 import { getAi } from '../engine/firebaseEngine.js';
 import { LIVE_MODELS, LIVE_VOICE } from '../engine/firebaseConfig.js';
 import { createVoiceSession } from './voiceSession.js';
+import { createLiveConnector } from './liveConnector.js';
 
 const SYSTEM = `You are Debait, a warm, calm voice assistant built into a Chrome extension.
 Debait spots bait headlines (written to make people angry, scared or envious), labels them Rage, Fear, Envy or Clean,
@@ -42,27 +43,17 @@ const TOOLS = [{
 
 const state = (s, message = '') => chrome.runtime.sendMessage({ type: 'debait/call-state', state: s, message }).catch(() => {});
 
-async function connect(debugToken, assertAllowed) {
-  let lastErr = null;
-  for (const model of LIVE_MODELS) {
-    await assertAllowed();
-    try {
-      const live = getLiveGenerativeModel(getAi(debugToken), {
-        model,
-        systemInstruction: SYSTEM,
-        tools: TOOLS,
-        generationConfig: {
-          responseModalities: [ResponseModality.AUDIO],
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: LIVE_VOICE } } },
-        },
-      });
-      return await live.connect();
-    } catch (err) {
-      lastErr = err;
-    }
-  }
-  throw lastErr || new Error('could not connect');
-}
+const connect = createLiveConnector({
+  getAi, getLiveGenerativeModel, models: LIVE_MODELS,
+  parameters: {
+    systemInstruction: SYSTEM,
+    tools: TOOLS,
+    generationConfig: {
+      responseModalities: [ResponseModality.AUDIO],
+      speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: LIVE_VOICE } } },
+    },
+  },
+});
 
 const voice = createVoiceSession({
   isAllowed: async () => {

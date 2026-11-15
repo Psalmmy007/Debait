@@ -9,6 +9,8 @@
     "test": "node --test",
     "fonts": "node scripts/copy-fonts.js",
     "build": "npm run fonts && vite build && node scripts/stamp.js",
+    "build:dev": "npm run fonts && vite build --mode development && node scripts/stamp.js",
+    "build:demo": "npm run fonts && vite build --mode demo && node scripts/stamp.js",
     "watch": "npm run fonts && vite build --watch",
     "demo": "vite --config demo/vite.config.js --open",
     "dev": "vite --config vite.web.config.js",

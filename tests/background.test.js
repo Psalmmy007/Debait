@@ -6,7 +6,7 @@ const tick = () => new Promise(r => setImmediate(r));
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { resolve, promise }; };
 const result = source => ({ kind: 'fear', score: 50, triggers: [], honest_rewrite: 'Calmer headline', source });
 let serial = 0;
-async function fixture(t, { localOnly = false, voice = false, cache = [], engine, contexts = true, create, statsVersion = 2, stats = {}, demo = false } = {}) {
+async function fixture(t, { localOnly = false, voice = false, cache = [], engine, contexts = true, create, statsVersion = 2, stats = {}, demo = false, debug = false } = {}) {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const data = { settings: { localOnly, voice }, scoreCache: cache, appCheckDebugToken: 'test-only', statsVersion, stats };
   let router, onSettings;
@@ -14,8 +14,9 @@ async function fixture(t, { localOnly = false, voice = false, cache = [], engine
   let closed = 0;
   globalThis.self = { addEventListener() {} };
   globalThis.chrome = {
+    management: { getSelf: async () => ({ installType: 'development' }) },
     runtime: {
-      getManifest: () => ({ update_url: 'https://example.com/update' }),
+      getManifest: () => debug ? {} : ({ update_url: 'https://example.com/update' }),
       onInstalled: { addListener() {} },
       getURL: p => `chrome-extension://test/${p}`,
       getContexts: async () => contexts ? [{}] : [],
@@ -30,6 +31,7 @@ async function fixture(t, { localOnly = false, voice = false, cache = [], engine
     storage: {
       local: {
         get: async key => ({ [key]: structuredClone(data[key]) }),
+        remove: async key => { delete data[key]; },
         set: async patch => {
           const oldValue = structuredClone(data.settings);
           Object.assign(data, structuredClone(patch));
@@ -48,13 +50,29 @@ async function fixture(t, { localOnly = false, voice = false, cache = [], engine
       create: async msg => { tabs.push(msg); },
     },
   };
-  if (demo) {
+  if (debug) {
+    // A minimal asynchronous IDB read of a synthetic already-persisted credential.
+    globalThis.indexedDB = { open() {
+      const request = {};
+      queueMicrotask(() => {
+        request.result = { close() {}, transaction: () => ({ objectStore: () => ({ get: () => {
+          const read = {};
+          queueMicrotask(() => { read.result = 'test-only-debug'; read.onsuccess(); });
+          return read;
+        } }) }) };
+        request.onsuccess();
+      });
+      return request;
+    } };
+  }
+  if (demo || debug) {
     // Simulate Vite's explicit demo constant while exercising the real worker/recorder.
     const url = new URL('../src/background/sw.js', import.meta.url);
     let source = await readFile(url, 'utf8');
     const modeImport = "import { DEMO_MODE } from '../engine/mode.js';";
     assert.ok(source.includes(modeImport));
-    source = source.replace(modeImport, 'const DEMO_MODE = true;')
+    source = source.replace(modeImport, `const DEMO_MODE = ${demo};`)
+      .replaceAll('import.meta.env', debug ? JSON.stringify({ MODE: 'development', VITE_DEBAIT_APP_CHECK: 'debug' }) : 'undefined')
       .replace(/from '(\.[^']+)'/g, (_, path) => `from '${new URL(path, url).href}'`);
     await import(`data:text/javascript,${encodeURIComponent(source)}#test=${serial++}`);
   } else {
@@ -63,7 +81,8 @@ async function fixture(t, { localOnly = false, voice = false, cache = [], engine
   await tick(); // Let the real statistics-version migration finish.
   const send = (msg, host = 'example.com') => new Promise(resolve => router(msg, { tab: { id: 1, url: `https://${host}` } }, resolve));
   const settings = patch => chrome.storage.local.set({ settings: { ...data.settings, ...patch } });
-  return { send, settings, data, messages, tabs, closed: () => closed };
+  const sendPopup = msg => new Promise(resolve => router(msg, { url: chrome.runtime.getURL('src/popup/index.html') }, resolve));
+  return { send, sendPopup, settings, data, messages, tabs, closed: () => closed };
 }
 
 test('Local Only re-scores cached cloud and legacy mock answers on device', async t => {
@@ -242,4 +261,21 @@ test('explicit demo results are displayed but never counted or cached as genuine
   assert.equal(day.total, 0); assert.equal(day.fear, 0);
   assert.deepEqual(day.sources, {}); assert.deepEqual(day.seen, []);
   assert.deepEqual(f.data.scoreCache, []);
+});
+
+test('normal builds remove legacy debug credentials and never return them with status', async t => {
+  const f = await fixture(t);
+  const response = await f.send({ type: 'debait/status' });
+  assert.equal(response.debugToken, undefined);
+  assert.equal(f.data.appCheckDebugToken, undefined);
+  assert.ok(f.messages.every(message => message.debugToken === undefined));
+});
+
+test('an explicit unpacked debug build shares its synthetic setup credential only with the popup', async t => {
+  const f = await fixture(t, { debug: true });
+  const websiteResponse = await f.send({ type: 'debait/status' });
+  assert.equal(websiteResponse.debugToken, undefined);
+  const popupResponse = await f.sendPopup({ type: 'debait/status' });
+  assert.equal(popupResponse.debugToken, 'test-only-debug');
+  assert.equal(f.data.appCheckDebugToken, undefined);
 });

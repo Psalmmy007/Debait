@@ -3,6 +3,7 @@ import { normalizeResult } from './contract.js';
 
 export function createEngine({ firebaseEngine, mockEngine, demo = false, timeoutMs = 30000 }) {
   let lastError = null;
+  let failureLocalOnly;
   async function timed(operation) {
     let timer;
     try {
@@ -22,7 +23,7 @@ export function createEngine({ firebaseEngine, mockEngine, demo = false, timeout
         if (demo && !opts.localOnly) return await mockEngine.scoreHeadlines(texts, opts);
         if (opts.localOnly) {
           const status = await timed(() => firebaseEngine.getStatus({ localOnly: true }));
-          if (status.source !== 'on-device') throw new Error(`LOCAL_ONLY: ${status.message}`);
+          if (!status.deviceAvailable && status.source !== 'on-device') throw new Error(`LOCAL_ONLY: ${status.message}`);
         }
         const results = await timed(() => firebaseEngine.scoreHeadlines(texts, opts));
         if (!Array.isArray(results) || results.length !== texts.length || results.some(r =>
@@ -33,17 +34,19 @@ export function createEngine({ firebaseEngine, mockEngine, demo = false, timeout
         return results.map((result, i) => normalizeResult(result, texts[i]));
       } catch (error) {
         lastError = error;
+        failureLocalOnly = opts.localOnly;
         throw error;
       }
     },
     async getStatus(opts) {
       if (demo && !opts.localOnly) return mockEngine.getStatus(opts);
-      if (lastError) return {
-        ready: false, source: 'none', localOnly: opts.localOnly,
-        needsAppCheck: /app check|401|403/i.test(lastError.message),
+      const status = await timed(() => firebaseEngine.getStatus(opts));
+      if (lastError && failureLocalOnly === opts.localOnly) return {
+        ...status, ready: false, source: 'none', localOnly: opts.localOnly,
+        needsAppCheck: lastError.needsAppCheck ?? /app check/i.test(lastError.message),
         message: `Analysis unavailable: ${lastError.message}`,
       };
-      return timed(() => firebaseEngine.getStatus(opts));
+      return status;
     },
     initDeviceModel: () => timed(() => firebaseEngine.initDeviceModel()),
   };

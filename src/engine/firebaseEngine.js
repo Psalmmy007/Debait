@@ -1,24 +1,31 @@
 // Firebase AI Logic engine: Gemini Nano on-device first, Gemini in the cloud as a fallback.
 // Uses the Firebase project set up in src/firebase.js. Runs in the offscreen page.
 import { initializeApp } from 'firebase/app';
-import { initializeAppCheck, CustomProvider } from 'firebase/app-check';
+import { initializeAppCheck, CustomProvider, getToken } from 'firebase/app-check';
 import { getAI, getGenerativeModel, GoogleAIBackend, InferenceMode, Schema } from 'firebase/ai';
 import { firebaseConfig, CLOUD_MODEL } from './firebaseConfig.js';
 
-// App Check: reCAPTCHA can't load inside an extension (no remote scripts), so we use an
-// App Check debug token. The extension makes its own (shown in the popup with a Copy button);
-// register it once in Firebase console > App Check > Apps > Manage debug tokens.
-let ai = null;
-export function getAi(debugToken) {
-  if (ai) return ai;
-  self.FIREBASE_APPCHECK_DEBUG_TOKEN = debugToken || true;
-  const app = initializeApp(firebaseConfig);
-  initializeAppCheck(app, {
-    provider: new CustomProvider({ getToken: () => Promise.reject(new Error('debug token only')) }),
-    isTokenAutoRefreshEnabled: true,
-  });
-  ai = getAI(app, { backend: new GoogleAIBackend() });
-  return ai;
+import { createFirebaseAccess } from './authPolicy.js';
+import { aiError } from './errors.js';
+import { createHeadlineEngine } from './inference.js';
+
+// Production intentionally has no default issuer: an authenticated server-side
+// attestation/token service must be provisioned and reviewed before connecting one.
+const access = createFirebaseAccess({
+  sdk: { initializeApp, initializeAppCheck, CustomProvider, getToken, getAI, GoogleAIBackend },
+  config: firebaseConfig,
+  env: import.meta.env,
+  manifest: globalThis.chrome?.runtime?.getManifest?.(),
+  globals: globalThis,
+});
+export async function getAi(debugToken) {
+  try { return await access.getAi(debugToken); } catch (error) { throw aiError(error); }
+}
+let deviceAi;
+function getDeviceAi() {
+  // ONLY_ON_DEVICE never needs a cloud App Check exchange or cloud credentials.
+  deviceAi ||= getAI(initializeApp(firebaseConfig, 'debait-device'), { backend: new GoogleAIBackend() });
+  return deviceAi;
 }
 
 const KINDS = ['rage', 'fear', 'envy', 'clean'];
@@ -58,20 +65,6 @@ const deviceSchema = {
   required: ['results'],
 };
 
-function model(localOnly, debugToken) {
-  return getGenerativeModel(getAi(debugToken), {
-    mode: localOnly ? InferenceMode.ONLY_ON_DEVICE : InferenceMode.PREFER_ON_DEVICE,
-    inCloudParams: {
-      model: CLOUD_MODEL,
-      generationConfig: { responseMimeType: 'application/json', responseSchema: cloudSchema, temperature: 0.2, maxOutputTokens: 2048 },
-    },
-    onDeviceParams: {
-      createOptions: { expectedInputs: LANG, expectedOutputs: LANG },
-      promptOptions: { responseConstraint: deviceSchema },
-    },
-  });
-}
-
 function prompt(texts) {
   return `You are Debait. For each headline, judge whether its WORDING uses emotional bait, and write a calmer version.
 
@@ -97,36 +90,9 @@ async function deviceAvailability() {
   }
 }
 
-/** @type {import('./contract.js').Engine} */
-export const firebaseEngine = {
-  async scoreHeadlines(texts, { localOnly, debugToken }) {
-    const res = await model(localOnly, debugToken).generateContent(prompt(texts));
-    const source = { on_device: 'on-device', in_cloud: 'cloud' }[res.response.inferenceSource];
-    if (!source) throw new Error('Gemini did not report its inference source');
-    const raw = res.response.text().trim().replace(/^```(json)?|```$/g, '');
-    const data = JSON.parse(raw);
-    const list = Array.isArray(data) ? data : data.results;
-    if (!Array.isArray(list) || list.length !== texts.length) throw new Error('AI returned incomplete results');
-    return list.map(item => ({ ...item, source }));
-  },
-
-  async getStatus({ localOnly }) {
-    const device = await deviceAvailability();
-    if (device === 'available') return { ready: true, source: 'on-device', localOnly, message: 'Gemini Nano, on this device' };
-    if (localOnly) return { ready: false, source: 'none', localOnly, message: device === 'unavailable' ? 'This computer cannot run Gemini Nano' : 'Gemini Nano needs to download: click Turn on Debait' };
-    return { ready: true, source: 'cloud', localOnly, message: `Gemini in the cloud (${CLOUD_MODEL})` };
-  },
-
-  async initDeviceModel() {
-    const device = await deviceAvailability();
-    if (device === 'downloadable' || device === 'downloading') {
-      try {
-        const session = await LanguageModel.create({ expectedInputs: LANG });
-        session.destroy();
-      } catch (err) {
-        return { ready: true, source: 'cloud', localOnly: false, message: `On-device download needs a click in the popup (${err.message})` };
-      }
-    }
-    return this.getStatus({ localOnly: false });
-  },
-};
+export const firebaseEngine = createHeadlineEngine({
+  getAi, getDeviceAi, getGenerativeModel, InferenceMode,
+  cloudModel: CLOUD_MODEL, cloudSchema, deviceSchema, lang: LANG,
+  prompt, deviceAvailability,
+  createDevice: options => LanguageModel.create(options),
+});

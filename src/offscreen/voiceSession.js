@@ -1,3 +1,5 @@
+import { aiError } from '../engine/errors.js';
+
 // Owns pending connections as well as live audio, so a privacy change cancels both.
 export function createVoiceSession({ isAllowed, connect, startAudio, sendTool, state }) {
   let current = null;
@@ -48,8 +50,7 @@ export function createVoiceSession({ isAllowed, connect, startAudio, sendTool, s
       await close(attempt); // Also closes handles that arrived after endCall().
       if (current === attempt) {
         current = null;
-        const appCheck = /app check|401|403|permission/i.test(String(err?.message));
-        state('error', appCheck ? 'Voice needs Gemini: check App Check approval in the popup.' : `Could not start the call (${err?.message || err})`);
+        state('error', `Could not start the call: ${aiError(err).message}`);
       }
     }
   }

@@ -106,3 +106,17 @@ test('Local Only rejects a cloud answer even if device availability was reported
 test('normalizer cannot turn an absent answer into a fake clean classification', () => {
   assert.throws(() => normalizeResult(undefined, 'headline'), /No classification/);
 });
+
+test('failure status retains Nano download capability for the existing popup button', async () => {
+  const { engine } = fixture({ scoreHeadlines: async () => { throw new Error('App Check failure'); },
+    getStatus: async () => ({ source: 'none', ready: false, canDownloadDevice: true }) });
+  await assert.rejects(engine.scoreHeadlines(['headline'], opts));
+  assert.equal((await engine.getStatus(opts)).canDownloadDevice, true);
+});
+
+test('an old cloud error does not overwrite the status after switching to Local Only', async () => {
+  const { engine } = fixture({ scoreHeadlines: async () => { throw new Error('App Check failure'); },
+    getStatus: async () => ({ source: 'none', ready: false, deviceAvailable: true, message: 'Nano available, not verified' }) });
+  await assert.rejects(engine.scoreHeadlines(['headline'], opts));
+  assert.equal((await engine.getStatus({ localOnly: true })).message, 'Nano available, not verified');
+});

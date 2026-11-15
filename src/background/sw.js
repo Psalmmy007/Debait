@@ -2,6 +2,8 @@
 import { MSG, normalizeResult } from '../engine/contract.js';
 import { getSettings, dayKey, emptyDay } from '../shared/storage.js';
 import { DEMO_MODE } from '../engine/mode.js';
+import { debugAppCheckAllowed, installationType } from '../engine/authPolicy.js';
+import { createDebugTokenStore, readDebugToken, writeDebugToken } from '../engine/debugTokenStore.js';
 
 const OFFSCREEN_URL = 'src/offscreen/index.html';
 
@@ -68,13 +70,19 @@ async function ensureOffscreen() {
   await creating;
 }
 
-// The App Check debug token for this install (register it in Firebase once).
+// Only unpacked, explicit debug builds create a development credential.
+const developmentToken = createDebugTokenStore({
+  read: () => readDebugToken(indexedDB),
+  write: token => writeDebugToken(indexedDB, token),
+  local: chrome.storage.local,
+  randomUUID: () => crypto.randomUUID(),
+});
 async function debugToken() {
-  const { appCheckDebugToken } = await chrome.storage.local.get('appCheckDebugToken');
-  if (appCheckDebugToken) return appCheckDebugToken;
-  const token = crypto.randomUUID();
-  await chrome.storage.local.set({ appCheckDebugToken: token });
-  return token;
+  if (!debugAppCheckAllowed(import.meta.env, chrome.runtime.getManifest(), await installationType())) {
+    await chrome.storage.local.remove('appCheckDebugToken');
+    return undefined;
+  }
+  return developmentToken();
 }
 
 async function toEngine(payload) {
@@ -263,7 +271,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       } else if (msg.type === MSG.STATUS) {
         const { localOnly } = await getSettings();
         const res = await toEngine({ type: MSG.STATUS, localOnly });
-        sendResponse({ ...res, debugToken: await debugToken() });
+        // Debug credentials are only disclosed to the extension popup, never content scripts.
+        const popup = !sender.tab && sender.url === chrome.runtime.getURL('src/popup/index.html');
+        sendResponse({ ...res, ...(popup ? { debugToken: await debugToken() } : {}) });
       } else if (msg.type === MSG.INIT) {
         sendResponse(await toEngine({ type: MSG.INIT }));
       } else if (msg.type === 'debait/voice-allowed') {

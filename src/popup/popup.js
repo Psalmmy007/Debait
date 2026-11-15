@@ -25,16 +25,24 @@ async function renderEngine() {
   const chip = $('#engine');
   try {
     const res = await chrome.runtime.sendMessage({ type: MSG.STATUS });
-    const s = res?.status || { source: 'none', ready: false };
+    if (!res?.ok) throw new Error('Engine status could not be verified. Check the extension setup and retry.');
+    const s = res.status || { source: 'none', ready: false };
     chip.dataset.src = s.source;
     chip.querySelector('span').textContent = SRC_LABEL[s.source] || s.source;
     chip.title = s.message || '';
-    $('#turnOn').hidden = s.ready;
+    $('#turnOn').hidden = !s.canDownloadDevice;
+    $('#setup').hidden = !(s.needsAppCheck && res.debugToken);
+    $('#token').textContent = '';
+    chip.querySelector('span').textContent = s.source === 'none' ? (s.deviceAvailable ? 'Not verified' : 'Not ready') : SRC_LABEL[s.source] || s.source;
     if (s.needsAppCheck && res.debugToken) {
       $('#setup').hidden = false;
       $('#token').textContent = res.debugToken;
     }
-  } catch {
+  } catch (error) {
+    $('#setup').hidden = true;
+    $('#token').textContent = '';
+    $('#turnOn').hidden = true;
+    chip.title = error.message;
     chip.dataset.src = 'none';
     chip.querySelector('span').textContent = 'Not ready';
   }
