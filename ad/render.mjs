@@ -85,7 +85,7 @@ async function launchChrome() {
   if (!exe) throw new Error('Chrome not found');
   const port = 9300 + Math.floor(Math.random() * 500);
   const proc = spawn(exe, [
-    '--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${path.join(tmpdir(), 'debait-ad-chrome')}`,
+    '--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${path.join(tmpdir(), `debait-ad-chrome-${Date.now()}`)}`,
     '--no-first-run', '--no-default-browser-check', '--hide-scrollbars', '--mute-audio',
     `--window-size=${SIZE.w},${SIZE.h}`, '--force-device-scale-factor=1', '--enable-unsafe-swiftshader', 'about:blank',
   ], { stdio: 'ignore' });
