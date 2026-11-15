@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {
     "fonts": "node scripts/copy-fonts.js",
-    "build": "npm run fonts && vite build && node scripts/stamp.js",
+    "build": "npm run fonts && vite build",
     "watch": "npm run fonts && vite build --watch",
     "demo": "vite --config demo/vite.config.js --open",
     "dev": "vite --config vite.web.config.js",

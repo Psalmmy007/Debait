@@ -15,13 +15,13 @@ self.addEventListener('unhandledrejection', (e) => { logError('background', e.re
 
 // ---------- developer convenience: reload when a new build lands in dist/ ----------
 const UNPACKED = !('update_url' in chrome.runtime.getManifest());
-let buildStamp = null;
+// The build this running copy came from (baked in at build time).
+const RUNNING_BUILD = typeof __DEBAIT_BUILD__ !== 'undefined' ? __DEBAIT_BUILD__ : null;
 async function checkBuild() {
-  if (!UNPACKED) return;
+  if (!UNPACKED || !RUNNING_BUILD) return;
   try {
-    const s = await (await fetch(chrome.runtime.getURL('build.json'), { cache: 'no-store' })).text();
-    if (buildStamp && s !== buildStamp) chrome.runtime.reload();
-    buildStamp = s;
+    const disk = await (await fetch(chrome.runtime.getURL('build.json'), { cache: 'no-store' })).json();
+    if (disk.id && disk.id !== RUNNING_BUILD) chrome.runtime.reload(); // newer files on disk: load them
   } catch { /* no stamp yet */ }
 }
 checkBuild();
