@@ -1,4 +1,5 @@
 // Service worker: routes messages, keeps the score cache and the daily stats.
+import { createRequestGate } from './requestGate.js';
 import { MSG, normalizeResult } from '../engine/contract.js';
 import { getSettings, dayKey, emptyDay } from '../shared/storage.js';
 import { DEMO_MODE } from '../engine/mode.js';
@@ -40,6 +41,11 @@ chrome.runtime.onInstalled.addListener(async () => {
   for (const t of tabs) chrome.scripting.executeScript({ target: { tabId: t.id }, files }).catch(() => {});
 });
 const CACHE_MAX = 3000;
+const requestGate = createRequestGate({
+  read: async () => (await chrome.storage.local.get('aiRequestBudget')).aiRequestBudget,
+  write: value => chrome.storage.local.set({ aiRequestBudget: value }),
+});
+const pendingHeadlines = new Map();
 let privacyRevision = 0;
 let localOnlyActive = false;
 
@@ -96,7 +102,7 @@ async function toEngine(payload) {
     payload = { ...payload, localOnly: localOnlyActive || settings.localOnly || payload.localOnly };
   }
   const res = await chrome.runtime.sendMessage({ target: 'offscreen', debugToken: token, ...payload });
-  if (!res?.ok) throw new Error(res?.error || 'engine error');
+  if (!res?.ok) throw Object.assign(new Error(res?.error || 'engine error'), { code: res?.code, retryAfterMs: res?.retryAfterMs });
   return res;
 }
 
@@ -180,11 +186,28 @@ async function scoreTexts(texts, host) {
   };
   const missing = [...new Set(texts.filter(t => !usable(c.get(t), t)))];
   const fresh = new Map();
-  if (missing.length) {
-    const { results } = await toEngine({ type: MSG.SCORE, texts: missing, localOnly });
-    if (!Array.isArray(results) || results.length !== missing.length) throw new Error('AI returned incomplete results');
-    missing.forEach((t, i) => fresh.set(t, normalizeResult(results[i], t)));
+  const key = text => JSON.stringify([localOnly, revision, text]);
+  const owned = missing.filter(text => !pendingHeadlines.has(key(text)));
+  if (owned.length) {
+    const execute = async () => {
+      const { results } = await toEngine({ type: MSG.SCORE, texts: owned, localOnly });
+      if (!Array.isArray(results) || results.length !== owned.length) throw new Error('AI returned incomplete results');
+      const checked = results.map((result, i) => normalizeResult(result, owned[i]));
+      const settings = await getSettings();
+      if (revision !== privacyRevision || settings.localOnly !== localOnly) throw new Error('LOCAL_ONLY: Privacy settings changed during analysis. Please retry.');
+      if (!DEMO_MODE && checked.some(r => r.source === 'mock')) throw new Error('Mock results are disabled outside explicit demo mode.');
+      if ((localOnly || localOnlyActive) && checked.some(r => r.source !== 'on-device')) throw new Error('LOCAL_ONLY: Cloud or demo results cannot be used in Local Only mode.');
+      checked.forEach((r, i) => { if (r.source !== 'mock') c.set(owned[i], r); });
+      saveCacheSoon();
+      return checked;
+    };
+    const batch = localOnly || DEMO_MODE ? execute() : requestGate.run(execute);
+    owned.forEach((text, i) => pendingHeadlines.set(key(text), batch.then(results => results[i])));
+    const release = () => owned.forEach(text => pendingHeadlines.delete(key(text)));
+    batch.then(release, release);
   }
+  const results = await Promise.all(missing.map(text => pendingHeadlines.get(key(text))));
+  missing.forEach((text, i) => fresh.set(text, results[i]));
   const latest = await getSettings();
   if (revision !== privacyRevision || latest.localOnly !== localOnly) {
     throw new Error('LOCAL_ONLY: Privacy settings changed during analysis. Please retry.');
@@ -281,6 +304,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (!offscreen) throw new Error('Installation metadata is only available to the extension offscreen document.');
         sendResponse({ ok: true, installType: await installationType(), hasUpdateUrl: 'update_url' in chrome.runtime.getManifest() });
       } else if (msg.type === MSG.SCORE) {
+        if (!Array.isArray(msg.texts) || !msg.texts.length || msg.texts.length > 8 || msg.texts.some(t => typeof t !== 'string' || !t.trim() || t.length > 320)) throw new Error('Invalid headline batch: use 1–8 headlines of at most 320 characters.');
         const host = sender.tab?.url ? new URL(sender.tab.url).hostname.replace(/^www\./, '') : '';
         sendResponse({ ok: true, ...(await scoreTexts(msg.texts, host)) });
       } else if (msg.type === MSG.STATUS) {
@@ -322,7 +346,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: false, error: 'unknown message' });
       }
     } catch (err) {
-      sendResponse({ ok: false, error: String(err?.message || err) });
+      sendResponse({ ok: false, error: String(err?.message || err), code: err.code, retryAt: err.retryAt, autoRetry: err.autoRetry });
     }
   })();
   return true;

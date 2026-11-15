@@ -33,7 +33,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         sendResponse({ ok: false, error: 'unknown message' });
       }
     } catch (err) {
-      sendResponse({ ok: false, error: String(err?.message || err) });
+      sendResponse({ ok: false, error: String(err?.message || err), code: err.code, retryAfterMs: err.retryAfterMs });
     }
   })();
   return true; // keep the channel open for the async reply

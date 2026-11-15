@@ -7,8 +7,11 @@ export function createHeadlineEngine({ getAi, getDeviceAi, getGenerativeModel, I
   let lastSource = null;
   return {
     async scoreHeadlines(texts, { localOnly, debugToken }) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 25000);
       try {
         const ai = localOnly ? getDeviceAi() : await getAi(debugToken);
+        if (controller.signal.aborted) throw new Error('Gemini request timed out before inference');
         const model = getGenerativeModel(ai, {
           mode: localOnly ? InferenceMode.ONLY_ON_DEVICE : InferenceMode.PREFER_ON_DEVICE,
           inCloudParams: {
@@ -20,7 +23,8 @@ export function createHeadlineEngine({ getAi, getDeviceAi, getGenerativeModel, I
             promptOptions: { responseConstraint: deviceSchema },
           },
         });
-        const { response } = await model.generateContent(prompt(texts));
+        const { response } = await model.generateContent(prompt(texts), { signal: controller.signal, timeout: 25000 });
+        if (controller.signal.aborted) throw new Error('Gemini request timed out');
         const source = { on_device: 'on-device', in_cloud: 'cloud' }[response.inferenceSource];
         if (!source || (localOnly && source !== 'on-device')) throw new Error('Invalid inference source');
         const data = JSON.parse(response.text().trim().replace(/^```(?:json)?\s*|\s*```$/g, ''));
@@ -32,7 +36,7 @@ export function createHeadlineEngine({ getAi, getDeviceAi, getGenerativeModel, I
       } catch (error) {
         lastSource = null;
         throw aiError(error);
-      }
+      } finally { clearTimeout(timer); }
     },
     async getStatus({ localOnly }) {
       const device = await deviceAvailability();

@@ -1,8 +1,10 @@
+import { retryDelayMs } from '../shared/quota.js';
+
 // Show actionable categories without copying provider payloads, URLs or tokens to the UI/logs.
 export function describeAiError(error) {
   const code = String(error?.code || '');
   const text = `${code} ${error?.message || ''}`;
-  const status = error?.customData?.httpErrorCode;
+  const status = error?.customData?.httpErrorCode ?? error?.customData?.status;
   if (/execution config/i.test(text)) return {
     code: 'debait/device-config', needsAppCheck: false,
     message: 'Chrome could not load the on-device model execution configuration. Check Chrome and its model setup. Local Only will not use cloud inference.',
@@ -25,7 +27,7 @@ export function describeAiError(error) {
     message: 'The configured Gemini model is unavailable for this project or API. Verify the model ID and project access. No mock results were substituted.',
   };
   if (status === 429 || /\b429\b|quota|resource.exhausted/i.test(text)) return {
-    code: 'debait/quota', needsAppCheck: false,
+    code: 'debait/quota', needsAppCheck: false, retryAfterMs: retryDelayMs(error),
     message: 'Gemini usage is temporarily limited. Check the development project quota and retry later.',
   };
   if (/fetch|network|offline/i.test(text)) return {

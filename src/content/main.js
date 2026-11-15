@@ -1,3 +1,4 @@
+import { isQuotaError, planAnalysisRetry } from '../shared/quota.js';
 import { sendRuntimeMessage } from '../shared/messaging.js';
 // Debait content script: finds headlines, gets them scored, and runs the on-page UI.
 import { MSG } from '../engine/contract.js';
@@ -47,6 +48,7 @@ async function start() {
   let inflight = 0;
   let stats = { hits: 0, scored: 0 };
   let contextLost = false;
+  let pauseUntil = 0;
   let notice = '';     // why scoring is paused, shown on the orb
   let retryTimer = null;
 
@@ -204,13 +206,13 @@ async function start() {
   let flushTimer = null;
   // throttle, not debounce: busy pages that never stop changing must still get scored
   function flushSoon() {
-    if (flushTimer || flushing) return;
+    if (flushTimer || flushing || Date.now() < pauseUntil) return;
     flushTimer = setTimeout(() => { flushTimer = null; flush(); }, 120);
   }
   let flushing = false;
 
   async function flush() {
-    if (flushing || contextLost) return;
+    if (flushing || contextLost || Date.now() < pauseUntil) return;
     flushing = true;
     while (queue.length) {
       const batch = queue.splice(0, BATCH);
@@ -218,7 +220,7 @@ async function start() {
       refreshOrb();
       try {
         const res = await sendRuntimeMessage({ type: MSG.SCORE, texts: batch.map((r) => r.text) });
-        if (!res?.ok) throw new Error(res?.error || 'no response');
+        if (!res?.ok) throw Object.assign(new Error(res?.error || 'no response'), { code: res?.code, retryAt: res?.retryAt, autoRetry: res?.autoRetry });
         stats.hits += res.cacheHits;
         stats.scored += batch.length;
         batch.forEach((rec, i) => applyResult(rec, res.results[i]));
@@ -236,11 +238,29 @@ async function start() {
           notice = err.message;
           break; // A stale extension context cannot recover by retrying messages.
         }
-        retryTimer = setTimeout(() => {
-          notice = '';
-          for (const r of records.values()) if (r.failed && !r.result) { r.failed = false; r.tag?.setVisible(settings.showTags); r.queued = true; queue.push(r); }
-          flushSoon();
-        }, 60000);
+        if (isQuotaError(err)) {
+          // One tab timer, not one immediate worker request per queued batch.
+          for (const r of queue.splice(0)) { r.queued = false; r.failed = true; r.tag?.setVisible(false); }
+          notice = err.message;
+        }
+        const retry = planAnalysisRetry([...records.values()].filter(r => r.failed && !r.result && !r.retryStopped), err);
+        if (retry) {
+          pauseUntil = retry.at;
+          notice += ` Retrying no earlier than ${new Date(retry.at).toLocaleTimeString()}.`;
+          retryTimer = setTimeout(() => {
+            pauseUntil = 0;
+            notice = '';
+            for (const r of retry.records) if (r.failed && !r.result) {
+              r.failed = false; r.tag?.setVisible(settings.showTags); r.queued = true; queue.push(r);
+            }
+            flushSoon();
+          }, Math.max(0, retry.at - Date.now()));
+        } else {
+          pauseUntil = Infinity;
+          notice = `${err.message} Automatic retries stopped. Refresh to try again later.`;
+        }
+        if (isQuotaError(err)) break;
+
       } finally {
         inflight--;
       }
@@ -316,7 +336,7 @@ async function start() {
     const prev = settings;
     settings = next;
     orb.setVisible(next.showOrb);
-    if (prev.localOnly !== next.localOnly && notice) { clearTimeout(retryTimer); notice = ''; for (const r of records.values()) if (r.failed && !r.result) { r.failed = false; r.tag?.setVisible(next.showTags); r.queued = true; queue.push(r); } flushSoon(); }
+    if (prev.localOnly !== next.localOnly && notice) { clearTimeout(retryTimer); pauseUntil = 0; notice = ''; for (const r of records.values()) if (r.failed && !r.result) { r.failed = false; r.retryStopped = false; r.analysisRetries = 0; r.pacingDeferrals = 0; r.tag?.setVisible(next.showTags); r.queued = true; queue.push(r); } flushSoon(); }
     if (prev.voice && !next.voice) onCallState({ state: 'ended' });
     if (prev.showTags !== next.showTags) {
       for (const r of records.values()) r.tag?.setVisible(next.showTags);

@@ -322,3 +322,44 @@ test('current-policy cache entries remain reusable', async t => {
   assert.equal(response.ok, true); assert.equal(response.cacheHits, 1);
   assert.ok(!f.messages.some(message => message.type === 'debait/score'));
 });
+
+test('concurrent tabs share in-flight analysis of the same headline, then reuse cache', async t => {
+  const pending = deferred(); let calls = 0;
+  const f = await fixture(t, { engine: async () => { calls++; return pending.promise; } });
+  const first = f.send({ type: 'debait/score', texts: ['same headline'] });
+  const second = f.send({ type: 'debait/score', texts: ['same headline'] }, 'another.example');
+  await tick(); assert.equal(calls, 1);
+  pending.resolve({ ok: true, results: [result('cloud')] });
+  assert.equal((await first).ok, true); assert.equal((await second).ok, true);
+  const third = await f.send({ type: 'debait/score', texts: ['same headline'] });
+  assert.equal(third.cacheHits, 1); assert.equal(calls, 1);
+});
+
+test('distinct concurrent tab batches are deferred centrally, not submitted together', async t => {
+  const pending = deferred(); let calls = 0;
+  const f = await fixture(t, { engine: async () => { calls++; return pending.promise; } });
+  const first = f.send({ type: 'debait/score', texts: ['first headline'] }); await tick();
+  const second = await f.send({ type: 'debait/score', texts: ['second headline'] }, 'another.example');
+  assert.equal(second.ok, false); assert.equal(second.code, 'debait/quota-pacing'); assert.ok(second.retryAt > Date.now());
+  assert.equal(second.results, undefined); assert.equal(calls, 1);
+  pending.resolve({ ok: true, results: [result('cloud')] }); await first;
+});
+
+test('429 propagates a shared cooldown across tabs without caching failures or counting Clean', async t => {
+  let calls = 0;
+  const f = await fixture(t, { engine: async () => { calls++; return { ok: false, error: 'Gemini is rate limited', code: 'debait/quota', retryAfterMs: 120000 }; } });
+  const first = await f.send({ type: 'debait/score', texts: ['limited headline'] });
+  assert.equal(first.ok, false); assert.equal(first.code, 'debait/quota'); assert.ok(first.retryAt >= Date.now() + 120000);
+  const second = await f.send({ type: 'debait/score', texts: ['another headline'] });
+  assert.equal(second.ok, false); assert.equal(second.results, undefined); assert.equal(calls, 1);
+  assert.deepEqual(f.data.scoreCache, []); assert.deepEqual(f.data.stats, {});
+});
+
+test('Local Only bypasses the cloud pacing gate and preserves device-source reporting', async t => {
+  const f = await fixture(t, { localOnly: true });
+  for (const text of ['first local headline', 'second local headline']) {
+    const response = await f.send({ type: 'debait/score', texts: [text] });
+    assert.equal(response.ok, true); assert.equal(response.results[0].source, 'on-device');
+  }
+  assert.equal(f.data.aiRequestBudget, undefined);
+});
