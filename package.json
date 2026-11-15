@@ -6,6 +6,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
+    "test": "node --test",
     "fonts": "node scripts/copy-fonts.js",
     "build": "npm run fonts && vite build",
     "watch": "npm run fonts && vite build --watch",

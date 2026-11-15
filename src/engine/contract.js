@@ -40,16 +40,17 @@ export const MSG = {
   INIT: 'debait/init',
 };
 
-/** Makes sure a result from any engine has the right shape. */
+/** Reject absent/malformed answers instead of manufacturing a clean classification. */
 export function normalizeResult(r, text) {
-  const kind = KINDS.includes(r?.kind) ? r.kind : 'clean';
-  const score = Math.max(0, Math.min(100, Math.round(Number(r?.score) || 0)));
-  const triggers = Array.isArray(r?.triggers)
-    ? r.triggers.filter((t) => t && typeof t.word === 'string' && t.word.trim()).slice(0, 6)
-    : [];
-  const honest_rewrite = typeof r?.honest_rewrite === 'string' && r.honest_rewrite.trim()
-    ? r.honest_rewrite.trim()
-    : text;
-  const source = ['on-device', 'cloud', 'mock'].includes(r?.source) ? r.source : 'mock';
+  if (!KINDS.includes(r?.kind) || !Number.isFinite(r?.score) ||
+      !Array.isArray(r?.triggers) || r.triggers.some(t => typeof t?.word !== 'string' || typeof t?.why !== 'string') ||
+      typeof r?.honest_rewrite !== 'string' || !r.honest_rewrite.trim() ||
+      !['on-device', 'cloud', 'mock'].includes(r?.source)) {
+    throw new Error('AI returned an invalid result. No classification was produced.');
+  }
+  const { kind, source } = r;
+  const score = Math.max(0, Math.min(100, Math.round(r.score)));
+  const triggers = r.triggers.filter(t => t.word.trim()).slice(0, 6);
+  const honest_rewrite = r.honest_rewrite.trim();
   return { kind, score, triggers, honest_rewrite, source };
 }

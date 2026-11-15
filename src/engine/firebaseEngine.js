@@ -101,12 +101,13 @@ async function deviceAvailability() {
 export const firebaseEngine = {
   async scoreHeadlines(texts, { localOnly, debugToken }) {
     const res = await model(localOnly, debugToken).generateContent(prompt(texts));
-    const source = res.response.inferenceSource === 'on_device' ? 'on-device' : 'cloud';
+    const source = { on_device: 'on-device', in_cloud: 'cloud' }[res.response.inferenceSource];
+    if (!source) throw new Error('Gemini did not report its inference source');
     const raw = res.response.text().trim().replace(/^```(json)?|```$/g, '');
     const data = JSON.parse(raw);
     const list = Array.isArray(data) ? data : data.results;
-    if (!Array.isArray(list)) throw new Error('AI returned no results');
-    return texts.map((_, i) => ({ ...(list[i] || { kind: 'clean', score: 0, triggers: [] }), source }));
+    if (!Array.isArray(list) || list.length !== texts.length) throw new Error('AI returned incomplete results');
+    return list.map(item => ({ ...item, source }));
   },
 
   async getStatus({ localOnly }) {
