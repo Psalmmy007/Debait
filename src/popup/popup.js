@@ -54,7 +54,10 @@ $('#debaitPage').addEventListener('click', async () => {
     await chrome.tabs.sendMessage(tab.id, { type: 'debait/togglePage' });
     window.close();
   } catch {
-    $('#debaitPage').textContent = 'Debait does not run on this site yet';
+    const url = tab?.url || '';
+    $('#debaitPage').textContent = /^(chrome|edge|about|chrome-extension):|chromewebstore|chrome\.google\.com\/webstore/.test(url)
+      ? 'Chrome does not allow extensions on this page'
+      : 'Refresh this page to start Debait here';
   }
 });
 

@@ -213,3 +213,35 @@
 .p-link { margin-top: 16px; padding: 15px 16px; border-radius: 18px; }
 .chip { border-radius: 999px; padding: 0 12px; }
 .icon-btn { border-radius: 999px; }
+
+/* ---- liquid glass ---- */
+.panel {
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.04) 38%, rgba(255, 255, 255, 0.02) 62%, rgba(255, 255, 255, 0.09) 100%),
+    rgba(12, 12, 15, 0.84);
+  backdrop-filter: blur(30px) saturate(1.6) brightness(0.9);
+  -webkit-backdrop-filter: blur(30px) saturate(1.6) brightness(0.9);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.38),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.1),
+    inset 1px 0 0 rgba(255, 255, 255, 0.12),
+    inset -1px 0 0 rgba(255, 255, 255, 0.06),
+    inset 0 0 28px rgba(255, 255, 255, 0.05),
+    0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 30px 70px -24px rgba(0, 0, 0, 0.7),
+    0 10px 24px -12px rgba(0, 0, 0, 0.45);
+  isolation: isolate;
+}
+.panel::before {
+  /* specular sheen across the top edge, like light on curved glass */
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(120% 45% at 30% -8%, rgba(255, 255, 255, 0.22), transparent 55%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+.p-sec { background: linear-gradient(160deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), inset 0 0 0 1px rgba(255, 255, 255, 0.07); }
+.p-link, .chip { background: linear-gradient(160deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), inset 0 0 0 1px rgba(255, 255, 255, 0.08); }

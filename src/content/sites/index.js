@@ -51,13 +51,14 @@ const adapters = [
 // Finds headline-like text: article headings and headline links, skipping menus, footers,
 // buttons and forms. Keeps the innermost match (a heading inside a link, not both).
 const SKIP = 'nav, footer, header nav, aside nav, [role="navigation"], [role="menu"], [role="banner"] nav, form, button, [contenteditable="true"], debait-tag, debait-root, [aria-hidden="true"], code, pre';
-const CANDIDATES = 'h1, h2, h3, [role="heading"], article a[href], main li a[href], [class*="headline" i], [class*="title" i] > a[href]';
+const CANDIDATES = 'h1, h2, h3, h4, [role="heading"], a[href], [class*="headline" i], [class*="title" i], [data-testid*="title" i], [data-testid*="headline" i]';
 
 function looksLikeHeadline(el) {
   if (el.closest(SKIP)) return false;
   if (!el.offsetParent && getComputedStyle(el).position !== 'fixed') return false; // hidden
   const t = textOf(el);
-  if (t.length < 25 || t.length > 200) return false;
+  if (t.length < 22 || t.length > 220) return false;
+  if (el.children.length > 6) return false; // a container, not a headline
   const words = t.split(' ').length;
   if (words < 4 || words > 32) return false;
   if (/^(sign in|log in|subscribe|cookie|accept|skip to|menu|share|read more)/i.test(t)) return false;

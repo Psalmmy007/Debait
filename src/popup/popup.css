@@ -106,3 +106,19 @@ header { display: flex; align-items: center; justify-content: space-between; }
   transition: background 0.2s var(--out);
 }
 .link:hover { background: rgba(255, 255, 255, 0.08); }
+
+/* liquid glass sections */
+body { background: radial-gradient(130% 60% at 20% 0%, #26262c 0%, #0c0c0f 60%); }
+.today, .switches, .setup, .site, .link {
+  position: relative;
+  padding-left: 14px; padding-right: 14px;
+  border: 0;
+  border-radius: 18px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03) 45%, rgba(255, 255, 255, 0.06));
+  backdrop-filter: blur(20px) saturate(1.8);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 14px 30px -18px rgba(0, 0, 0, 0.8);
+}
+.today { padding-top: 14px; padding-bottom: 14px; margin-top: 14px; }
+.switches { margin-top: 14px; padding-top: 4px; padding-bottom: 4px; }
+.switches label { border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+.switches label:last-child { border-bottom: 0; }

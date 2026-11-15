@@ -11,3 +11,8 @@ export const firebaseConfig = {
 
 // the cloud model the web analyzer already uses
 export const CLOUD_MODEL = 'gemini-3.5-flash-lite';
+
+// live voice call models, tried in order (Gemini Developer API via Firebase AI Logic)
+export const LIVE_MODELS = ['gemini-2.5-flash-native-audio-preview-09-2025', 'gemini-live-2.5-flash-preview'];
+// a warm female voice (Chirp 3 HD voice names)
+export const LIVE_VOICE = 'Aoede';

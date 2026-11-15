@@ -9,7 +9,7 @@ import { firebaseConfig, CLOUD_MODEL } from './firebaseConfig.js';
 // App Check debug token. The extension makes its own (shown in the popup with a Copy button);
 // register it once in Firebase console > App Check > Apps > Manage debug tokens.
 let ai = null;
-function getAi(debugToken) {
+export function getAi(debugToken) {
   if (ai) return ai;
   self.FIREBASE_APPCHECK_DEBUG_TOKEN = debugToken || true;
   const app = initializeApp(firebaseConfig);

@@ -7,7 +7,6 @@ import { createOverlay, createOrb, playRipple } from './ui/overlay.js';
 import { createTag } from './ui/tag.js';
 import { openCard, closeCard } from './ui/card.js';
 import { createSettingsPanel } from './ui/settings.js';
-import { createVoice } from './ui/voice.js';
 import { setSettings } from '../shared/storage.js';
 
 const BATCH = 8;
@@ -51,42 +50,60 @@ async function start() {
   });
   orb.setVisible(settings.showOrb);
 
-  // ---------- voice mode ----------
-  const voice = createVoice({ onCommand: onVoice, onState: (s) => orb.setVoice(s) });
-  if (settings.voice) voice.start();
-
+  // ---------- call mode: Gemini Live acts on this page through these tools ----------
   function kinds() {
     const k = { rage: 0, fear: 0, envy: 0 };
     for (const r of records.values()) if (r.result && r.state === 'scored' && r.result.kind !== 'clean') k[r.result.kind]++;
     return k;
   }
-  async function onVoice(cmd) {
+  const baitList = () => [...records.values()]
+    .filter((r) => r.result && r.result.kind !== 'clean')
+    .sort((a, b) => b.result.score - a.result.score);
+
+  async function runTool(name, args) {
     const { bait, debaited, scanned } = pageCounts();
-    if (cmd === 'debait') {
-      if (bait > 0) {
-        toggleDebaitPage(orb.center());
-        voice.say(`Done. I calmed down ${bait} headline${bait === 1 ? '' : 's'}.`);
-      } else voice.say(debaited ? 'This page is already calm.' : "I don't see any bait on this page.");
-    } else if (cmd === 'restore') {
-      if (debaited > 0 && bait === 0) { toggleDebaitPage(orb.center()); voice.say('Here are the original headlines.'); }
-      else voice.say('Nothing to undo right now.');
-    } else if (cmd === 'summary') {
-      if (!scanned) return voice.say("I'm still reading this page.");
-      const k = kinds();
-      const parts = [['rage', k.rage], ['fear', k.fear], ['envy', k.envy]].filter(([, n]) => n).map(([w, n]) => `${n} ${w}`);
-      voice.say(bait
-        ? `I read ${scanned} headlines. ${bait} are bait: ${parts.join(', ')}. Say debait to calm them down.`
-        : debaited ? `I read ${scanned} headlines, and I've already calmed the bait down.` : `I read ${scanned} headlines. This page looks clean.`);
-    } else if (cmd === 'settings') {
-      panel.open();
-      voice.say('Here are your settings.');
-    } else if (cmd === 'off') {
-      await voice.say('Okay, I stopped listening.');
-      setSettings({ voice: false });
-    } else if (cmd === 'hello') {
-      voice.say("Hi, I'm Debait. You can say: debait this page, undo, or how bad is this page.");
+    if (name === 'page_report') {
+      return {
+        site: location.hostname.replace(/^www./, ''),
+        headlines_read: scanned, bait_now: bait, already_debaited: debaited, ...kinds(),
+        worst: baitList().slice(0, 6).map((r, i) => ({ number: i + 1, headline: r.text, kind: r.result.kind, score: r.result.score, debaited: r.state === 'debaited' })),
+      };
     }
+    if (name === 'debait_page') {
+      if (bait > 0) toggleDebaitPage(orb.center());
+      return { rewrote: bait, note: bait ? 'done' : debaited ? 'page was already debaited' : 'no bait found' };
+    }
+    if (name === 'restore_page') {
+      if (debaited > 0 && bait === 0) toggleDebaitPage(orb.center());
+      return { restored: debaited };
+    }
+    if (name === 'explain_headline') {
+      const r = baitList()[Math.max(0, (args.number || 1) - 1)];
+      if (!r) return { error: 'no such headline' };
+      return { headline: r.text, kind: r.result.kind, score: r.result.score, manipulative_words: r.result.triggers, honest_rewrite: r.result.honest_rewrite };
+    }
+    if (name === 'set_setting') {
+      const key = { show_tags: 'showTags', auto_debait: 'autoDebait', local_only: 'localOnly', show_orb: 'showOrb' }[args.setting];
+      if (!key) return { error: 'unknown setting' };
+      await setSettings({ [key]: !!args.on });
+      return { ok: true, setting: args.setting, on: !!args.on };
+    }
+    if (name === 'open_mind_facts') {
+      const res = await chrome.runtime.sendMessage({ type: 'debait/openSidePanel' }).catch(() => null);
+      return res?.ok ? { ok: true } : { ok: false, tip: 'Tell the user to click the Debait icon, then Weekly Mind Facts.' };
+    }
+    return { error: 'unknown tool' };
   }
+
+  function onCallState({ state, message }) {
+    if (state === 'connecting') orb.setVoice({ mode: 'speaking', text: 'Calling Debait…' });
+    else if (state === 'live') orb.setVoice({ mode: 'listening' });
+    else if (state === 'working') orb.setVoice({ mode: 'speaking', text: 'On it…' });
+    else if (state === 'error') orb.setVoice({ mode: 'error', text: message });
+    else orb.setVoice({ mode: 'idle' });
+  }
+  // a call may already be running when this page loads
+  if (settings.voice) chrome.runtime.sendMessage({ target: 'offscreen', type: 'debait/call-status' }).then((r) => r?.inCall && onCallState({ state: 'live' })).catch(() => {});
 
   // ---------- helpers ----------
   const paint = (hotRecord) => paintHighlights(records.values(), { enabled: settings.showTags, hotRecord });
@@ -258,10 +275,7 @@ async function start() {
     const prev = settings;
     settings = next;
     orb.setVisible(next.showOrb);
-    if (prev.voice !== next.voice) {
-      if (next.voice) { voice.start(); voice.say("I'm listening. Say debait this page, or ask how bad this page is."); }
-      else voice.stop();
-    }
+    if (prev.voice && !next.voice) onCallState({ state: 'ended' });
     if (prev.showTags !== next.showTags) {
       for (const r of records.values()) r.tag?.setVisible(next.showTags);
       paint();
@@ -269,6 +283,15 @@ async function start() {
   });
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg?.type === 'debait/tool') {
+      runTool(msg.name, msg.args || {}).then((result) => sendResponse({ result }), (e) => sendResponse({ result: { error: String(e?.message || e) } }));
+      return true;
+    }
+    if (msg?.type === 'debait/call-state') {
+      onCallState(msg);
+      sendResponse({ ok: true });
+      return false;
+    }
     if (msg?.type === 'debait/togglePage') {
       toggleDebaitPage(orb.center());
       sendResponse({ ok: true });

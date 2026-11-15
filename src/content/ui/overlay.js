@@ -271,7 +271,7 @@ export function createOrb(overlay, { onClick, onDoubleClick }) {
       wrap.dataset.voice = mode;
       gl?.setBoost(mode === 'speaking' ? 2.6 : mode === 'listening' ? 1.4 : 1);
       if (mode === 'idle') { bubble.classList.remove('show'); return; }
-      const label = { listening: 'Listening', heard: 'You said', speaking: 'Debait', error: 'Voice' }[mode];
+      const label = { listening: 'On a call with Debait', heard: 'You said', speaking: 'Debait', error: 'Voice' }[mode];
       bubble.replaceChildren();
       const b = document.createElement('b');
       b.textContent = label;

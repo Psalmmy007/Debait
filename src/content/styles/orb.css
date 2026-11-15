@@ -226,3 +226,10 @@
 .voice-bubble .wave i:nth-child(4) { animation-delay: 0.36s; }
 .voice-bubble .wave i:nth-child(5) { animation-delay: 0.48s; }
 @keyframes wave { 50% { height: 18px; } }
+
+/* glass tooltip and voice bubble (the orb itself is unchanged) */
+.orb-tip, .voice-bubble {
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.03) 50%), rgba(12, 12, 15, 0.84);
+  backdrop-filter: blur(24px) saturate(1.9);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.12), 0 20px 40px -14px rgba(0, 0, 0, 0.7);
+}

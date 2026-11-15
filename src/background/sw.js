@@ -18,8 +18,8 @@ async function ensureOffscreen() {
     creating = chrome.offscreen
       .createDocument({
         url: OFFSCREEN_URL,
-        reasons: ['DOM_PARSER'],
-        justification: 'Runs the on-device AI model (Prompt API) and Firebase AI Logic to score headlines.',
+        reasons: ['DOM_PARSER', 'USER_MEDIA', 'AUDIO_PLAYBACK'],
+        justification: 'Runs the on-device AI (Prompt API) and Firebase AI Logic to score headlines, and the live voice call (microphone and spoken replies).',
       })
       .finally(() => { creating = null; });
   }
@@ -108,6 +108,38 @@ async function scoreTexts(texts, host) {
   return { results: out, cacheHits: texts.length - missing.length };
 }
 
+// ---------- call mode (live voice with Gemini) ----------
+async function activeTab() {
+  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  return tab;
+}
+async function toActiveTab(msg) {
+  const tab = await activeTab();
+  if (!tab?.id) return null;
+  return chrome.tabs.sendMessage(tab.id, msg).catch(() => null);
+}
+async function startCallFlow() {
+  await ensureOffscreen();
+  const mic = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'debait/mic-state' }).catch(() => null);
+  if (mic?.state !== 'granted') {
+    // ask for the microphone once, in a small extension tab; it starts the call when allowed
+    chrome.tabs.create({ url: chrome.runtime.getURL('src/voice/index.html') });
+    return;
+  }
+  await chrome.runtime.sendMessage({ target: 'offscreen', type: 'debait/call-start', debugToken: await debugToken() });
+}
+async function endCallFlow() {
+  const has = await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
+  if (has.length) await chrome.runtime.sendMessage({ target: 'offscreen', type: 'debait/call-end' }).catch(() => {});
+}
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !changes.settings) return;
+  const was = changes.settings.oldValue?.voice;
+  const now = changes.settings.newValue?.voice;
+  if (now && !was) startCallFlow();
+  if (!now && was) endCallFlow();
+});
+
 // ---------- message router ----------
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.target === 'offscreen') return false; // not for us
@@ -123,6 +155,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ...res, debugToken: await debugToken() });
       } else if (msg.type === MSG.INIT) {
         sendResponse(await toEngine({ type: MSG.INIT }));
+      } else if (msg.type === 'debait/tool') {
+        // Gemini wants to act on the page: run it in the active tab
+        const res = await toActiveTab({ type: 'debait/tool', name: msg.name, args: msg.args });
+        sendResponse(res || { result: { error: 'Debait is not running on this page. Ask the user to refresh it.' } });
+      } else if (msg.type === 'debait/call-state') {
+        toActiveTab({ type: 'debait/call-state', state: msg.state, message: msg.message });
+        if (msg.state === 'error') {
+          const s = await getSettings();
+          if (s.voice) await chrome.storage.local.set({ settings: { ...s, voice: false } });
+        }
+        sendResponse({ ok: true });
+      } else if (msg.type === 'debait/mic-granted') {
+        await chrome.runtime.sendMessage({ target: 'offscreen', type: 'debait/call-start', debugToken: await debugToken() }).catch(() => {});
+        sendResponse({ ok: true });
+      } else if (msg.type === 'debait/mic-denied') {
+        const s = await getSettings();
+        await chrome.storage.local.set({ settings: { ...s, voice: false } });
+        sendResponse({ ok: true });
       } else if (msg.type === 'debait/debaited') {
         recordDebaited(msg.count || 0);
         sendResponse({ ok: true });

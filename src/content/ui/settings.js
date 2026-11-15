@@ -9,7 +9,7 @@ import { setHTML } from './html.js';
 const OUT = 'cubic-bezier(0.16, 1, 0.3, 1)';
 
 const SWITCHES = [
-  { key: 'voice', title: 'Talk to Debait', hint: 'Say “debait this page”, “undo” or “how bad is this page?”' },
+  { key: 'voice', title: 'Talk to Debait', hint: 'A live voice call with Gemini. Ask anything about this page.' },
   { key: 'showTags', title: 'Show tags', hint: 'Labels and highlights on headlines' },
   { key: 'autoDebait', title: 'Debait automatically', hint: 'Rewrite bait the moment it appears' },
   { key: 'localOnly', title: 'Local only', hint: 'Never send headlines to the cloud' },

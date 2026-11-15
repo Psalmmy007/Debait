@@ -1,6 +1,7 @@
 // Hosts the engine. The service worker forwards requests here.
 import { engine } from '../engine/index.js';
 import { MSG, normalizeResult } from '../engine/contract.js';
+import { startCall, endCall, inCall } from './call.js';
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.target !== 'offscreen') return false;
@@ -13,6 +14,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         sendResponse({ ok: true, results });
       } else if (msg.type === MSG.STATUS) {
         sendResponse({ ok: true, status: await engine.getStatus({ localOnly: msg.localOnly }) });
+      } else if (msg.type === 'debait/call-start') {
+        startCall(msg.debugToken);
+        sendResponse({ ok: true });
+      } else if (msg.type === 'debait/call-end') {
+        await endCall();
+        sendResponse({ ok: true });
+      } else if (msg.type === 'debait/call-status') {
+        sendResponse({ ok: true, inCall: inCall() });
+      } else if (msg.type === 'debait/mic-state') {
+        const p = await navigator.permissions.query({ name: 'microphone' }).catch(() => null);
+        sendResponse({ ok: true, state: p?.state || 'prompt' });
       } else if (msg.type === MSG.INIT) {
         sendResponse({ ok: true, status: await engine.initDeviceModel() });
       } else {
