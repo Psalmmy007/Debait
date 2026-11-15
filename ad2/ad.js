@@ -118,7 +118,7 @@ const RING_C = { x: CORNER.x - VIEW.x, y: CORNER.y - VIEW.y };
 
 // ---------- build the static DOM once ----------
 function build() {
-  $('A-line').innerHTML = 'You are what you read.'.split(' ').map((w) => `<span>${w} </span>`).join('');
+  $('A-line').innerHTML = 'Every headline wants something from you.'.split(' ').map((w) => `<span data-w="${w}">${w} </span>`).join('');
   $('B-wall').innerHTML = [...WALL, ...WALL, ...WALL].map((h) => `<p>${h}</p>`).join('');
 
   const item = (p, i) => `
@@ -274,6 +274,9 @@ function render(t) {
     const w = L.read.words[i];
     const at = w ? L.read.start + w.t0 - 0.06 : L.read.start + i * 0.3;
     enter(span, t, at, 0.6, { dy: 22, blur: 12 });
+    const word = span.dataset.w;
+    const dp = prog(t, at, 0.5);
+    span.textContent = (dp >= 1 ? word : scramble('░'.repeat(word.length), word, dp, i + 40, t)) + ' ';
   });
   S($('A-line'), { s: lerp(1, 1.03, prog(t, k.A[1] - 0.45, 0.45)) });
 
@@ -286,7 +289,8 @@ function render(t) {
     const el = $(`B-w${i}`);
     const pin = outExpo(prog(t, wt[i] - 0.04, 0.4));
     const pout = prog(t, wt[i + 1] - 0.05, 0.18);
-    S(el, { o: pin * (1 - pout), s: lerp(0.9, 1, pin) * lerp(1, 1.06, pout), blur: (1 - pin) * 16 + pout * 10 });
+    const shake = t > wt[i] && t < wt[i] + 0.3 ? Math.sin((t - wt[i]) * 95) * 10 * (1 - (t - wt[i]) / 0.3) : 0;
+    S(el, { o: pin * (1 - pout), x: shake, s: lerp(0.9, 1, pin) * lerp(1, 1.06, pout), blur: (1 - pin) * 16 + pout * 10 });
   }
 
   // C — +2.3%
@@ -338,6 +342,9 @@ function render(t) {
   $('I').style.opacity = t > k.i0 ? 1 : 0;
   enter($('I-mark'), t, W('end', 'debait') - 0.05, 0.8, { dy: 26, blur: 14 });
   enter($('I-tag'), t, W('end', 'read') - 0.05, 0.7, { dy: 16, blur: 8 });
+  { const full = 'Read the news. Not the bait.'; const dp = prog(t, W('end', 'read') - 0.05, 0.9); $('I-tag').textContent = dp >= 1 ? full : scramble('░'.repeat(full.length), full, dp, 99, t); }
+  // white flash as the orb arrives
+  $('flash').style.opacity = (t > k.tr ? 0.4 * Math.exp(-(t - k.tr) / 0.16) : 0).toFixed(4);
   enter($('I-foot'), t, L.end.end + 0.3, 0.8, { dy: 8, blur: 4 });
 
   // the orb
@@ -462,6 +469,48 @@ function renderProduct(t) {
   S(cur, { o: co, x: lerp(from.x, target.x, mv) - 7, y: lerp(from.y, target.y, mv) - 3, s: 1 - press * 0.18 });
 }
 
+// ---------- sound cues: every on-screen moment, so the effects land exactly ----------
+function soundEvents() {
+  const k = T;
+  const { L, W } = k;
+  const ev = [];
+  const add = (t, type, dur = 0) => { if (t >= 0) ev.push({ t: +t.toFixed(3), type, dur }); };
+  L.read.words.forEach((w) => add(L.read.start + w.t0 - 0.06, 'tick'));
+  add(W('feed', 'feed') - 0.1, 'swish');
+  ['angry', 'afraid', 'envious'].forEach((w) => add(W('feed', w) - 0.04, 'impact'));
+  const n0 = W('clicks', 'negative');
+  const n1 = W('clicks', 'clicks', 't1');
+  add(n0, 'counter', Math.max(0.6, n1 - n0));
+  add(n0 + Math.max(0.6, n1 - n0), 'ding');
+  add(k.tr - 1.3, 'riser', 1.3);
+  add(k.tr, 'boom');
+  add(W('meet', 'debait'), 'shimmer');
+  add(k.e0, 'whoosh');
+  add(k.scan, 'scan', 1.5);
+  const R = Math.hypot(Math.max(RING_C.x, VIEW.w - RING_C.x), Math.max(RING_C.y, VIEW.h - RING_C.y)) + 40;
+  POSTS.forEach((p, i) => {
+    const g = geo[i];
+    add(k.scan + 1.5 * ((g.tagY + 140) / (VIEW.h + 140)), 'pop');
+    if (p.kind !== 'clean') {
+      const d0 = k.tClick + (Math.hypot(g.cx - RING_C.x, g.cy - RING_C.y) / R) * 0.95;
+      add(d0, 'glitch', 0.95);
+      add(d0 + 0.95 + 0.15, 'tick');
+    }
+  });
+  add(k.card[0], 'swoosh');
+  add(k.card[0] + 0.15, 'chime');
+  add(k.card[1] - 0.3, 'swish');
+  add(k.tClick, 'click');
+  add(k.tClick + 0.02, 'whomp');
+  add(k.g0, 'whoosh');
+  ['device', 'private', 'free'].forEach((w) => add(W('device', w) - 0.04, 'tap'));
+  add(k.h0, 'slide');
+  add(k.i0, 'riser', 0.5);
+  add(W('end', 'debait') - 0.05, 'boom-soft');
+  add(W('end', 'read') - 0.05, 'final');
+  return ev.sort((a, b) => a.t - b.t);
+}
+
 // ---------- start ----------
 async function loadTiming() {
   try {
@@ -480,7 +529,7 @@ async function init() {
   await document.fonts.ready;
   measure();
   orbGl = createOrbRenderer($('orb'), ORB_PX, { dpr: 1, preserve: true });
-  window.AD = { duration: T.duration, size: SIZE, render, times: T };
+  window.AD = { duration: T.duration, size: SIZE, render, times: T, events: soundEvents() };
   const params = new URLSearchParams(location.search);
   if (params.has('t')) render(Number(params.get('t')));
   else render(0);
