@@ -1,6 +1,7 @@
 // Service worker: routes messages, keeps the score cache and the daily stats.
-import { MSG } from '../engine/contract.js';
+import { MSG, normalizeResult } from '../engine/contract.js';
 import { getSettings, dayKey, emptyDay } from '../shared/storage.js';
+import { DEMO_MODE } from '../engine/mode.js';
 
 const OFFSCREEN_URL = 'src/offscreen/index.html';
 
@@ -35,6 +36,16 @@ chrome.runtime.onInstalled.addListener(async () => {
   for (const t of tabs) chrome.scripting.executeScript({ target: { tabId: t.id }, files }).catch(() => {});
 });
 const CACHE_MAX = 3000;
+let privacyRevision = 0;
+let localOnlyActive = false;
+
+async function voiceAllowed() {
+  const settings = await getSettings();
+  return !localOnlyActive && !settings.localOnly && settings.voice;
+}
+async function requireVoiceAllowed() {
+  if (!await voiceAllowed()) throw new Error('LOCAL_ONLY: Cloud voice is disabled. Turn off Local Only before starting voice.');
+}
 
 // ---------- offscreen engine host ----------
 let creating = null;
@@ -68,7 +79,12 @@ async function debugToken() {
 
 async function toEngine(payload) {
   await ensureOffscreen();
-  const res = await chrome.runtime.sendMessage({ target: 'offscreen', debugToken: await debugToken(), ...payload });
+  const token = await debugToken();
+  if (payload.type === MSG.SCORE) {
+    const settings = await getSettings();
+    payload = { ...payload, localOnly: localOnlyActive || settings.localOnly || payload.localOnly };
+  }
+  const res = await chrome.runtime.sendMessage({ target: 'offscreen', debugToken: token, ...payload });
   if (!res?.ok) throw new Error(res?.error || 'engine error');
   return res;
 }
@@ -137,20 +153,31 @@ function recordDebaited(count) {
 }
 
 async function scoreTexts(texts, host) {
+  const revision = privacyRevision;
   const c = await loadCache();
-  const missing = [...new Set(texts.filter((t) => !c.has(t)))];
+  const { localOnly } = await getSettings();
+  const usable = (r, text) => {
+    if (!r || !['on-device', 'cloud'].includes(r.source) || (localOnly && r.source !== 'on-device')) return false;
+    try { normalizeResult(r, text); return true; } catch { return false; }
+  };
+  const missing = [...new Set(texts.filter(t => !usable(c.get(t), t)))];
+  const fresh = new Map();
   if (missing.length) {
-    const { localOnly } = await getSettings();
     const { results } = await toEngine({ type: MSG.SCORE, texts: missing, localOnly });
-    const fresh = new Map();
-    missing.forEach((t, i) => {
-      fresh.set(t, results[i]);
-      if (results[i].source !== 'mock') c.set(t, results[i]); // never cache backup-engine guesses
-    });
-    var freshResults = fresh;
-    saveCacheSoon();
+    if (!Array.isArray(results) || results.length !== missing.length) throw new Error('AI returned incomplete results');
+    missing.forEach((t, i) => fresh.set(t, normalizeResult(results[i], t)));
   }
-  const out = texts.map((t) => c.get(t) || freshResults?.get(t));
+  const latest = await getSettings();
+  if (revision !== privacyRevision || latest.localOnly !== localOnly) {
+    throw new Error('LOCAL_ONLY: Privacy settings changed during analysis. Please retry.');
+  }
+  const out = texts.map(t => fresh.get(t) || c.get(t));
+  if (!DEMO_MODE && out.some(r => r.source === 'mock')) throw new Error('Mock results are disabled outside explicit demo mode.');
+  if ((localOnly || localOnlyActive) && out.some(r => r.source !== 'on-device')) {
+    throw new Error('LOCAL_ONLY: Cloud or demo results cannot be used in Local Only mode.');
+  }
+  for (const [t, result] of fresh) if (result.source !== 'mock') c.set(t, result);
+  if (fresh.size) saveCacheSoon();
   recordStats(out, host, texts);
   return { results: out, cacheHits: texts.length - missing.length };
 }
@@ -166,26 +193,61 @@ async function toActiveTab(msg) {
   return chrome.tabs.sendMessage(tab.id, msg).catch(() => null);
 }
 async function startCallFlow() {
+  await requireVoiceAllowed();
   await ensureOffscreen();
+  await requireVoiceAllowed();
   const mic = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'debait/mic-state' }).catch(() => null);
   if (mic?.state !== 'granted') {
     // ask for the microphone once, in a small extension tab; it starts the call when allowed
+    await requireVoiceAllowed();
     chrome.tabs.create({ url: chrome.runtime.getURL('src/voice/index.html') });
     return;
   }
-  await chrome.runtime.sendMessage({ target: 'offscreen', type: 'debait/call-start', debugToken: await debugToken() });
+  const token = await debugToken();
+  await requireVoiceAllowed();
+  const res = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'debait/call-start', debugToken: token });
+  if (!res?.ok) throw new Error(res?.error || 'Voice could not start');
 }
-async function endCallFlow() {
+async function endCallFlow(closeDocument = false) {
+  // A pending offscreen creation must not outlive the Local Only shutdown.
+  if (creating) await creating;
   const has = await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
-  if (has.length) await chrome.runtime.sendMessage({ target: 'offscreen', type: 'debait/call-end' }).catch(() => {});
+  if (!has.length) return;
+  const stopping = chrome.runtime.sendMessage({ target: 'offscreen', type: 'debait/call-end' }).catch(() => {});
+  if (closeDocument) {
+    // Destroy the execution context too: even a pending SDK connect/audio promise
+    // cannot keep a socket or microphone alive after this boundary.
+    await chrome.offscreen.closeDocument();
+  } else {
+    await stopping;
+  }
 }
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local' || !changes.settings) return;
+  const before = changes.settings.oldValue;
+  const after = changes.settings.newValue;
+  if (before?.localOnly !== after?.localOnly) privacyRevision++;
+  localOnlyActive = !!after?.localOnly;
+  if (localOnlyActive) {
+    // Stop live and pending sessions even if the voice switch was already false.
+    if (!before?.localOnly || after?.voice) endCallFlow(true).catch(reportVoiceError);
+    if (after.voice) disableVoice().catch(reportVoiceError);
+    return;
+  }
   const was = changes.settings.oldValue?.voice;
   const now = changes.settings.newValue?.voice;
-  if (now && !was) startCallFlow();
-  if (!now && was) endCallFlow();
+  if (now && !was) startCallFlow().catch(reportVoiceError);
+  if (!now && was) endCallFlow().catch(reportVoiceError);
 });
+
+async function disableVoice() {
+  const settings = await getSettings();
+  if (settings.voice) await chrome.storage.local.set({ settings: { ...settings, voice: false } });
+}
+function reportVoiceError(error) {
+  toActiveTab({ type: 'debait/call-state', state: 'error', message: error.message }).catch(() => {});
+  disableVoice().catch(() => {});
+}
 
 // ---------- message router ----------
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -204,7 +266,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ...res, debugToken: await debugToken() });
       } else if (msg.type === MSG.INIT) {
         sendResponse(await toEngine({ type: MSG.INIT }));
+      } else if (msg.type === 'debait/voice-allowed') {
+        sendResponse({ ok: true, allowed: await voiceAllowed() });
       } else if (msg.type === 'debait/tool') {
+        await requireVoiceAllowed();
         // Gemini wants to act on the page: run it in the active tab
         const res = await toActiveTab({ type: 'debait/tool', name: msg.name, args: msg.args });
         sendResponse(res || { result: { error: 'Debait is not running on this page. Ask the user to refresh it.' } });
@@ -216,7 +281,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         sendResponse({ ok: true });
       } else if (msg.type === 'debait/mic-granted') {
-        await chrome.runtime.sendMessage({ target: 'offscreen', type: 'debait/call-start', debugToken: await debugToken() }).catch(() => {});
+        await startCallFlow();
         sendResponse({ ok: true });
       } else if (msg.type === 'debait/mic-denied') {
         const s = await getSettings();

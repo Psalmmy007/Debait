@@ -226,8 +226,8 @@ async function start() {
         // keep the records (no rescan loop), hide the waiting pills, tell the user why, retry in a minute
         batch.forEach((rec) => { rec.queued = false; rec.failed = true; rec.tag?.setVisible(false); });
         notice = /LOCAL_ONLY/.test(err.message)
-          ? 'Local only is on, but Gemini Nano is not downloaded yet. Open the Debait popup and click Turn on Debait, or turn off Local only.'
-          : 'Debait could not reach its AI. Retrying in a minute.';
+          ? `Local only: analysis unavailable. ${err.message.replace(/^LOCAL_ONLY:\s*/, '')}`
+          : `Analysis unavailable: ${err.message}. No classification was produced. Retrying in a minute.`;
         clearTimeout(retryTimer);
         retryTimer = setTimeout(() => {
           notice = '';

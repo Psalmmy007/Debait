@@ -1,0 +1,245 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+
+const tick = () => new Promise(r => setImmediate(r));
+const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { resolve, promise }; };
+const result = source => ({ kind: 'fear', score: 50, triggers: [], honest_rewrite: 'Calmer headline', source });
+let serial = 0;
+async function fixture(t, { localOnly = false, voice = false, cache = [], engine, contexts = true, create, statsVersion = 2, stats = {}, demo = false } = {}) {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const data = { settings: { localOnly, voice }, scoreCache: cache, appCheckDebugToken: 'test-only', statsVersion, stats };
+  let router, onSettings;
+  const messages = [], tabs = [];
+  let closed = 0;
+  globalThis.self = { addEventListener() {} };
+  globalThis.chrome = {
+    runtime: {
+      getManifest: () => ({ update_url: 'https://example.com/update' }),
+      onInstalled: { addListener() {} },
+      getURL: p => `chrome-extension://test/${p}`,
+      getContexts: async () => contexts ? [{}] : [],
+      onMessage: { addListener: fn => { router = fn; } },
+      sendMessage: async msg => {
+        messages.push(msg);
+        if (msg.type === 'debait/mic-state') return { state: 'granted' };
+        if (msg.type === 'debait/score') return engine ? engine(msg) : { ok: true, results: msg.texts.map(() => result(msg.localOnly ? 'on-device' : 'cloud')) };
+        return { ok: true };
+      },
+    },
+    storage: {
+      local: {
+        get: async key => ({ [key]: structuredClone(data[key]) }),
+        set: async patch => {
+          const oldValue = structuredClone(data.settings);
+          Object.assign(data, structuredClone(patch));
+          if (patch.settings) onSettings({ settings: { oldValue, newValue: structuredClone(patch.settings) } }, 'local');
+        },
+      },
+      onChanged: { addListener: fn => { onSettings = fn; } },
+    },
+    offscreen: {
+      createDocument: async () => { if (create) await create(); contexts = true; },
+      closeDocument: async () => { closed++; contexts = false; },
+    },
+    tabs: {
+      query: async () => [{ id: 1 }],
+      sendMessage: async (_id, msg) => { tabs.push(msg); return { result: {} }; },
+      create: async msg => { tabs.push(msg); },
+    },
+  };
+  if (demo) {
+    // Simulate Vite's explicit demo constant while exercising the real worker/recorder.
+    const url = new URL('../src/background/sw.js', import.meta.url);
+    let source = await readFile(url, 'utf8');
+    const modeImport = "import { DEMO_MODE } from '../engine/mode.js';";
+    assert.ok(source.includes(modeImport));
+    source = source.replace(modeImport, 'const DEMO_MODE = true;')
+      .replace(/from '(\.[^']+)'/g, (_, path) => `from '${new URL(path, url).href}'`);
+    await import(`data:text/javascript,${encodeURIComponent(source)}#test=${serial++}`);
+  } else {
+    await import(`../src/background/sw.js?test=${serial++}`);
+  }
+  await tick(); // Let the real statistics-version migration finish.
+  const send = (msg, host = 'example.com') => new Promise(resolve => router(msg, { tab: { id: 1, url: `https://${host}` } }, resolve));
+  const settings = patch => chrome.storage.local.set({ settings: { ...data.settings, ...patch } });
+  return { send, settings, data, messages, tabs, closed: () => closed };
+}
+
+test('Local Only re-scores cached cloud and legacy mock answers on device', async t => {
+  const f = await fixture(t, { localOnly: true, cache: [['cloud', result('cloud')], ['mock', result('mock')]] });
+  const res = await f.send({ type: 'debait/score', texts: ['cloud', 'mock'] });
+  assert.equal(res.ok, true); assert.equal(res.cacheHits, 0);
+  assert.deepEqual(res.results.map(r => r.source), ['on-device', 'on-device']);
+  assert.equal(f.messages.find(m => m.type === 'debait/score').localOnly, true);
+});
+
+test('Local Only can reuse a genuine device cache entry without inference', async t => {
+  const f = await fixture(t, { localOnly: true, cache: [['device', result('on-device')]] });
+  const res = await f.send({ type: 'debait/score', texts: ['device'] });
+  assert.equal(res.ok, true); assert.equal(res.cacheHits, 1);
+  assert.equal(f.messages.length, 0);
+});
+
+test('unavailable local model never returns an old cloud cached result or statistics', async t => {
+  const f = await fixture(t, { localOnly: true, cache: [['headline', result('cloud')]], engine: async () => ({ ok: false, error: 'LOCAL_ONLY: Nano unavailable' }) });
+  const res = await f.send({ type: 'debait/score', texts: ['headline'] });
+  assert.equal(res.ok, false); assert.match(res.error, /Nano unavailable/);
+  assert.equal(res.results, undefined); assert.deepEqual(f.data.stats, {});
+});
+
+test('normal mode cannot reuse legacy mock cache entries', async t => {
+  const f = await fixture(t, { cache: [['headline', result('mock')]] });
+  const res = await f.send({ type: 'debait/score', texts: ['headline'] });
+  assert.equal(res.results[0].source, 'cloud'); assert.equal(res.cacheHits, 0);
+});
+
+for (const response of [{ ok: false, error: 'Gemini timed out' }, { ok: true, results: [result('mock')] }, { ok: true, results: [] }]) {
+  test(`engine failure/invalid result stays an error: ${JSON.stringify(response)}`, async t => {
+    const f = await fixture(t, { engine: async () => response });
+    const res = await f.send({ type: 'debait/score', texts: ['headline'] });
+    assert.equal(res.ok, false); assert.equal(res.results, undefined);
+    assert.deepEqual(f.data.stats, {});
+  });
+}
+
+test('cloud results finishing after a Local Only change are discarded, not cached', async t => {
+  const pending = deferred();
+  const f = await fixture(t, { engine: () => pending.promise });
+  const request = f.send({ type: 'debait/score', texts: ['headline'] }); await tick();
+  await f.settings({ localOnly: true });
+  pending.resolve({ ok: true, results: [result('cloud')] });
+  const res = await request;
+  assert.equal(res.ok, false); assert.match(res.error, /Privacy settings changed/);
+  assert.deepEqual(f.data.scoreCache, []); assert.deepEqual(f.data.stats, {});
+});
+
+test('Local Only rejects a cloud response even if the engine violates the requested mode', async t => {
+  const f = await fixture(t, { localOnly: true, engine: async () => ({ ok: true, results: [result('cloud')] }) });
+  const res = await f.send({ type: 'debait/score', texts: ['headline'] });
+  assert.equal(res.ok, false); assert.match(res.error, /LOCAL_ONLY/);
+});
+
+test('microphone permission callback cannot start cloud voice under Local Only', async t => {
+  const f = await fixture(t, { localOnly: true, voice: true });
+  const res = await f.send({ type: 'debait/mic-granted' });
+  assert.equal(res.ok, false); assert.match(res.error, /LOCAL_ONLY/);
+  assert.ok(!f.messages.some(m => m.type === 'debait/call-start'));
+  const policy = await f.send({ type: 'debait/voice-allowed' });
+  assert.equal(policy.allowed, false);
+});
+
+test('normal voice still starts when explicitly enabled and cloud is allowed', async t => {
+  const f = await fixture(t, { voice: true });
+  assert.equal((await f.send({ type: 'debait/mic-granted' })).ok, true);
+  assert.ok(f.messages.some(m => m.type === 'debait/call-start'));
+});
+
+test('enabling voice while Local Only is on stops the context and resets voice', async t => {
+  const f = await fixture(t, { localOnly: true });
+  await f.settings({ voice: true }); await tick();
+  assert.ok(!f.messages.some(m => m.type === 'debait/call-start'));
+  assert.equal(f.data.settings.voice, false); assert.equal(f.closed(), 1);
+});
+
+test('enabling Local Only stops voice, destroys its context and disables the switch', async t => {
+  const f = await fixture(t, { voice: true });
+  await f.settings({ localOnly: true }); await tick();
+  assert.ok(f.messages.some(m => m.type === 'debait/call-end'));
+  assert.equal(f.closed(), 1); assert.equal(f.data.settings.voice, false);
+});
+
+test('Local Only stops sessions even when the voice flag is already false', async t => {
+  const f = await fixture(t);
+  await f.settings({ localOnly: true }); await tick();
+  assert.equal(f.closed(), 1);
+});
+
+test('pending offscreen creation cannot start voice after Local Only is enabled', async t => {
+  const creation = deferred();
+  const f = await fixture(t, { voice: true, contexts: false, create: () => creation.promise });
+  const request = f.send({ type: 'debait/mic-granted' }); await tick();
+  await f.settings({ localOnly: true });
+  creation.resolve();
+  assert.equal((await request).ok, false); await tick();
+  assert.ok(!f.messages.some(m => m.type === 'debait/call-start'));
+  assert.equal(f.closed(), 1);
+});
+
+test('voice tools cannot retrieve page content with Local Only enabled', async t => {
+  const f = await fixture(t, { localOnly: true, voice: true });
+  const res = await f.send({ type: 'debait/tool', name: 'page_report' });
+  assert.equal(res.ok, false); assert.equal(f.tabs.length, 0);
+});
+
+test('the same real headline counts once across cache hits, repeat visits and hosts', async t => {
+  const f = await fixture(t);
+  const first = await f.send({ type: 'debait/score', texts: ['Headline A', 'Headline A'] });
+  assert.equal(first.ok, true);
+  const second = await f.send({ type: 'debait/score', texts: ['Headline A'] }, 'another.example');
+  assert.equal(second.ok, true); assert.equal(second.cacheHits, 1);
+  await tick();
+  const [day] = Object.values(f.data.stats);
+  assert.equal(day.total, 1); assert.equal(day.fear, 1);
+  assert.deepEqual(day.sources, { 'example.com': 1 });
+  assert.equal(day.seen.length, 1);
+});
+
+test('different real headlines count independently, including cached on-device results', async t => {
+  const f = await fixture(t, { localOnly: true, cache: [['Headline A', result('on-device')]] });
+  const response = await f.send({ type: 'debait/score', texts: ['Headline A', 'Headline B', 'Headline B'] });
+  assert.equal(response.ok, true); assert.equal(response.cacheHits, 2);
+  await tick();
+  const [day] = Object.values(f.data.stats);
+  assert.equal(day.total, 2); assert.equal(day.fear, 2);
+  assert.equal(day.seen.length, 2);
+});
+
+test('a mixed real/mock batch is rejected without adding any reading statistics', async t => {
+  const f = await fixture(t, { engine: async () => ({ ok: true, results: [result('cloud'), result('mock')] }) });
+  const response = await f.send({ type: 'debait/score', texts: ['Real headline', 'Mock headline'] });
+  await tick();
+  assert.equal(response.ok, false); assert.match(response.error, /Mock results are disabled/);
+  assert.deepEqual(f.data.stats, {}); assert.deepEqual(f.data.scoreCache, []);
+});
+
+test('legacy mock cache entries are replaced with real analysis before being counted', async t => {
+  const f = await fixture(t, { cache: [['Headline A', result('mock')]] });
+  const response = await f.send({ type: 'debait/score', texts: ['Headline A'] });
+  await tick();
+  assert.equal(response.ok, true); assert.equal(response.results[0].source, 'cloud');
+  assert.equal(f.messages.filter(msg => msg.type === 'debait/score').length, 1);
+  const [day] = Object.values(f.data.stats);
+  assert.equal(day.total, 1);
+});
+
+test('a rejected Local Only request leaves existing real statistics untouched', async t => {
+  const stats = { '2026-11-01': { total: 3, fear: 3, seen: ['existing'] } };
+  const f = await fixture(t, { localOnly: true, stats: structuredClone(stats), cache: [['headline', result('cloud')]],
+    engine: async () => ({ ok: false, error: 'LOCAL_ONLY: Nano unavailable' }) });
+  const response = await f.send({ type: 'debait/score', texts: ['headline'] });
+  await tick();
+  assert.equal(response.ok, false); assert.deepEqual(f.data.stats, stats);
+});
+
+test('the teammate statistics migration clears old mixed counts and marks version 2', async t => {
+  const f = await fixture(t, { statsVersion: 1, stats: { '2026-11-01': { total: 99 } } });
+  assert.equal(f.data.statsVersion, 2); assert.deepEqual(f.data.stats, {});
+});
+
+test('current-version statistics survive service worker initialization', async t => {
+  const stats = { '2026-11-01': { total: 3, fear: 3, seen: ['existing'] } };
+  const f = await fixture(t, { statsVersion: 2, stats: structuredClone(stats) });
+  assert.deepEqual(f.data.stats, stats);
+});
+
+test('explicit demo results are displayed but never counted or cached as genuine analysis', async t => {
+  const f = await fixture(t, { demo: true, engine: async () => ({ ok: true, results: [result('mock')] }) });
+  const response = await f.send({ type: 'debait/score', texts: ['Mock headline'] });
+  await tick();
+  assert.equal(response.ok, true); assert.equal(response.results[0].source, 'mock');
+  const [day] = Object.values(f.data.stats);
+  assert.equal(day.total, 0); assert.equal(day.fear, 0);
+  assert.deepEqual(day.sources, {}); assert.deepEqual(day.seen, []);
+  assert.deepEqual(f.data.scoreCache, []);
+});

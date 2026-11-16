@@ -5,6 +5,7 @@
 import { getLiveGenerativeModel, startAudioConversation, ResponseModality, Schema } from 'firebase/ai';
 import { getAi } from '../engine/firebaseEngine.js';
 import { LIVE_MODELS, LIVE_VOICE } from '../engine/firebaseConfig.js';
+import { createVoiceSession } from './voiceSession.js';
 
 const SYSTEM = `You are Debait, a warm, calm voice assistant built into a Chrome extension.
 Debait spots bait headlines (written to make people angry, scared or envious), labels them Rage, Fear, Envy or Clean,
@@ -39,13 +40,12 @@ const TOOLS = [{
   ],
 }];
 
-let controller = null;
-let session = null;
 const state = (s, message = '') => chrome.runtime.sendMessage({ type: 'debait/call-state', state: s, message }).catch(() => {});
 
-async function connect(debugToken) {
+async function connect(debugToken, assertAllowed) {
   let lastErr = null;
   for (const model of LIVE_MODELS) {
+    await assertAllowed();
     try {
       const live = getLiveGenerativeModel(getAi(debugToken), {
         model,
@@ -64,38 +64,15 @@ async function connect(debugToken) {
   throw lastErr || new Error('could not connect');
 }
 
-export async function startCall(debugToken) {
-  if (controller) return;
-  state('connecting');
-  try {
-    session = await connect(debugToken);
-    controller = await startAudioConversation(session, {
-      // the model asked to do something on the page: hand it to the tab, send the result back
-      functionCallingHandler: async (calls) => {
-        const call = calls[0];
-        state('working', call.name);
-        const res = await chrome.runtime.sendMessage({ type: 'debait/tool', name: call.name, args: call.args || {} }).catch(() => null);
-        state('live');
-        return { id: call.id, name: call.name, response: res?.result ?? { error: 'Debait is not running on this page. Ask the user to refresh it.' } };
-      },
-    });
-    state('live');
-    // nudge the model to say hello first
-    session.send('The call just started. Greet me briefly.', true).catch(() => {});
-  } catch (err) {
-    controller = null;
-    session = null;
-    const appCheck = /app check|401|403|permission/i.test(String(err?.message));
-    state('error', appCheck ? 'Voice needs Gemini: send the App Check code in the popup to your teammate.' : `Could not start the call (${err?.message || err})`);
-  }
-}
+const voice = createVoiceSession({
+  isAllowed: async () => {
+    const policy = await chrome.runtime.sendMessage({ type: 'debait/voice-allowed' });
+    return policy?.ok === true && policy.allowed === true;
+  },
+  connect,
+  startAudio: startAudioConversation,
+  sendTool: call => chrome.runtime.sendMessage({ type: 'debait/tool', name: call.name, args: call.args || {} }),
+  state,
+});
 
-export async function endCall() {
-  try { await controller?.stop(); } catch { /* already stopped */ }
-  try { await session?.close(); } catch { /* already closed */ }
-  controller = null;
-  session = null;
-  state('ended');
-}
-
-export const inCall = () => !!controller;
+export const { startCall, endCall, inCall } = voice;
