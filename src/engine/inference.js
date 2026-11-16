@@ -30,7 +30,7 @@ export function createHeadlineEngine({ getAi, getDeviceAi, getGenerativeModel, I
         const data = JSON.parse(response.text().trim().replace(/^```(?:json)?\s*|\s*```$/g, ''));
         const list = Array.isArray(data) ? data : data?.results;
         if (!Array.isArray(list) || list.length !== texts.length) throw new Error('Incomplete model response');
-        const results = list.map((item, i) => normalizeResult({ ...item, source }, texts[i]));
+        const results = list.map((item, i) => normalizeResult({ kind: item?.kind, score: item?.score, triggers: item?.triggers, honest_rewrite: item?.honest_rewrite, source }, texts[i]));
         lastSource = source;
         return results;
       } catch (error) {

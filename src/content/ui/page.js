@@ -1,3 +1,4 @@
+import { canRewriteRecord, hasMeaningfulRewrite } from '../../engine/qualityPolicy.js';
 // Everything that touches the host page's own text:
 // fonts, word highlights, and swapping headlines for their honest rewrite.
 
@@ -123,17 +124,19 @@ function decode(el, from, to, delay) {
 }
 
 export async function swapToRewrite(rec, { delay = 0 } = {}) {
-  if (rec.state !== 'scored') return;
+  if (!canRewriteRecord(rec)) return false;
+  if (!hasMeaningfulRewrite(rec.el.innerText || rec.el.textContent || '', rec.result.honest_rewrite)) return false;
   rec.original = [...rec.el.childNodes].map((n) => n.cloneNode(true));
   rec.state = 'debaited';
   const from = rec.el.textContent.replace(/\s+/g, ' ').trim();
   if (reducedMotion()) {
     rec.el.replaceChildren(document.createTextNode(rec.result.honest_rewrite));
-    return;
+    return true;
   }
   rec.animating = true;
   await decode(rec.el, from, rec.result.honest_rewrite, delay);
   rec.animating = false;
+  return true;
 }
 
 export async function swapToOriginal(rec, { delay = 0 } = {}) {

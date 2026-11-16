@@ -1,3 +1,4 @@
+import { hasMeaningfulRewrite } from '../../engine/qualityPolicy.js';
 // The Ingredients card: why a headline is bait, word by word, plus what actually happened.
 import { reducedMotion } from './page.js';
 import { setHTML } from './html.js';
@@ -42,6 +43,7 @@ export function openCard(layer, rec, rect, { onDebait, onRestore }) {
   const r = rec.result;
   const debaited = rec.state === 'debaited';
   const clean = r.kind === 'clean';
+  const available = !clean && hasMeaningfulRewrite(rec.text, r.honest_rewrite);
   const el = document.createElement('div');
   el.className = 'card';
   el.dataset.kind = r.kind;
@@ -66,11 +68,11 @@ export function openCard(layer, rec, rect, { onDebait, onRestore }) {
     </div>
     <p class="card-headline">${markTriggers(rec.text, r.triggers)}</p>
     <div class="card-section"><h4>Why it pulls you in</h4><ul class="ingredients">${rows}</ul></div>
-    ${clean ? '' : `<div class="card-section"><h4>Suggested rewrite</h4><div class="honest">${esc(r.honest_rewrite)}</div><p>Wording suggestion only. Not a fact-check.</p></div>`}
+    ${clean ? '' : `<div class="card-section"><h4>Suggested rewrite</h4><div class="honest">${available ? esc(r.honest_rewrite) : 'No safe alternative available'}</div><p>Wording suggestion only. Not a fact-check.</p></div>`}
     <div class="card-foot">
       <span class="source" data-src="${esc(r.source)}"><i></i>${esc(SOURCE[r.source] || r.source)}</span>
       <div class="btns">
-        ${clean ? '<button class="btn" data-act="close">Close</button>' : debaited
+        ${clean || (!available && !debaited) ? '<button class="btn" data-act="close">Close</button>' : debaited
           ? '<button class="btn" data-act="restore">Show original</button>'
           : `<button class="btn" data-act="close">Keep</button><button class="btn primary" data-act="debait">Debait it ${ICON.arrow}</button>`}
       </div>
@@ -128,7 +130,7 @@ export function openCard(layer, rec, rect, { onDebait, onRestore }) {
 
   el.addEventListener('click', (e) => {
     const act = e.target.closest('[data-act]')?.dataset.act;
-    if (act === 'debait') { closeCard(); onDebait(); }
+    if (act === 'debait' && available) { closeCard(); onDebait(); }
     if (act === 'restore') { closeCard(); onRestore(); }
     if (act === 'close') closeCard();
   });

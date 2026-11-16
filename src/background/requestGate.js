@@ -1,7 +1,7 @@
 import { quotaError, retryDelayMs, isQuotaError } from '../shared/quota.js';
 
-// Six evenly spaced requests/minute and 240/day per installation leave headroom
-// below the observed project limits. This is not a project-wide reservation.
+// Defaults are conservative local budgets; configured values are not Google allocations.
+// This is not a project-wide reservation.
 export function createRequestGate({ read, write, now = Date.now, random = Math.random,
   intervalMs = 10000, dailyLimit = 240, leaseMs = 45000 } = {}) {
   let state, loading, active = false;
@@ -17,11 +17,11 @@ export function createRequestGate({ read, write, now = Date.now, random = Math.r
       const time = now(), day = new Date(time).toISOString().slice(0, 10);
       if (state.day !== day) { state.day = day; state.count = 0; }
       if (state.count >= dailyLimit) {
-        throw quotaError('Analysis paused: this installation reached its conservative daily request budget. No classification was produced.', Date.parse(`${day}T00:00:00Z`) + 86400000, false, 'debait/quota-daily');
+        throw quotaError('Analysis paused: Debait reached this installation’s local daily request budget. No classification was produced.', Date.parse(`${day}T00:00:00Z`) + 86400000, false, 'debait/quota-daily');
       }
-      if (time < state.retryAt) throw quotaError('Gemini is rate limited. Analysis is temporarily unavailable until the shared cooldown ends.', state.retryAt, state.failures < 3);
+      if (time < state.retryAt) throw quotaError('Gemini server rate limit: analysis is paused until the shared cooldown ends.', state.retryAt, state.failures < 3);
       if (active || time < state.busyUntil || time < state.nextAt) {
-        throw quotaError('Analysis is waiting for the shared request budget. No classification was produced.', Math.max(time + intervalMs, state.nextAt, active ? 0 : state.busyUntil), true, 'debait/quota-pacing');
+        throw quotaError('Waiting for Debait’s local request slot. No classification was produced.', Math.max(time + intervalMs, state.nextAt, active ? 0 : state.busyUntil), true, 'debait/quota-pacing');
       }
       active = true;
       state.count++;
@@ -37,7 +37,7 @@ export function createRequestGate({ read, write, now = Date.now, random = Math.r
           state.failures++;
           const backoff = Math.min(300000, 30000 * 2 ** Math.min(state.failures - 1, 4));
           state.retryAt = now() + Math.max(backoff, retryDelayMs(error, now())) + Math.floor(random() * 2000);
-          throw quotaError('Gemini is rate limited. No analysis was produced. ' + (state.failures >= 3 ? 'Automatic retries stopped; try again later.' : 'A limited retry will be attempted after the shared cooldown.'), state.retryAt, state.failures < 3);
+          throw quotaError('Gemini server rate limit: no analysis was produced. ' + (state.failures >= 3 ? 'Automatic retries stopped; try again later.' : 'A limited retry will be attempted after the shared cooldown.'), state.retryAt, state.failures < 3);
         }
         throw error;
       } finally {

@@ -1,4 +1,5 @@
 // Service worker: routes messages, keeps the score cache and the daily stats.
+import { quotaConfig } from '../shared/quotaConfig.js';
 import { createRequestGate } from './requestGate.js';
 import { MSG, normalizeResult } from '../engine/contract.js';
 import { getSettings, dayKey, emptyDay } from '../shared/storage.js';
@@ -42,6 +43,7 @@ chrome.runtime.onInstalled.addListener(async () => {
 });
 const CACHE_MAX = 3000;
 const requestGate = createRequestGate({
+  ...quotaConfig(import.meta.env),
   read: async () => (await chrome.storage.local.get('aiRequestBudget')).aiRequestBudget,
   write: value => chrome.storage.local.set({ aiRequestBudget: value }),
 });

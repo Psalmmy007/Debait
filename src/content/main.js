@@ -1,3 +1,4 @@
+import { canRewriteRecord, hasMeaningfulRewrite } from '../engine/qualityPolicy.js';
 import { isQuotaError, planAnalysisRetry } from '../shared/quota.js';
 import { sendRuntimeMessage } from '../shared/messaging.js';
 // Debait content script: finds headlines, gets them scored, and runs the on-page UI.
@@ -54,7 +55,7 @@ async function start() {
 
   const overlay = createOverlay();
   const orb = createOrb(overlay, {
-    onClick: (origin) => toggleDebaitPage(origin),
+    onClick: (origin) => toggleDebaitPage(origin).catch(report),
     onDoubleClick: () => { closeCard(); panel.toggle(); },
     onTripleClick: async () => {
       closeCard();
@@ -66,7 +67,7 @@ async function start() {
   });
   const panel = createSettingsPanel(overlay.panelLayer, {
     getPage: pageCounts,
-    onToggle: () => toggleDebaitPage(orb.center()),
+    onToggle: () => toggleDebaitPage(orb.center()).catch(report),
     orbCenter: () => orb.center(),
     onOpenChange: (open) => orb.setPanelOpen(open),
   });
@@ -92,17 +93,15 @@ async function start() {
       };
     }
     if (name === 'debait_page') {
-      if (bait > 0) toggleDebaitPage(orb.center());
-      return { rewrote: bait, note: bait ? 'done' : debaited ? 'page was already debaited' : 'no bait found' };
+      return await toggleDebaitPage(orb.center(), { rewriteOnly: true });
     }
     if (name === 'restore_page') {
-      if (debaited > 0 && bait === 0) toggleDebaitPage(orb.center());
-      return { restored: debaited };
+      return await toggleDebaitPage(orb.center(), { restoreOnly: true });
     }
     if (name === 'explain_headline') {
       const r = baitList()[Math.max(0, (args.number || 1) - 1)];
       if (!r) return { error: 'no such headline' };
-      return { headline: r.text, kind: r.result.kind, score: r.result.score, manipulative_words: r.result.triggers, honest_rewrite: r.result.honest_rewrite };
+      return { headline: r.text, kind: r.result.kind, score: r.result.score, manipulative_words: r.result.triggers, honest_rewrite: r.result.honest_rewrite, rewrite_available: hasMeaningfulRewrite(r.text, r.result.honest_rewrite) };
     }
     if (name === 'set_setting') {
       const key = { show_tags: 'showTags', auto_debait: 'autoDebait', local_only: 'localOnly', show_orb: 'showOrb' }[args.setting];
@@ -207,7 +206,7 @@ async function start() {
   // throttle, not debounce: busy pages that never stop changing must still get scored
   function flushSoon() {
     if (flushTimer || flushing || Date.now() < pauseUntil) return;
-    flushTimer = setTimeout(() => { flushTimer = null; flush(); }, 120);
+    flushTimer = setTimeout(() => { flushTimer = null; flush(); }, 400);
   }
   let flushing = false;
 
@@ -275,20 +274,26 @@ async function start() {
     rec.result = result;
     rec.state = 'scored';
     rec.tag?.setResult(result);
-    if (settings.autoDebait && result.kind !== 'clean' && result.source !== 'mock') {
-      swapToRewrite(rec).then(() => rec.tag?.setDebaited(true, result));
+    if (settings.autoDebait && canRewriteRecord(rec) && result.source !== 'mock') {
+      debaitOne(rec).catch(report);
     }
   }
 
   // ---------- debaiting ----------
-  function debaitOne(rec) {
-    swapToRewrite(rec).then(() => { paint(); refreshOrb(); });
-    setTimeout(() => rec.tag?.setDebaited(true, rec.result), 240);
-    if (rec.result.source !== 'mock') sendRuntimeMessage({ type: 'debait/debaited', count: 1 }).catch(() => {});
-    refreshOrb();
+  async function debaitOne(rec) {
+    if (!canRewriteRecord(rec)) return false;
+    if (notice === 'No safe alternative available') notice = '';
+    const changed = await swapToRewrite(rec);
+    if (changed) {
+      rec.tag?.setDebaited(true, rec.result);
+      if (rec.result.source !== 'mock') sendRuntimeMessage({ type: 'debait/debaited', count: 1 }).catch(() => {});
+    }
+    paint(); refreshOrb();
+    return changed;
   }
 
   function restoreOne(rec) {
+    if (rec.animating) return;
     swapToOriginal(rec).then(() => { paint(); refreshOrb(); });
     setTimeout(() => rec.tag?.setDebaited(false, rec.result), 240);
     refreshOrb();
@@ -299,36 +304,42 @@ async function start() {
     return Math.hypot(b.left + b.width / 2 - origin.x, b.top + b.height / 2 - origin.y);
   }
 
-  function toggleDebaitPage(origin) {
+  async function toggleDebaitPage(origin, { rewriteOnly = false, restoreOnly = false } = {}) {
     closeCard();
-    orb.pulse();
-    const all = [...records.values()].filter((r) => r.result);
-    const bait = all.filter((r) => r.state === 'scored' && r.result.kind !== 'clean');
-    const done = all.filter((r) => r.state === 'debaited');
-
+    const all = [...records.values()].filter(r => r.result);
+    if (all.some(r => r.animating)) return { rewrote: 0, restored: 0, note: 'Rewriting is still in progress' };
+    const bait = restoreOnly ? [] : all.filter(canRewriteRecord);
+    const done = all.filter(r => r.state === 'debaited');
     if (bait.length) {
-      // the wave rolls out from the orb; each headline decodes when the wave reaches it
+      if (notice === 'No safe alternative available') notice = '';
+      orb.pulse();
       const { R, duration } = playRipple(origin);
-      const jobs = bait.map((rec) => {
+      const changes = await Promise.all(bait.map(async rec => {
         const delay = duration ? Math.min(1, distanceFrom(origin, rec.el) / R) * duration * 0.75 : 0;
-        setTimeout(() => rec.tag?.setDebaited(true, rec.result), delay + 240);
-        return swapToRewrite(rec, { delay });
-      });
-      refreshOrb();
-      Promise.all(jobs).then(() => { paint(); refreshOrb(); });
-      const real = bait.filter((r) => r.result.source !== 'mock').length;
+        const changed = await swapToRewrite(rec, { delay });
+        if (changed) rec.tag?.setDebaited(true, rec.result);
+        return changed;
+      }));
+      const count = changes.filter(Boolean).length;
+      const real = bait.filter((rec, i) => changes[i] && rec.result.source !== 'mock').length;
       if (real) sendRuntimeMessage({ type: 'debait/debaited', count: real }).catch(() => {});
-    } else if (done.length) {
-      // undo: the wave flows back into the orb
-      const { R, duration } = playRipple(origin, { undo: true });
-      const jobs = done.map((rec) => {
-        const delay = duration ? (1 - Math.min(1, distanceFrom(origin, rec.el) / R)) * duration * 0.6 : 0;
-        setTimeout(() => rec.tag?.setDebaited(false, rec.result), delay + 240);
-        return swapToOriginal(rec, { delay });
-      });
-      refreshOrb();
-      Promise.all(jobs).then(() => { paint(); refreshOrb(); });
+      paint(); refreshOrb();
+      return { rewrote: count, restored: 0 };
     }
+    if (done.length && !rewriteOnly) {
+      orb.pulse();
+      const { R, duration } = playRipple(origin, { undo: true });
+      await Promise.all(done.map(async rec => {
+        const delay = duration ? (1 - Math.min(1, distanceFrom(origin, rec.el) / R)) * duration * 0.6 : 0;
+        await swapToOriginal(rec, { delay });
+        rec.tag?.setDebaited(false, rec.result);
+      }));
+      paint(); refreshOrb();
+      return { rewrote: 0, restored: done.length };
+    }
+    if (all.some(r => r.result.kind !== 'clean')) notice = 'No safe alternative available';
+    refreshOrb();
+    return { rewrote: 0, restored: 0, note: 'No safe alternative available' };
   }
 
   // ---------- settings + popup commands ----------
@@ -355,7 +366,7 @@ async function start() {
       return false;
     }
     if (msg?.type === 'debait/togglePage') {
-      toggleDebaitPage(orb.center());
+      toggleDebaitPage(orb.center()).catch(report);
       sendResponse({ ok: true });
     }
     return false;

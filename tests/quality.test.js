@@ -19,8 +19,8 @@ test('BBC childbirth rewrite cannot weaken never go away into persist over time'
   assert.equal(normalizeResult(output('The notable health effects of childbirth that persist over time'), bbcChildbirth).honest_rewrite, bbcChildbirth);
 });
 
-test('a restrained BBC childbirth edit preserving the permanent claim is permitted', () => {
-  const candidate = 'The health effects of childbirth that never go away';
+test('a restrained BBC childbirth edit preserving the quotation and permanent claim is permitted', () => {
+  const candidate = "'It blew my mind': The health effects of childbirth that never go away";
   assert.equal(preserveRewrite(bbcChildbirth, candidate, 'fear'), candidate);
 });
 

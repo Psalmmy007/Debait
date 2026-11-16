@@ -1,4 +1,4 @@
-import { preserveRewrite } from './qualityPolicy.js';
+import { rewriteDecision } from './qualityPolicy.js';
 
 // The one shape every Debait engine must follow.
 // The UI only ever talks to an engine through these three functions,
@@ -18,6 +18,7 @@ import { preserveRewrite } from './qualityPolicy.js';
  * @property {Trigger[]} triggers
  * @property {string} honest_rewrite   Calm, honest version of the headline.
  * @property {'on-device'|'cloud'|'mock'} source   Where this result was computed.
+ * @property {'clean'|'model_unchanged'|'preservation_guard'|'alternative'} [rewriteReason] Internal enum only; never raw rejected text.
  *
  * @typedef {Object} EngineStatus
  * @property {boolean} ready
@@ -53,6 +54,9 @@ export function normalizeResult(r, text) {
   const { kind, source } = r;
   const score = Math.max(0, Math.min(100, Math.round(r.score)));
   const triggers = r.triggers.filter(t => t.word.trim()).slice(0, 6);
-  const honest_rewrite = preserveRewrite(text, r.honest_rewrite.trim(), kind);
-  return { kind, score, triggers, honest_rewrite, source };
+  const decision = rewriteDecision(text, r.honest_rewrite.trim(), kind);
+  // Preserve this enum through internal normalization/cache hops, never raw model payloads.
+  const rewriteReason = decision.reason === 'model_unchanged' && r.rewriteReason === 'preservation_guard'
+    ? 'preservation_guard' : decision.reason;
+  return { kind, score, triggers, honest_rewrite: decision.text, source, rewriteReason };
 }

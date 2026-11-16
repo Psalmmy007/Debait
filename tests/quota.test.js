@@ -98,3 +98,19 @@ test('normal pacing waits have a separate bounded budget and do not consume 429 
 test('long server delays are not converted to an overflowing browser timer', () => {
   assert.equal(planAnalysisRetry([{}], { retryAt: 3e9 }, 0), null);
 });
+
+test('local budgets are configurable and reject invalid values', async () => {
+  const { quotaConfig } = await import('../src/shared/quotaConfig.js');
+  assert.deepEqual(quotaConfig({}), { rpm: 6, intervalMs: 10000, dailyLimit: 240 });
+  assert.deepEqual(quotaConfig({ VITE_DEBAIT_QUOTA_RPM: '3', VITE_DEBAIT_QUOTA_RPD: '100' }), { rpm: 3, intervalMs: 20000, dailyLimit: 100 });
+  for (const value of ['0', '-1', 'abc', '1.5', 'Infinity']) assert.throws(() => quotaConfig({ VITE_DEBAIT_QUOTA_RPM: value }), /positive integer/);
+});
+
+test('configured budgets really change pacing and distinguish local waiting from server cooldown', async () => {
+  const { quotaConfig } = await import('../src/shared/quotaConfig.js');
+  const f = fixture(quotaConfig({ VITE_DEBAIT_QUOTA_RPM: '3' }));
+  await f.gate.run(async () => {}); f.advance(10000);
+  await assert.rejects(f.gate.run(async () => {}), error => error.code === 'debait/quota-pacing' && /local request slot/.test(error.message));
+  f.advance(10000);
+  await assert.rejects(f.gate.run(async () => { throw quota(); }), error => error.code === 'debait/quota' && /server rate limit/.test(error.message));
+});
