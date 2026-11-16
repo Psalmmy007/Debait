@@ -1,5 +1,5 @@
 // Bump whenever classification/rewrite policy changes so earlier answers are not reused.
-export const QUALITY_POLICY_VERSION = 'quality-rewrite-integrity-v2';
+export const QUALITY_POLICY_VERSION = 'quality-semantic-prefix-v3';
 
 export function headlinePrompt(texts) {
   return `You are Debait. Assess the WORDING of each headline, not the truth of the story or the publisher's intentions. You have only headline text, not the article or independent evidence.
@@ -12,6 +12,12 @@ Classification:
 - clean: no clear emotional manipulation in the wording. Clean does not mean true or fact-checked. If evidence for an emotional category is weak, be conservative rather than inventing an emotional motive.
 - Distinguish factual reporting about emotional subjects from emotionally manipulative presentation. Negative health news, genuine safety warnings, deaths, financial reporting and attributed emotional quotations are not automatically bait.
 - Quoted first-person fear or distress is not, by itself, evidence of publisher manipulation. Do not infer that a quotation is genuine or false from the headline alone. Consider attribution and the surrounding presentation; a Fear label needs evidence beyond the quoted emotion itself.
+- Require an observable presentation technique, such as publisher-added personal threats, coercive urgency or status pressure; emotional vocabulary alone is insufficient. Do not assume every quotation is clean.
+- Classification examples (wording judgments, not verification of the stories):
+  * "'I'd throw up in the car park': How school anxiety is harming children's futures": legitimate reported distress and a negative claim are not alone evidence of manipulation; prefer clean absent a separate presentation technique.
+  * "Patients report permanent pain after treatment": a difficult subject and permanence claim alone do not establish fear bait.
+  * "'I was scared': YOUR child is next — panic NOW!": quotation does not excuse publisher-added personal threat and coercive urgency; these support fear.
+  * "Officials you should HATE: join the outrage now": explicit hostility and outrage pressure support rage.
 - score: 0-100 for manipulative wording, not factual accuracy, danger, or probability of falsehood. Plain reporting scores low.
 - triggers: exact words or phrases copied from this headline, with a short explanation of the wording. Do not invent facts or unsupported claims of exaggeration. Empty if clean.
 
@@ -21,6 +27,8 @@ Rewrite policy:
 - Preserve quoted speech verbatim; do not remove its quotation marks, reword a speaker’s experience, or turn it into an unattributed assertion.
 - Keep who said or reported a claim. Preserve the difference between a report, allegation and established fact, and between association and causation.
 - Preserve words such as may, some, many and most. Do not turn uncertainty into certainty or certainty into uncertainty. Do not turn permanent effects into merely long-lasting effects or change the strength of a comparison.
+- Accepted edits are restricted to removing one clearly separable promotional prefix at the start: "You won't believe this: ", "You will not believe this: ", or "Click to find out: ". Keep the entire remaining headline unchanged, including quotations and attribution. Never remove such words from inside a quotation. Do not remove safety warnings, reporting labels or article claims.
+- For example, "You won't believe this: Council approves £2 million for repairs" may become "Council approves £2 million for repairs". "School anxiety is harming children's futures" must NOT become "School anxiety is affecting children's futures" or "School anxiety is destroying children's futures"; both alter the claim. Do not force an alternative.
 - Make the smallest edit needed. Do not soften a factual harm claim just to make the sentence sound calmer. Do not add studies, causes, motives, explanations or missing details.
 - Do not fill a curiosity gap by guessing the withheld information. A curiosity hook alone must not be forced into envy.
 - If clean, repeat the original headline EXACTLY. If no faithful and useful rewrite is possible, repeat the original EXACTLY, even for a non-clean classification. Keeping the original is better than inventing, omitting or weakening information.
@@ -43,6 +51,7 @@ const durations = /\b\d+(?:[.,]\d+)*[- ](?:hours?|days?|weeks?|months?|years?)\b
 export function normalizeRewriteText(text) {
   return text.normalize('NFC').replace(/[’‘]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, ' ').trim();
 }
+// Textual difference only; factual acceptance is enforced separately by rewriteDecision.
 export function hasMeaningfulRewrite(original, proposed) {
   return typeof original === 'string' && typeof proposed === 'string' &&
     !!normalizeRewriteText(proposed) && normalizeRewriteText(original) !== normalizeRewriteText(proposed);
@@ -82,11 +91,21 @@ function guardRejects(original, proposed) {
   };
   return protectedSpans.some(span => occurrences(after, span) < occurrences(before, span));
 }
+// Deliberately narrow structural policy, not a semantic equivalence detector.
+// Matching starts outside quotations and leaves the full claim intact. Case is
+// significant in the retained text; normalization only tolerates typography/spacing.
+const promotionalPrefix = /^(?:You won't believe this|You will not believe this|Click to find out): /i;
+function isSafePrefixRemoval(original, proposed) {
+  const before = normalizeRewriteText(original);
+  const prefix = before.match(promotionalPrefix);
+  return !!prefix && before.slice(prefix[0].length) === normalizeRewriteText(proposed);
+}
 export function rewriteDecision(original, proposed, kind) {
   if (kind === 'clean') return { text: original, reason: 'clean' };
   if (!hasMeaningfulRewrite(original, proposed)) return { text: original, reason: 'model_unchanged' };
+  if (isSafePrefixRemoval(original, proposed)) return { text: proposed, reason: 'alternative' };
   if (guardRejects(original, proposed)) return { text: original, reason: 'preservation_guard' };
-  return { text: proposed, reason: 'alternative' };
+  return { text: original, reason: 'semantic_change_risk' };
 }
 export function preserveRewrite(original, proposed, kind) {
   return rewriteDecision(original, proposed, kind).text;

@@ -19,9 +19,9 @@ test('BBC childbirth rewrite cannot weaken never go away into persist over time'
   assert.equal(normalizeResult(output('The notable health effects of childbirth that persist over time'), bbcChildbirth).honest_rewrite, bbcChildbirth);
 });
 
-test('a restrained BBC childbirth edit preserving the quotation and permanent claim is permitted', () => {
+test('removing a claim adjective cannot be established as safe from headline text alone', () => {
   const candidate = "'It blew my mind': The health effects of childbirth that never go away";
-  assert.equal(preserveRewrite(bbcChildbirth, candidate, 'fear'), candidate);
+  assert.equal(preserveRewrite(bbcChildbirth, candidate, 'fear'), bbcChildbirth);
 });
 
 for (const [name, original, proposed] of [
@@ -47,10 +47,10 @@ test('Clean preserves the exact original, including punctuation and whitespace',
   assert.equal(normalizeResult(output('Council approves funding', 'clean'), original).honest_rewrite, original);
 });
 
-test('a small wording edit that retains protected details is allowed', () => {
+test('retaining lexical details does not make an unsupported synonym safe', () => {
   const original = 'Researchers say this alarming trend may last 5 years';
   const proposed = 'Researchers say this concerning trend may last 5 years';
-  assert.equal(preserveRewrite(original, proposed, 'fear'), proposed);
+  assert.equal(preserveRewrite(original, proposed, 'fear'), original);
 });
 
 test('the real prompt requires conservative classification and preservation without harmful substitutions', () => {
@@ -84,9 +84,9 @@ test('SDK-backed adapter uses the production prompt and applies the BBC safeguar
   assert.deepEqual(results.map(result => result.honest_rewrite), [bbcBody, bbcChildbirth]);
 });
 
-test('lexical checks do not establish factual equivalence: document a known limitation', () => {
+test('causal reversal is rejected even when lexical tripwires survive', () => {
   const original = 'Doctors say the treatment causes pain';
   const unsupported = 'Doctors say the treatment prevents pain';
   // A relation can change while every protected lexical span survives.
-  assert.equal(preserveRewrite(original, unsupported, 'fear'), unsupported);
+  assert.equal(preserveRewrite(original, unsupported, 'fear'), original);
 });

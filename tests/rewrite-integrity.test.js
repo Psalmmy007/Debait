@@ -35,8 +35,8 @@ for (const proposed of [
   });
 }
 
-test('a changed presentation can retain the exact quotation and negation', () => {
-  const before = "'I don't feel safe': The alarming account of some teenagers";
+test('promotional prefix removal retains the exact quotation and negation', () => {
+  const before = "You won't believe this: 'I don't feel safe': The account of some teenagers";
   const proposed = "'I don't feel safe': The account of some teenagers";
   assert.deepEqual(rewriteDecision(before, proposed, 'fear'), { text: proposed, reason: 'alternative' });
 });
@@ -51,7 +51,7 @@ test('unchanged swaps do not mutate DOM, set rewritten state or require browser 
 test('a meaningful swap reports true only after changing the headline', async () => {
   globalThis.matchMedia = () => ({ matches: true });
   globalThis.document = { createTextNode: text => ({ textContent: text }) };
-  const before = 'The alarming trend may last 5 years', proposed = 'The trend may last 5 years';
+  const before = 'Click to find out: The trend may last 5 years', proposed = 'The trend may last 5 years';
   let visible = before;
   const record = { state: 'scored', text: before, result: normalizeResult(result(proposed), before),
     el: { childNodes: [{ cloneNode: () => ({ textContent: before }) }], textContent: before,

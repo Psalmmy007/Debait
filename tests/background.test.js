@@ -306,12 +306,13 @@ for (const version of [undefined, 'old-policy']) {
     if (version === undefined) delete f.data.scoreCacheVersion;
     const response = await f.send({ type: 'debait/score', texts: ['headline'] });
     assert.equal(response.ok, true); assert.equal(response.cacheHits, 0);
-    assert.equal(response.results[0].honest_rewrite, 'Calmer headline');
+    assert.equal(response.results[0].honest_rewrite, 'headline');
+    assert.equal(response.results[0].rewriteReason, 'semantic_change_risk');
     assert.equal(f.data.scoreCacheVersion, QUALITY_POLICY_VERSION);
     assert.deepEqual(f.data.scoreCache, []);
     assert.deepEqual(f.data.stats['2026-11-01'], stats['2026-11-01']);
     t.mock.timers.tick(1000); await tick();
-    assert.equal(f.data.scoreCache[0][1].honest_rewrite, 'Calmer headline');
+    assert.equal(f.data.scoreCache[0][1].honest_rewrite, 'headline');
     assert.equal(f.data.scoreCacheVersion, QUALITY_POLICY_VERSION);
   });
 }
