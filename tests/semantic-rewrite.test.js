@@ -5,7 +5,8 @@ import { rewriteDecision, canRewriteRecord, headlinePrompt } from '../src/engine
 import { swapToRewrite } from '../src/content/ui/page.js';
 
 const bbc = "'I'd throw up in the car park': How school anxiety is harming children's futures";
-const output = honest_rewrite => ({ kind: 'fear', score: 35, triggers: [], honest_rewrite, source: 'cloud' });
+// Controlled labels/evidence isolate rewrite enforcement, not model accuracy.
+const output = (honest_rewrite, evidence) => ({ kind: 'fear', score: 35, triggers: [{ word: evidence, why: 'Controlled rewrite fixture, not a semantic classification judgment' }], honest_rewrite, source: 'cloud' });
 for (const [name, original, proposed] of [
   ['BBC weakened harm', bbc, bbc.replace('harming', 'affecting')],
   ['BBC intensified harm', bbc, bbc.replace('harming', 'destroying')],
@@ -24,7 +25,7 @@ for (const [name, original, proposed] of [
   ['embedded adjective removal', 'The alarming effects are permanent', 'The effects are permanent'],
 ]) {
   test(`rejects ${name}; no action, DOM change or successful rewrite count`, async () => {
-    const normalized = normalizeResult(output(proposed), original);
+    const normalized = normalizeResult(output(proposed, original), original);
     assert.equal(normalized.honest_rewrite, original);
     assert.ok(['semantic_change_risk', 'preservation_guard'].includes(normalized.rewriteReason));
     assert.equal(normalizeResult(normalized, original).rewriteReason, normalized.rewriteReason);
@@ -53,7 +54,7 @@ for (const [before, after] of [
 ]) {
   test(`permits only promotional framing removal: ${before}`, () => {
     assert.deepEqual(rewriteDecision(before, after, 'fear'), { text: after, reason: 'alternative' });
-    assert.equal(canRewriteRecord({ state: 'scored', text: before, result: normalizeResult(output(after), before) }), true);
+    assert.equal(canRewriteRecord({ state: 'scored', text: before, result: normalizeResult(output(after, before), before) }), true);
     assert.equal(rewriteDecision(before, after, 'clean').text, before);
   });
 }

@@ -5,7 +5,8 @@ import { normalizeResult } from '../src/engine/contract.js';
 import { swapToRewrite } from '../src/content/ui/page.js';
 
 const original = "'It felt like I was dying': Why some teenagers don't go to school";
-const result = rewrite => ({ kind: 'fear', score: 65, triggers: [], honest_rewrite: rewrite, source: 'cloud' });
+// Synthetic evidence isolates rewrite mechanics; it is not a label-quality assertion.
+const result = (rewrite, evidence = original) => ({ kind: 'fear', score: 65, triggers: [{ word: evidence, why: 'Controlled rewrite fixture, not a semantic classification judgment' }], honest_rewrite: rewrite, source: 'cloud' });
 
 test('the reported distress quotation has no meaningful rewrite when the model repeats it', () => {
   const normalized = normalizeResult(result(original), original);
@@ -53,7 +54,7 @@ test('a meaningful swap reports true only after changing the headline', async ()
   globalThis.document = { createTextNode: text => ({ textContent: text }) };
   const before = 'Click to find out: The trend may last 5 years', proposed = 'The trend may last 5 years';
   let visible = before;
-  const record = { state: 'scored', text: before, result: normalizeResult(result(proposed), before),
+  const record = { state: 'scored', text: before, result: normalizeResult(result(proposed, before), before),
     el: { childNodes: [{ cloneNode: () => ({ textContent: before }) }], textContent: before,
       replaceChildren: node => { visible = node.textContent; } } };
   assert.equal(await swapToRewrite(record), true); assert.equal(visible, proposed);

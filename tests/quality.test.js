@@ -6,10 +6,11 @@ import { createHeadlineEngine } from '../src/engine/inference.js';
 
 const bbcBody = 'One of the most commonly injured body parts that many of us never train';
 const bbcChildbirth = "'It blew my mind': The alarming health effects of childbirth that never go away";
-const output = (rewrite, kind = 'fear') => ({ kind, score: 70, triggers: [], honest_rewrite: rewrite, source: 'cloud' });
+// Controlled labels isolate rewrite behavior; these are not classifier expectations.
+const output = (rewrite, kind = 'fear', evidence = bbcChildbirth) => ({ kind, score: 70, triggers: kind === 'clean' ? [] : [{ word: evidence, why: 'Controlled rewrite fixture, not a classification accuracy claim' }], honest_rewrite: rewrite, source: 'cloud' });
 
 test('BBC body-part rewrite cannot drop the comparison, population or negation', () => {
-  const r = normalizeResult(output('A commonly injured body part that is often not trained', 'envy'), bbcBody);
+  const r = normalizeResult(output('A commonly injured body part that is often not trained', 'envy', bbcBody), bbcBody);
   assert.equal(r.honest_rewrite, bbcBody);
   // Stage 1 protects the text; it does not claim this fabricated category is correct.
   assert.equal(r.kind, 'envy');
@@ -72,7 +73,7 @@ test('SDK-backed adapter uses the production prompt and applies the BBC safeguar
       return { generateContent: async text => {
         captured = text;
         return { response: { inferenceSource: 'in_cloud', text: () => JSON.stringify({ results: [
-          output('A commonly injured body part that is often not trained', 'envy'),
+          output('A commonly injured body part that is often not trained', 'envy', bbcBody),
           output('The notable health effects of childbirth that persist over time'),
         ] }) } };
       } };

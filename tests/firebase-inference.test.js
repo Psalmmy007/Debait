@@ -120,7 +120,7 @@ test('late authentication after the deadline cannot submit a new cloud inference
 
 test('rewrite provenance is computed internally, not trusted from generated JSON', async () => {
   const original = "'It felt like I was dying': Why some teenagers don't go to school";
-  const f = fixture({ data: { results: [{ kind: 'fear', score: 65, triggers: [], honest_rewrite: original, rewriteReason: 'preservation_guard' }] } });
+  const f = fixture({ data: { results: [{ kind: 'fear', score: 65, triggers: [{ word: original, why: 'Controlled provenance fixture, not a classification accuracy claim' }], honest_rewrite: original, rewriteReason: 'preservation_guard' }] } });
   const [result] = await f.engine.scoreHeadlines([original], { localOnly: false });
   assert.equal(result.rewriteReason, 'model_unchanged');
 });

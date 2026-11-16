@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 
 const tick = () => new Promise(r => setImmediate(r));
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { resolve, promise }; };
-const result = source => ({ kind: 'fear', score: 50, triggers: [], honest_rewrite: 'Calmer headline', source });
+const result = (source, text = 'headline') => ({ kind: 'fear', score: 50, triggers: [{ word: text, why: 'Controlled evidence fixture; not a classification accuracy claim' }], honest_rewrite: 'Calmer headline', source });
 let serial = 0;
 async function fixture(t, { localOnly = false, voice = false, cache = [], engine, contexts = true, create, statsVersion = 2, stats = {}, demo = false, debug = false, scoreCacheVersion = QUALITY_POLICY_VERSION } = {}) {
   t.mock.timers.enable({ apis: ['setTimeout'] });
@@ -27,7 +27,7 @@ async function fixture(t, { localOnly = false, voice = false, cache = [], engine
         messages.push(msg);
         if (msg.type === 'debait/engine-ready') return { ok: true, ready: true };
         if (msg.type === 'debait/mic-state') return { state: 'granted' };
-        if (msg.type === 'debait/score') return engine ? engine(msg) : { ok: true, results: msg.texts.map(() => result(msg.localOnly ? 'on-device' : 'cloud')) };
+        if (msg.type === 'debait/score') return engine ? engine(msg) : { ok: true, results: msg.texts.map(text => result(msg.localOnly ? 'on-device' : 'cloud', text)) };
         return { ok: true };
       },
     },
@@ -98,7 +98,7 @@ test('Local Only re-scores cached cloud and legacy mock answers on device', asyn
 });
 
 test('Local Only can reuse a genuine device cache entry without inference', async t => {
-  const f = await fixture(t, { localOnly: true, cache: [['device', result('on-device')]] });
+  const f = await fixture(t, { localOnly: true, cache: [['device', result('on-device', 'device')]] });
   const res = await f.send({ type: 'debait/score', texts: ['device'] });
   assert.equal(res.ok, true); assert.equal(res.cacheHits, 1);
   assert.equal(f.messages.length, 0);
@@ -209,7 +209,7 @@ test('the same real headline counts once across cache hits, repeat visits and ho
 });
 
 test('different real headlines count independently, including cached on-device results', async t => {
-  const f = await fixture(t, { localOnly: true, cache: [['Headline A', result('on-device')]] });
+  const f = await fixture(t, { localOnly: true, cache: [['Headline A', result('on-device', 'Headline A')]] });
   const response = await f.send({ type: 'debait/score', texts: ['Headline A', 'Headline B', 'Headline B'] });
   assert.equal(response.ok, true); assert.equal(response.cacheHits, 2);
   await tick();
@@ -227,7 +227,7 @@ test('a mixed real/mock batch is rejected without adding any reading statistics'
 });
 
 test('legacy mock cache entries are replaced with real analysis before being counted', async t => {
-  const f = await fixture(t, { cache: [['Headline A', result('mock')]] });
+  const f = await fixture(t, { cache: [['Headline A', result('mock', 'Headline A')]] });
   const response = await f.send({ type: 'debait/score', texts: ['Headline A'] });
   await tick();
   assert.equal(response.ok, true); assert.equal(response.results[0].source, 'cloud');
@@ -257,7 +257,7 @@ test('current-version statistics survive service worker initialization', async t
 });
 
 test('explicit demo results are displayed but never counted or cached as genuine analysis', async t => {
-  const f = await fixture(t, { demo: true, engine: async () => ({ ok: true, results: [result('mock')] }) });
+  const f = await fixture(t, { demo: true, engine: async () => ({ ok: true, results: [result('mock', 'Mock headline')] }) });
   const response = await f.send({ type: 'debait/score', texts: ['Mock headline'] });
   await tick();
   assert.equal(response.ok, true); assert.equal(response.results[0].source, 'mock');
@@ -298,7 +298,7 @@ test('website content scripts cannot supply or obtain trusted installation metad
   assert.equal(response.ok, false); assert.equal(response.installType, undefined);
 });
 
-for (const version of [undefined, 'old-policy']) {
+for (const version of [undefined, 'old-policy', 'quality-semantic-prefix-v3']) {
   test(`outdated quality cache is invalidated before reuse: ${version}`, async t => {
     const stats = { '2026-11-01': { total: 3, fear: 3, seen: ['existing'] } };
     const f = await fixture(t, { scoreCacheVersion: version === undefined ? null : version,
@@ -363,4 +363,24 @@ test('Local Only bypasses the cloud pacing gate and preserves device-source repo
     assert.equal(response.ok, true); assert.equal(response.results[0].source, 'on-device');
   }
   assert.equal(f.data.aiRequestBudget, undefined);
+});
+
+
+test('unsupported classification is neither cached nor counted as a reading result', async t => {
+  const f = await fixture(t, { engine: async () => ({ ok: true, results: [{ ...result('cloud'), triggers: [] }] }) });
+  const response = await f.send({ type: 'debait/score', texts: ['headline'] });
+  assert.equal(response.ok, false);
+  assert.match(response.error, /No classification was produced/);
+  assert.equal(response.results, undefined);
+  t.mock.timers.tick(1000); await tick();
+  assert.deepEqual(f.data.scoreCache, []);
+  assert.deepEqual(f.data.stats, {});
+});
+
+test('invalid current-policy cached evidence is reanalyzed rather than reused', async t => {
+  const f = await fixture(t, { cache: [['headline', { ...result('cloud'), triggers: [] }]] });
+  const response = await f.send({ type: 'debait/score', texts: ['headline'] });
+  assert.equal(response.ok, true); assert.equal(response.cacheHits, 0);
+  assert.equal(f.messages.filter(msg => msg.type === 'debait/score').length, 1);
+  assert.ok(response.results[0].triggers.length);
 });

@@ -5,6 +5,10 @@ export function describeAiError(error) {
   const code = String(error?.code || '');
   const text = `${code} ${error?.message || ''}`;
   const status = error?.customData?.httpErrorCode ?? error?.customData?.status;
+  if (code === 'debait/invalid-classification') return {
+    code, needsAppCheck: false,
+    message: 'AI returned an unsupported classification or missing headline evidence. No analysis was produced. Please retry.',
+  };
   if (/execution config/i.test(text)) return {
     code: 'debait/device-config', needsAppCheck: false,
     message: 'Chrome could not load the on-device model execution configuration. Check Chrome and its model setup. Local Only will not use cloud inference.',

@@ -4,7 +4,7 @@ import { createEngine } from '../src/engine/runtime.js';
 import { isDemoBuild } from '../src/engine/mode.js';
 import { normalizeResult } from '../src/engine/contract.js';
 
-const result = source => ({ kind: 'fear', score: 50, triggers: [], honest_rewrite: 'A calmer headline', source });
+const result = source => ({ kind: 'fear', score: 50, triggers: [{ word: 'headline', why: 'Controlled evidence fixture; not a classification accuracy claim' }], honest_rewrite: 'A calmer headline', source });
 const opts = { localOnly: false };
 function fixture(overrides = {}, options = {}) {
   let mocks = 0, real = 0;
