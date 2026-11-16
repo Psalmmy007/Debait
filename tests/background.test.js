@@ -86,7 +86,8 @@ async function fixture(t, { localOnly = false, voice = false, cache = [], engine
   const settings = patch => chrome.storage.local.set({ settings: { ...data.settings, ...patch } });
   const sendPopup = msg => new Promise(resolve => router(msg, { url: chrome.runtime.getURL('src/popup/index.html') }, resolve));
   const sendOffscreen = msg => new Promise(resolve => router(msg, { id: chrome.runtime.id, url: chrome.runtime.getURL('src/offscreen/index.html') }, resolve));
-  return { send, sendPopup, sendOffscreen, settings, data, messages, tabs, closed: () => closed };
+  const sendEvaluation = (msg, overrides = {}) => new Promise(resolve => router(msg, { id: chrome.runtime.id, url: chrome.runtime.getURL('dev/evaluation/index.html'), documentId: 'evaluation-document', ...overrides }, resolve));
+  return { send, sendPopup, sendOffscreen, sendEvaluation, settings, data, messages, tabs, closed: () => closed };
 }
 
 test('Local Only re-scores cached cloud and legacy mock answers on device', async t => {
@@ -383,4 +384,47 @@ test('invalid current-policy cached evidence is reanalyzed rather than reused', 
   assert.equal(response.ok, true); assert.equal(response.cacheHits, 0);
   assert.equal(f.messages.filter(msg => msg.type === 'debait/score').length, 1);
   assert.ok(response.results[0].triggers.length);
+});
+
+
+test('evaluation messages are unavailable in production, even from an extension page', async t => {
+  const f = await fixture(t);
+  const res = await f.sendEvaluation({ type: 'debait/evaluation-begin' });
+  assert.equal(res.ok, false); assert.equal(res.code, 'debait/evaluation-forbidden');
+  assert.equal(f.messages.length, 0);
+});
+
+test('development evaluation authorizes only the exact page and Chrome-verified unpacked installation', async t => {
+  const f = await fixture(t, { debug: true });
+  for (const overrides of [{ id: 'other' }, { url: 'https://localhost/dev/evaluation/index.html' },
+    { url: chrome.runtime.getURL('src/popup/index.html') }, { documentId: undefined }]) {
+    assert.equal((await f.sendEvaluation({ type: 'debait/evaluation-begin' }, overrides)).code, 'debait/evaluation-forbidden');
+  }
+  chrome.management.getSelf = async () => ({ installType: 'normal' });
+  assert.equal((await f.sendEvaluation({ type: 'debait/evaluation-begin', installType: 'development' })).ok, false);
+});
+
+test('evaluation uses fresh shared engine requests without saving headline caches or weekly statistics', async t => {
+  const f = await fixture(t, { debug: true, localOnly: true });
+  const begin = await f.sendEvaluation({ type: 'debait/evaluation-begin' });
+  assert.equal(begin.ok, true); assert.equal(begin.localOnly, true);
+  for (let i = 0; i < 2; i++) {
+    const res = await f.sendEvaluation({ type: 'debait/evaluation-score', runId: begin.runId, texts: ['Private synthetic test'] });
+    assert.equal(res.ok, true); assert.equal(res.results[0].source, 'on-device');
+  }
+  const requests = f.messages.filter(m => m.type === 'debait/score');
+  assert.equal(requests.length, 2); assert.ok(requests.every(m => m.evaluation === true && m.localOnly === true));
+  t.mock.timers.tick(1000); await tick();
+  assert.deepEqual(f.data.stats, {}); assert.deepEqual(f.data.scoreCache, []);
+  assert.ok(!JSON.stringify(f.data).includes('Private synthetic test'));
+});
+
+test('evaluation and browsing share the existing quota reservation', async t => {
+  const f = await fixture(t, { debug: true });
+  const begin = await f.sendEvaluation({ type: 'debait/evaluation-begin' });
+  const result = await f.sendEvaluation({ type: 'debait/evaluation-score', runId: begin.runId, texts: ['headline'] });
+  assert.equal(result.ok, true); assert.equal(f.data.aiRequestBudget.count, 1);
+  const normal = await f.send({ type: 'debait/score', texts: ['another headline'] });
+  assert.equal(normal.code, 'debait/quota-pacing');
+  assert.deepEqual(f.data.stats, {}); assert.deepEqual(f.data.scoreCache, []);
 });

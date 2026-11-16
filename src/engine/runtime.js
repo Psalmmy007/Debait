@@ -31,7 +31,9 @@ export function createEngine({ firebaseEngine, mockEngine, demo = false, timeout
           throw new Error('Gemini returned an invalid inference source or incomplete results.');
         }
         lastError = null;
-        return results.map((result, i) => normalizeResult(result, texts[i]));
+        const normalized = results.map((result, i) => normalizeResult(result, texts[i]));
+        if (opts.evaluation) normalized.evaluationMetadata = results.evaluationMetadata;
+        return normalized;
       } catch (error) {
         lastError = error;
         failureLocalOnly = opts.localOnly;

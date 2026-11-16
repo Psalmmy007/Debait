@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Debait — Developer evaluation</title>
+<style>
+body{font:16px/1.5 system-ui,sans-serif;max-width:1150px;margin:36px auto;padding:0 20px;color:#202124;background:#fafafa}h1{font-size:28px}button,input{font:inherit}button{padding:8px 15px;margin:5px 7px 5px 0;cursor:pointer}button:disabled{cursor:default}section{background:white;border:1px solid #ddd;border-radius:8px;padding:18px;margin:18px 0}#message{white-space:pre-wrap}table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:8px;border-bottom:1px solid #ddd;text-align:left;vertical-align:top;overflow-wrap:anywhere}#table{overflow:auto;max-height:450px}.muted{color:#555}code{background:#eee;padding:2px 4px}summary{cursor:pointer}
+</style></head><body>
+<h1>Debait developer evaluation</h1>
+<p>Test a CSV of public or fictional headlines using Debait’s real AI pipeline. This tool does not read your tabs or add tests to your browsing statistics.</p>
+<p id="privacy">Checking the current privacy setting…</p>
+<section><h2>1. Import your headlines</h2><input id="file" type="file" accept=".csv,text/csv" aria-label="Upload headline CSV"><p id="imported">No file imported.</p>
+<details><summary>CSV column help</summary><p>Use <code>headline_id,headline,draft_label,human_reference_label,review_status</code>. Only <code>headline</code> is required. Common alternatives such as <code>id</code>, <code>headline_text</code> and <code>expected_label</code> are also accepted.</p><p>Draft labels are never treated as reviewed references. Set <code>review_status</code> to <code>agreed</code> only after human reviewers agree. Curiosity Gap, Uncertain, missing and disputed references are excluded from four-category agreement. Use UTF-8 comma-separated CSV; quote text containing commas.</p><a href="./sample.csv" download>Download sample CSV</a></details></section>
+<section><h2>2. Run the evaluation</h2><p>Fresh analysis only. Quota waiting is normal. A new run replaces the results shown here—download them first if you need to keep them.</p>
+<button id="start" disabled>Start evaluation</button><button id="cancel" disabled>Cancel evaluation</button><button id="download" disabled>Download results CSV</button>
+<p id="message" role="status" aria-live="polite">Import a CSV to begin.</p><p id="counts"></p><p id="agreement"></p>
+<p class="muted">Cancelling stops new requests and discards a pending answer. An already-sent request may still finish and use quota. Closing or reloading this page loses unsaved results.</p></section>
+<section><h2>3. Review results</h2><p>Agreement with reviewed labels is not verified real-world accuracy. Model explanations and rewrites still need human review. Unknown model versions are reported honestly.</p><div id="table"><table><thead><tr><th>ID</th><th>Headline</th><th>Draft / human reference</th><th>Prediction / source</th><th>Status / agreement</th></tr></thead><tbody id="rows"></tbody></table></div></section>
+<script type="module" src="./runner.js"></script></body></html>

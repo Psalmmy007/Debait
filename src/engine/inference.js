@@ -3,10 +3,10 @@ import { aiError } from './errors.js';
 
 // The same adapter is used by the extension and tested with controlled SDK responses.
 export function createHeadlineEngine({ getAi, getDeviceAi, getGenerativeModel, InferenceMode,
-  cloudModel, cloudSchema, deviceSchema, lang, prompt, deviceAvailability, createDevice }) {
+  cloudModel, cloudSchema, deviceSchema, lang, prompt, deviceAvailability, createDevice, sdkVersion = 'unknown' }) {
   let lastSource = null;
   return {
-    async scoreHeadlines(texts, { localOnly, debugToken }) {
+    async scoreHeadlines(texts, { localOnly, debugToken, evaluation = false }) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 25000);
       try {
@@ -32,6 +32,7 @@ export function createHeadlineEngine({ getAi, getDeviceAi, getGenerativeModel, I
         if (!Array.isArray(list) || list.length !== texts.length) throw new Error('Incomplete model response');
         const results = list.map((item, i) => normalizeResult({ kind: item?.kind, score: item?.score, triggers: item?.triggers, honest_rewrite: item?.honest_rewrite, source }, texts[i]));
         lastSource = source;
+        if (evaluation) results.evaluationMetadata = { configuredModel: cloudModel || 'unknown', sdkVersion };
         return results;
       } catch (error) {
         lastSource = null;

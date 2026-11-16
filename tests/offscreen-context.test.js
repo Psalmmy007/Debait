@@ -19,3 +19,25 @@ test('the real offscreen entry loads with runtime messaging only and acknowledge
   assert.equal(listener({ type: 'debait/installation-type' }, {}, () => { answered = true; }), false);
   assert.equal(answered, false);
 });
+
+test('offscreen transports evaluation provenance separately from the normalized result array', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const url = new URL('../src/offscreen/offscreen.js', import.meta.url);
+  let source = await readFile(url, 'utf8');
+  source = source.replace("import { engine } from '../engine/index.js';", `const engine = {
+    async scoreHeadlines(texts, opts) {
+      const results = texts.map(text => ({ kind: 'clean', score: 0, triggers: [], honest_rewrite: text, source: 'on-device' }));
+      if (opts.evaluation) results.evaluationMetadata = { configuredModel: 'controlled-model', sdkVersion: 'controlled-sdk' };
+      return results;
+    }
+  };`).replace(/from '(\.[^']+)'/g, (_, path) => `from '${new URL(path, url).href}'`);
+  let listener;
+  globalThis.chrome = { runtime: { onMessage: { addListener(fn) { listener = fn; } } } };
+  await import(`data:text/javascript,${encodeURIComponent(source)}#evaluation-transport`);
+  const send = message => new Promise(resolve => listener(message, {}, resolve));
+  const result = await send({ target: 'offscreen', type: 'debait/score', texts: ['Headline'], evaluation: true });
+  assert.equal(result.ok, true); assert.equal(result.results[0].source, 'on-device');
+  assert.deepEqual(result.evaluationMetadata, { configuredModel: 'controlled-model', sdkVersion: 'controlled-sdk' });
+  const normal = await send({ target: 'offscreen', type: 'debait/score', texts: ['Headline'] });
+  assert.equal(Object.hasOwn(normal, 'evaluationMetadata'), false);
+});

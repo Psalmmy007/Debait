@@ -1,6 +1,7 @@
 // Service worker: routes messages, keeps the score cache and the daily stats.
 import { quotaConfig } from '../shared/quotaConfig.js';
 import { createRequestGate } from './requestGate.js';
+import { createEvaluationService, evaluationError, EVALUATION_PAGE } from './evaluation.js';
 import { MSG, normalizeResult } from '../engine/contract.js';
 import { getSettings, dayKey, emptyDay } from '../shared/storage.js';
 import { DEMO_MODE } from '../engine/mode.js';
@@ -225,6 +226,23 @@ async function scoreTexts(texts, host) {
   return { results: out, cacheHits: texts.length - missing.length };
 }
 
+// Developer-only isolated evaluation: same gate, engine and privacy revision,
+// without scoreTexts (which deliberately records browsing caches/statistics).
+const evaluation = import.meta.env?.MODE === 'development' ? createEvaluationService({
+  authorize: async sender => {
+    if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL(EVALUATION_PAGE) ||
+        typeof sender.documentId !== 'string' || !sender.documentId ||
+        'update_url' in chrome.runtime.getManifest() || await installationType() !== 'development') {
+      throw Object.assign(new Error('Unauthorized evaluation page'), { code: 'debait/evaluation-forbidden' });
+    }
+  },
+  settings: getSettings, revision: () => privacyRevision, gate: requestGate,
+  infer: options => toEngine({ type: MSG.SCORE, ...options, evaluation: true }),
+  metadata: { policyVersion: QUALITY_POLICY_VERSION,
+    gitSha: typeof __DEBAIT_BUILD_SHA__ === 'string' ? __DEBAIT_BUILD_SHA__ : 'unknown',
+    gitDirty: typeof __DEBAIT_BUILD_DIRTY__ === 'boolean' ? __DEBAIT_BUILD_DIRTY__ : true },
+}) : null;
+
 // ---------- call mode (live voice with Gemini) ----------
 async function activeTab() {
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
@@ -295,6 +313,11 @@ function reportVoiceError(error) {
 // ---------- message router ----------
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.target === 'offscreen') return false; // not for us
+  if (String(msg?.type || '').startsWith('debait/evaluation-')) {
+    if (!evaluation) { sendResponse({ ok: false, code: 'debait/evaluation-forbidden', error: 'Evaluation is unavailable in this build.' }); return false; }
+    evaluation.handle(msg, sender).then(sendResponse, error => sendResponse(evaluationError(error)));
+    return true;
+  }
   checkBuild();
   if (msg?.type === 'debait/error') { logError(msg.where, msg.message); sendResponse({ ok: true }); return false; }
 

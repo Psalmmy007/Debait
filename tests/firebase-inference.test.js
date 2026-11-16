@@ -124,3 +124,13 @@ test('rewrite provenance is computed internally, not trusted from generated JSON
   const [result] = await f.engine.scoreHeadlines([original], { localOnly: false });
   assert.equal(result.rewriteReason, 'model_unchanged');
 });
+
+
+test('evaluation provenance travels through SDK adapter and runtime without trusting model JSON', async () => {
+  const f = fixture({ data: { results: [{ ...item, evaluationMetadata: { configuredModel: 'fabricated-model' } }] } });
+  const runtime = createEngine({ firebaseEngine: f.engine, mockEngine: {} });
+  const results = await runtime.scoreHeadlines(['headline'], { localOnly: false, evaluation: true });
+  assert.equal(results.evaluationMetadata.configuredModel, 'test-model');
+  assert.equal(results.evaluationMetadata.sdkVersion, 'unknown');
+  assert.equal(results[0].source, 'cloud');
+});

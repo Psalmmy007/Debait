@@ -1,6 +1,6 @@
 // Firebase AI Logic engine: Gemini Nano on-device first, Gemini in the cloud as a fallback.
 // Uses the Firebase project set up in src/firebase.js. Runs in the offscreen page.
-import { initializeApp } from 'firebase/app';
+import { initializeApp, SDK_VERSION } from 'firebase/app';
 import { initializeAppCheck, CustomProvider, getToken } from 'firebase/app-check';
 import { getAI, getGenerativeModel, GoogleAIBackend, InferenceMode, Schema } from 'firebase/ai';
 import { firebaseConfig, CLOUD_MODEL } from './firebaseConfig.js';
@@ -70,7 +70,7 @@ const deviceSchema = {
 
 export const firebaseEngine = createHeadlineEngine({
   getAi, getDeviceAi, getGenerativeModel, InferenceMode,
-  cloudModel: CLOUD_MODEL, cloudSchema, deviceSchema, lang: LANG,
+  sdkVersion: SDK_VERSION, cloudModel: CLOUD_MODEL, cloudSchema, deviceSchema, lang: LANG,
   prompt: headlinePrompt, deviceAvailability,
   createDevice: options => LanguageModel.create(options),
 });
