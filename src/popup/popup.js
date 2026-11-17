@@ -59,9 +59,14 @@ async function renderSwitches() {
 $('#debaitPage').addEventListener('click', async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   try {
-    await chrome.tabs.sendMessage(tab.id, { type: 'debait/togglePage' });
-    window.close();
+    $('#debaitPage').disabled = true;
+    $('#debaitPage').textContent = 'Analyzing and applying safe rewrites…';
+    const result = await chrome.tabs.sendMessage(tab.id, { type: 'debait/togglePage' });
+    if (!result?.ok) { $('#debaitPage').textContent = result?.error || 'The page action could not complete.'; $('#debaitPage').disabled = false; return; }
+    $('#debaitPage').textContent = result.note || `Applied ${result.rewrote || 0} safe rewrite(s).`;
+    $('#debaitPage').disabled = false;
   } catch {
+    $('#debaitPage').disabled = false;
     const url = tab?.url || '';
     $('#debaitPage').textContent = /^(chrome|edge|about|chrome-extension):|chromewebstore|chrome\.google\.com\/webstore/.test(url)
       ? 'Chrome does not allow extensions on this page'

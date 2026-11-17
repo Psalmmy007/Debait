@@ -7,7 +7,7 @@ const tick = () => new Promise(r => setImmediate(r));
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { resolve, promise }; };
 const result = (source, text = 'headline') => ({ kind: 'fear', score: 50, triggers: [{ word: text, why: 'Controlled evidence fixture; not a classification accuracy claim' }], honest_rewrite: 'Calmer headline', source });
 let serial = 0;
-async function fixture(t, { localOnly = false, voice = false, cache = [], engine, contexts = true, create, statsVersion = 2, stats = {}, demo = false, debug = false, scoreCacheVersion = QUALITY_POLICY_VERSION } = {}) {
+async function fixture(t, { localOnly = false, voice = false, cache = [], engine, assistant, contexts = true, create, statsVersion = 2, stats = {}, demo = false, debug = false, scoreCacheVersion = QUALITY_POLICY_VERSION } = {}) {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const data = { settings: { localOnly, voice }, scoreCache: cache, scoreCacheVersion, appCheckDebugToken: 'test-only', statsVersion, stats };
   let router, onSettings;
@@ -27,6 +27,7 @@ async function fixture(t, { localOnly = false, voice = false, cache = [], engine
         messages.push(msg);
         if (msg.type === 'debait/engine-ready') return { ok: true, ready: true };
         if (msg.type === 'debait/mic-state') return { state: 'granted' };
+        if (msg.type === 'debait/headline-assist') return assistant ? assistant(msg) : { ok: true, result: { source: msg.localOnly ? 'on-device' : 'cloud', simple_explanation: msg.text, definitions: [], missing_context: 'The headline alone does not establish the reasons.' } };
         if (msg.type === 'debait/score') return engine ? engine(msg) : { ok: true, results: msg.texts.map(text => result(msg.localOnly ? 'on-device' : 'cloud', text)) };
         return { ok: true };
       },
@@ -427,4 +428,47 @@ test('evaluation and browsing share the existing quota reservation', async t => 
   const normal = await f.send({ type: 'debait/score', texts: ['another headline'] });
   assert.equal(normal.code, 'debait/quota-pacing');
   assert.deepEqual(f.data.stats, {}); assert.deepEqual(f.data.scoreCache, []);
+});
+
+
+test('headline assistance shares the quota gate, deduplicates concurrent tabs, and never writes stats or caches', async t => {
+  const pending = deferred();
+  const f = await fixture(t, { assistant: () => pending.promise });
+  const message = { type: 'debait/headline-assist', task: 'explain', text: 'Private synthetic headline' };
+  const first = f.send(message); const second = f.send(message, 'other.example'); await tick();
+  pending.resolve({ ok: true, result: { source: 'cloud', simple_explanation: message.text, definitions: [], missing_context: 'The headline alone does not give enough context.' } });
+  assert.equal((await first).ok, true); assert.equal((await second).ok, true);
+  assert.equal(f.messages.filter(m => m.type === 'debait/headline-assist').length, 1);
+  assert.equal(f.data.aiRequestBudget.count, 1);
+  assert.deepEqual(f.data.stats, {}); assert.deepEqual(f.data.scoreCache, []);
+  assert.ok(!JSON.stringify(f.data).includes(message.text));
+  assert.equal((await f.send({ type: 'debait/score', texts: ['Another headline'] })).code, 'debait/quota-pacing');
+});
+
+test('Local Only assistance requests the device and discards prohibited sources', async t => {
+  const f = await fixture(t, { localOnly: true, assistant: async msg => {
+    assert.equal(msg.localOnly, true);
+    return { ok: true, result: { source: 'cloud', honest_rewrite: msg.text } };
+  } });
+  const response = await f.send({ type: 'debait/headline-assist', task: 'rewrite', kind: 'fear', text: 'Original headline' });
+  assert.equal(response.ok, false); assert.equal(response.result, undefined);
+  assert.deepEqual(f.data.stats, {});
+});
+
+test('an assistance response crossing a Local Only revision is discarded', async t => {
+  const pending = deferred(); const f = await fixture(t, { assistant: () => pending.promise });
+  const operation = f.send({ type: 'debait/headline-assist', task: 'explain', text: 'Original headline' }); await tick();
+  await f.settings({ localOnly: true });
+  pending.resolve({ ok: true, result: { source: 'cloud', simple_explanation: 'Original headline', definitions: [], missing_context: 'No extra context.' } });
+  const response = await operation; assert.equal(response.ok, false); assert.match(response.error, /Privacy settings changed/);
+});
+
+test('headline assistance preserves server retry guidance and cannot redispatch during cooldown', async t => {
+  const f = await fixture(t, { assistant: async () => ({ ok: false, code: 'debait/quota', retryAfterMs: 120000, error: 'Rate limited' }) });
+  const message = { type: 'debait/headline-assist', task: 'explain', text: 'Original headline' };
+  const before = Date.now(); const first = await f.send(message);
+  assert.equal(first.code, 'debait/quota'); assert.ok(first.retryAt >= before + 120000);
+  const second = await f.send(message); assert.equal(second.code, 'debait/quota');
+  assert.equal(f.messages.filter(m => m.type === 'debait/headline-assist').length, 1);
+  assert.deepEqual(f.data.stats, {});
 });

@@ -51,13 +51,13 @@ test('unchanged swaps do not mutate DOM, set rewritten state or require browser 
 
 test('a meaningful swap reports true only after changing the headline', async () => {
   globalThis.matchMedia = () => ({ matches: true });
-  globalThis.document = { createTextNode: text => ({ textContent: text }) };
   const before = 'Click to find out: The trend may last 5 years', proposed = 'The trend may last 5 years';
-  let visible = before;
+  const node = { data: before };
+  globalThis.NodeFilter = { SHOW_TEXT: 4 };
+  globalThis.document = { createTreeWalker: () => { let read = false; return { nextNode: () => read ? null : (read = true, node) }; } };
   const record = { state: 'scored', text: before, result: normalizeResult(result(proposed, before), before),
-    el: { childNodes: [{ cloneNode: () => ({ textContent: before }) }], textContent: before,
-      replaceChildren: node => { visible = node.textContent; } } };
-  assert.equal(await swapToRewrite(record), true); assert.equal(visible, proposed);
+    el: { contains: n => n === node, get textContent() { return node.data; } } };
+  assert.equal(await swapToRewrite(record), true); assert.equal(node.data, proposed);
   assert.equal(record.state, 'debaited');
   assert.equal(await swapToRewrite(record), false); // A repeated action cannot count twice.
 });

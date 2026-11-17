@@ -5,6 +5,7 @@ export function describeAiError(error) {
   const code = String(error?.code || '');
   const text = `${code} ${error?.message || ''}`;
   const status = error?.customData?.httpErrorCode ?? error?.customData?.status;
+  if (code === 'debait/invalid-assistance') return { code, needsAppCheck: false, message: 'AI could not provide safe headline assistance. The original headline is unchanged. Try again later.' };
   if (code === 'debait/invalid-classification') return {
     code, needsAppCheck: false,
     message: 'AI returned an unsupported classification or missing headline evidence. No analysis was produced. Please retry.',

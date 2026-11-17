@@ -1,8 +1,8 @@
 import { rewriteDecision } from './qualityPolicy.js';
 
 // The one shape every Debait engine must follow.
-// The UI only ever talks to an engine through these three functions,
-// so the mock engine and the real Firebase engine are interchangeable.
+// Classification and status share one interface. Interactive assistance uses
+// the real SDK pipeline and never substitutes the demo engine.
 // See docs/ENGINE.md.
 
 /**
@@ -31,6 +31,7 @@ import { rewriteDecision } from './qualityPolicy.js';
  * @property {(texts: string[], opts: {localOnly: boolean}) => Promise<ScoreResult[]>} scoreHeadlines
  *           Must return one result per input text, in the same order.
  * @property {(opts: {localOnly: boolean}) => Promise<EngineStatus>} getStatus
+ * @property {(text: string, opts: {task: 'rewrite'|'explain', kind?: BaitKind, localOnly: boolean}) => Promise<Object>} assistHeadline See docs/HEADLINE_ASSISTANCE.md.
  * @property {() => Promise<EngineStatus>} initDeviceModel   Called after the user clicks "Turn on Debait".
  */
 
@@ -39,6 +40,7 @@ export const KINDS = ['rage', 'fear', 'envy', 'clean'];
 // Message types used between content script, service worker and offscreen page.
 export const MSG = {
   SCORE: 'debait/score',
+  ASSIST: 'debait/headline-assist',
   STATUS: 'debait/status',
   INIT: 'debait/init',
 };

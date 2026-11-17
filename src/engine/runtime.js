@@ -1,4 +1,5 @@
 // Independent of Firebase so errors and timeouts can be tested without a project.
+import { normalizeAssistance } from './assistance.js';
 import { normalizeResult } from './contract.js';
 
 export function createEngine({ firebaseEngine, mockEngine, demo = false, timeoutMs = 30000 }) {
@@ -39,6 +40,19 @@ export function createEngine({ firebaseEngine, mockEngine, demo = false, timeout
         failureLocalOnly = opts.localOnly;
         throw error;
       }
+    },
+    async assistHeadline(text, opts) {
+      try {
+        if (opts.localOnly) {
+          const status = await timed(() => firebaseEngine.getStatus({ localOnly: true }));
+          if (!status.deviceAvailable && status.source !== 'on-device') throw new Error(`LOCAL_ONLY: ${status.message}`);
+        }
+        const result = await timed(() => firebaseEngine.assistHeadline(text, opts));
+        if (opts.localOnly && result?.source !== 'on-device') throw new Error('LOCAL_ONLY: Cloud assistance cannot be used.');
+        const checked = normalizeAssistance(result, text, opts.task, opts.kind);
+        lastError = null;
+        return checked;
+      } catch (error) { lastError = error; failureLocalOnly = opts.localOnly; throw error; }
     },
     async getStatus(opts) {
       if (demo && !opts.localOnly) return mockEngine.getStatus(opts);

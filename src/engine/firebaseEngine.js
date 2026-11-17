@@ -9,6 +9,7 @@ import { createFirebaseAccess, installationFromWorker } from './authPolicy.js';
 import { aiError } from './errors.js';
 import { createHeadlineEngine } from './inference.js';
 import { deviceAvailability } from './device.js';
+import { assistanceCloudSchemas, assistanceDeviceSchemas } from './assistance.js';
 import { headlinePrompt } from './qualityPolicy.js';
 
 // Production intentionally has no default issuer: an authenticated server-side
@@ -70,6 +71,7 @@ const deviceSchema = {
 
 export const firebaseEngine = createHeadlineEngine({
   getAi, getDeviceAi, getGenerativeModel, InferenceMode,
+  assistantCloudSchemas: assistanceCloudSchemas(Schema), assistantDeviceSchemas: assistanceDeviceSchemas,
   sdkVersion: SDK_VERSION, cloudModel: CLOUD_MODEL, cloudSchema, deviceSchema, lang: LANG,
   prompt: headlinePrompt, deviceAvailability,
   createDevice: options => LanguageModel.create(options),

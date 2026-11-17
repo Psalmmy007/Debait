@@ -14,6 +14,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         const raw = await engine.scoreHeadlines(msg.texts, { localOnly: msg.localOnly, debugToken: msg.debugToken, evaluation: msg.evaluation === true });
         const results = msg.texts.map((t, i) => normalizeResult(raw?.[i], t));
         sendResponse({ ok: true, results, ...(msg.evaluation ? { evaluationMetadata: raw.evaluationMetadata } : {}) });
+      } else if (msg.type === MSG.ASSIST) {
+        const result = await engine.assistHeadline(msg.text, { task: msg.task, kind: msg.kind, localOnly: msg.localOnly, debugToken: msg.debugToken });
+        sendResponse({ ok: true, result });
       } else if (msg.type === MSG.STATUS) {
         sendResponse({ ok: true, status: await engine.getStatus({ localOnly: msg.localOnly }) });
       } else if (msg.type === 'debait/call-start') {

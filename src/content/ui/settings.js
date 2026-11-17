@@ -206,17 +206,20 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
   /** Updates the "This page" numbers and the main button. */
   function refresh() {
     if (!el) return;
-    const { bait, debaited, scanned } = getPage();
+    const { bait, debaited, scanned, rewritable = bait, pending = 0, busy = false, notice = '', automatic = false } = getPage();
     el.querySelector('[data-v="bait"]').textContent = bait;
     el.querySelector('[data-v="debaited"]').textContent = debaited;
     el.querySelector('[data-v="scanned"]').textContent = scanned;
     const btn = el.querySelector('.p-main');
-    const restore = bait === 0 && debaited > 0;
+    const restore = rewritable === 0 && debaited > 0;
     btn.classList.toggle('primary', !restore);
     setHTML(btn, restore
       ? 'Restore originals'
-      : bait > 0 ? `Debait ${bait} headline${bait === 1 ? '' : 's'} ${ICON.arrow}` : 'Nothing to debait here');
-    btn.disabled = !restore && bait === 0;
+      : pending ? 'Analyze and Debait this page' : rewritable ? `Apply ${rewritable} safe rewrite${rewritable === 1 ? '' : 's'} ${ICON.arrow}` : bait ? 'No safe page rewrites available' : 'No flagged headlines to rewrite');
+    btn.disabled = busy || (!restore && !pending && !rewritable);
+    const note = el.querySelector('.p-note');
+    note.hidden = !notice && !automatic;
+    note.textContent = notice || (automatic ? 'Auto-Debait is on for enabled sites; only safe alternatives are applied.' : '');
   }
 
   async function loadToday() {

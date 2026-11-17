@@ -1,5 +1,5 @@
 import { hasMeaningfulRewrite } from '../../engine/qualityPolicy.js';
-// The Ingredients card: why a headline is bait, word by word, plus what actually happened.
+// The Ingredients card: why a headline is bait, word by word, plus safe wording and plain-language assistance.
 import { reducedMotion } from './page.js';
 import { setHTML } from './html.js';
 import { ICON, LABEL, SOURCE } from './icons.js';
@@ -36,16 +36,19 @@ export function closeCard() {
  * @param rec    headline record {text, result, state}
  * @param rect   bounding rect of the tag that was clicked
  */
-export function openCard(layer, rec, rect, { onDebait, onRestore }) {
+export function openCard(layer, rec, rect, { onDebait, onRestore, onAssist }) {
   if (current?.rec === rec) return closeCard();
   closeCard();
 
   const r = rec.result;
   const debaited = rec.state === 'debaited';
   const clean = r.kind === 'clean';
-  const available = !clean && hasMeaningfulRewrite(rec.text, r.honest_rewrite);
+  let available = !clean && hasMeaningfulRewrite(rec.text, r.honest_rewrite);
   const el = document.createElement('div');
   el.className = 'card';
+  // Functional containment for variable-length explanations; existing styling remains.
+  el.style.maxHeight = 'calc(100vh - 24px)';
+  el.style.overflowY = 'auto';
   el.dataset.kind = r.kind;
   el.setAttribute('role', 'dialog');
   el.setAttribute('aria-label', 'Debait ingredients');
@@ -66,15 +69,21 @@ export function openCard(layer, rec, rect, { onDebait, onRestore }) {
         <b><span class="num">${r.score}</span><small>score</small></b>
       </div>
     </div>
-    <p class="card-headline">${markTriggers(rec.text, r.triggers)}</p>
+    <p class="card-headline" aria-label="Original headline">${markTriggers(rec.text, r.triggers)}</p>
     <div class="card-section"><h4>Why it pulls you in</h4><ul class="ingredients">${rows}</ul></div>
-    ${clean ? '' : `<div class="card-section"><h4>Suggested rewrite</h4><div class="honest">${available ? esc(r.honest_rewrite) : 'No safe alternative available'}</div><p>Wording suggestion only. Not a fact-check.</p></div>`}
+    ${clean ? '' : `<div class="card-section"><h4>Suggested rewrite</h4><div class="honest">${available ? esc(r.honest_rewrite) : 'No safe alternative available'}</div><p data-rewrite-source>Wording suggestion only. Not a fact-check. Source: ${esc(SOURCE[rec.rewriteSource || r.source])}.</p></div>`}
+    <div class="card-section">
+      ${!clean && !debaited ? '<button class="btn" data-act="request-rewrite">Request neutral wording</button>' : ''}
+      <button class="btn" data-act="explain">Explain Simply</button>
+      <p data-assistance-status role="status" aria-live="polite"></p>
+      <div data-explanation hidden></div>
+    </div>
     <div class="card-foot">
-      <span class="source" data-src="${esc(r.source)}"><i></i>${esc(SOURCE[r.source] || r.source)}</span>
+      <span class="source" data-src="${esc(r.source)}" title="Classification source"><i></i>${esc(SOURCE[r.source] || r.source)}</span>
       <div class="btns">
         ${clean || (!available && !debaited) ? '<button class="btn" data-act="close">Close</button>' : debaited
           ? '<button class="btn" data-act="restore">Show original</button>'
-          : `<button class="btn" data-act="close">Keep</button><button class="btn primary" data-act="debait">Debait it ${ICON.arrow}</button>`}
+          : `<button class="btn" data-act="close">Keep</button><button class="btn primary" data-act="debait">Apply rewrite ${ICON.arrow}</button>`}
       </div>
     </div>`);
 
@@ -128,10 +137,58 @@ export function openCard(layer, rec, rect, { onDebait, onRestore }) {
   });
   el.addEventListener('pointerleave', () => { el.style.transform = ''; });
 
-  el.addEventListener('click', (e) => {
+  el.addEventListener('click', async (e) => {
     const act = e.target.closest('[data-act]')?.dataset.act;
-    if (act === 'debait' && available) { closeCard(); onDebait(); }
-    if (act === 'restore') { closeCard(); onRestore(); }
+    if (act === 'request-rewrite' || act === 'explain') {
+      if (!onAssist || rec.assistPending) return;
+      const buttons = [...el.querySelectorAll('[data-act="request-rewrite"], [data-act="explain"]')];
+      buttons.forEach(button => { button.disabled = true; });
+      const status = el.querySelector('[data-assistance-status]');
+      status.textContent = act === 'explain' ? 'Explaining the headline…' : 'Requesting safe neutral wording…';
+      try {
+        const result = await onAssist(act === 'explain' ? 'explain' : 'rewrite');
+        if (current?.el !== el) return;
+        if (act === 'request-rewrite') {
+          available = hasMeaningfulRewrite(rec.text, result.honest_rewrite);
+          el.querySelector('.honest').textContent = available ? result.honest_rewrite : 'No safe alternative available';
+          el.querySelector('[data-rewrite-source]').textContent = `Wording suggestion only. Not a fact-check. Source: ${SOURCE[result.source]}.`;
+          status.textContent = `${available ? 'A proposed alternative is ready. Compare it with the original before applying.' : 'No safe alternative available. The original is unchanged.'} Source: ${SOURCE[result.source]}.`;
+          let apply = el.querySelector('[data-act="debait"]');
+          if (available && !apply) {
+            apply = document.createElement('button'); apply.className = 'btn primary'; apply.dataset.act = 'debait'; apply.textContent = 'Apply rewrite';
+            el.querySelector('.btns').append(apply);
+          }
+          if (!available) apply?.remove();
+        } else {
+          const content = el.querySelector('[data-explanation]'); content.replaceChildren(); content.hidden = false;
+          const paragraph = text => { const p = document.createElement('p'); p.textContent = text; content.append(p); };
+          paragraph(`Simple explanation: ${result.simple_explanation}`);
+          for (const definition of result.definitions) paragraph(`General definition — ${definition.term}: ${definition.meaning}`);
+          paragraph(`Missing context: ${result.missing_context}`);
+          paragraph(`Headline wording only. Not a fact-check. Source: ${SOURCE[result.source]}.`);
+          status.textContent = 'Explanation ready. The page headline has not been changed.';
+        }
+      } catch (error) {
+        if (current?.el === el) status.textContent = `${error.message}${Number.isFinite(error.retryAt) ? ` Try again after ${new Date(error.retryAt).toLocaleTimeString()}.` : ''}`;
+      } finally {
+        buttons.forEach(button => { button.disabled = false; });
+        if (current?.el === el) {
+          const bounds = el.getBoundingClientRect();
+          if (bounds.bottom > innerHeight - 12) el.style.top = `${Math.max(12, innerHeight - bounds.height - 12)}px`;
+        }
+      }
+    }
+    if ((act === 'debait' && available) || act === 'restore') {
+      const button = e.target.closest('[data-act]'); button.disabled = true;
+      const status = el.querySelector('[data-assistance-status]');
+      status.textContent = act === 'restore' ? 'Restoring original wording…' : 'Applying the accepted rewrite…';
+      try {
+        const changed = await (act === 'restore' ? onRestore() : onDebait());
+        if (changed) closeCard();
+        else status.textContent = 'The headline changed or its markup cannot be safely edited. No text was replaced. Open its current tag and try again.';
+      } catch { status.textContent = 'The page action could not complete. The original wording remains available.'; }
+      finally { button.disabled = false; }
+    }
     if (act === 'close') closeCard();
   });
 

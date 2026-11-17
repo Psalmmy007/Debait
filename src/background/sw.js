@@ -1,4 +1,5 @@
 // Service worker: routes messages, keeps the score cache and the daily stats.
+import { normalizeAssistance } from '../engine/assistance.js';
 import { quotaConfig } from '../shared/quotaConfig.js';
 import { createRequestGate } from './requestGate.js';
 import { createEvaluationService, evaluationError, EVALUATION_PAGE } from './evaluation.js';
@@ -100,7 +101,7 @@ async function debugToken() {
 async function toEngine(payload) {
   await ensureOffscreen();
   const token = await debugToken();
-  if (payload.type === MSG.SCORE) {
+  if (payload.type === MSG.SCORE || payload.type === MSG.ASSIST) {
     const settings = await getSettings();
     payload = { ...payload, localOnly: localOnlyActive || settings.localOnly || payload.localOnly };
   }
@@ -226,6 +227,31 @@ async function scoreTexts(texts, host) {
   return { results: out, cacheHits: texts.length - missing.length };
 }
 
+// Assistance is deliberately separate from scoreTexts: no browsing cache or stats.
+const pendingAssistance = new Map();
+async function assistText(text, task, kind) {
+  const revision = privacyRevision;
+  const { localOnly } = await getSettings();
+  const key = JSON.stringify([revision, localOnly, task, task === 'rewrite' ? kind : null, text]);
+  if (pendingAssistance.has(key)) return pendingAssistance.get(key);
+  const check = async () => {
+    if (revision !== privacyRevision || (await getSettings()).localOnly !== localOnly) throw new Error('LOCAL_ONLY: Privacy settings changed. Request assistance again.');
+  };
+  const execute = async () => {
+    await check();
+    const response = await toEngine({ type: MSG.ASSIST, text, task, kind, localOnly });
+    await check();
+    const result = normalizeAssistance(response.result, text, task, kind);
+    if (localOnly && result.source !== 'on-device') throw new Error('LOCAL_ONLY: Cloud assistance cannot be used.');
+    return result;
+  };
+  const operation = localOnly ? execute() : requestGate.run(execute);
+  pendingAssistance.set(key, operation);
+  const release = () => pendingAssistance.delete(key);
+  operation.then(release, release);
+  return operation;
+}
+
 // Developer-only isolated evaluation: same gate, engine and privacy revision,
 // without scoreTexts (which deliberately records browsing caches/statistics).
 const evaluation = import.meta.env?.MODE === 'development' ? createEvaluationService({
@@ -328,6 +354,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           sender.url === chrome.runtime.getURL(OFFSCREEN_URL);
         if (!offscreen) throw new Error('Installation metadata is only available to the extension offscreen document.');
         sendResponse({ ok: true, installType: await installationType(), hasUpdateUrl: 'update_url' in chrome.runtime.getManifest() });
+      } else if (msg.type === MSG.ASSIST) {
+        if (typeof msg.text !== 'string' || !msg.text.trim() || msg.text.length > 320 ||
+            !['rewrite', 'explain'].includes(msg.task) || (msg.task === 'rewrite' && !['rage', 'fear', 'envy'].includes(msg.kind))) throw new Error('Invalid headline assistance request');
+        sendResponse({ ok: true, result: await assistText(msg.text, msg.task, msg.kind) });
       } else if (msg.type === MSG.SCORE) {
         if (!Array.isArray(msg.texts) || !msg.texts.length || msg.texts.length > 8 || msg.texts.some(t => typeof t !== 'string' || !t.trim() || t.length > 320)) throw new Error('Invalid headline batch: use 1–8 headlines of at most 320 characters.');
         const host = sender.tab?.url ? new URL(sender.tab.url).hostname.replace(/^www\./, '') : '';
