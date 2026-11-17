@@ -12,6 +12,7 @@ export const ICON = {
   check: `<svg viewBox="0 0 12 12" ${stroke} stroke-width="1.7"><path d="M2.4 6.4 4.9 8.9l4.7-5.6"/></svg>`,
   dots: '<svg viewBox="0 0 12 12" fill="currentColor"><circle cx="2" cy="6" r="1.3"/><circle cx="6" cy="6" r="1.3"/><circle cx="10" cy="6" r="1.3"/></svg>',
   close: `<svg viewBox="0 0 12 12" ${stroke} stroke-width="1.6"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7"/></svg>`,
+  share: `<svg viewBox="0 0 12 12" ${stroke} stroke-width="1.5"><path d="M6 7.5V1.5M3.5 4 6 1.5 8.5 4M2.5 6.5v3.5h7V6.5"/></svg>`,
   arrow: `<svg viewBox="0 0 12 12" ${stroke} stroke-width="1.6"><path d="M2 6h8M6.5 2.5 10 6l-3.5 3.5"/></svg>`,
 };
 

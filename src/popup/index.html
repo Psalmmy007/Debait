@@ -23,8 +23,8 @@
     <div class="token"><code>Copy them for Claude</code><button id="copyProblems">Copy</button></div>
   </section>
 
-  <label class="site"><span>Run on <b id="host">this site</b></span><input type="checkbox" id="siteOn" checked /><i></i></label>
-
+  <main class="cols">
+  <div class="col col-b">
   <section class="today">
     <div class="kicker">Today</div>
     <div class="big"><b id="pct">0</b><span>%</span></div>
@@ -45,6 +45,9 @@
     <button id="turnOn" hidden>Turn on Debait</button>
   </div>
 
+  </div>
+  <div class="col col-c">
+  <label class="site"><span>Run on <b id="host">this site</b></span><input type="checkbox" id="siteOn" checked /><i></i></label>
   <section class="switches">
     <label><span>Talk to Debait<small>A live voice call with Gemini about this page</small></span><input type="checkbox" data-setting="voice" /><i></i></label>
     <label><span>Show the orb<small>Floating sphere you can drag anywhere</small></span><input type="checkbox" data-setting="showOrb" /><i></i></label>
@@ -54,6 +57,8 @@
   </section>
 
   <button class="link" id="openFacts">Weekly Mind Facts <span aria-hidden="true">→</span></button>
+  </div>
+  </main>
 
   <script type="module" src="./popup.js"></script>
 </body>

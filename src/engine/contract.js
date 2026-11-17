@@ -38,6 +38,7 @@ export const MSG = {
   SCORE: 'debait/score',
   STATUS: 'debait/status',
   INIT: 'debait/init',
+  SUMMARY: 'debait/summary',
 };
 
 /** Makes sure a result from any engine has the right shape. */

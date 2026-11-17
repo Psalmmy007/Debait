@@ -193,3 +193,13 @@ export const mockEngine = {
     return { ready: true, source: 'mock', localOnly: false, message: 'Mock engine (no AI yet)' };
   },
 };
+
+/** Offline backup: the first sentences of the article, or the page's top headlines. */
+mockEngine.summarize = async function summarize({ title, text, headlines, kind }) {
+  if (kind === 'article') {
+    const sentences = (text.match(/[^.!?]+[.!?]+/g) || []).map((x) => x.trim()).filter((x) => x.length > 40);
+    return { summary: sentences.slice(0, 3).join(' ') || title, source: 'mock' };
+  }
+  const top = headlines.slice(0, 3).map((h) => h.replace(/[.!?]*$/, '.'));
+  return { summary: top.length ? `Top stories on this page: ${top.join(' ')}` : title, source: 'mock' };
+};

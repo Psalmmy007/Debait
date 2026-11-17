@@ -79,3 +79,19 @@ header { display: flex; align-items: center; justify-content: space-between; pad
 
 .link { display: flex; align-items: center; justify-content: space-between; width: 100%; margin-top: 12px; padding: 13px 14px; border: 0; color: var(--label); font-weight: 500; font-size: 14.5px; cursor: pointer; }
 .link span { color: var(--label-3); }
+
+/* kind colors */
+.bar [data-k='rage'], .legend [data-k='rage'] i { background: var(--rage); }
+.bar [data-k='fear'], .legend [data-k='fear'] i { background: var(--fear); }
+.bar [data-k='envy'], .legend [data-k='envy'] i { background: var(--envy); }
+.bar [data-k='clean'], .legend [data-k='clean'] i { background: var(--clean); }
+
+/* Today as the hero card */
+.cols { margin-top: 0; }
+.today { position: relative; overflow: hidden; text-align: left; }
+.today::before {
+  content: ''; position: absolute; right: -35%; top: -60%; width: 100%; aspect-ratio: 1;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--rage) 12%, transparent), transparent);
+  pointer-events: none;
+}
+.big b { font-size: 58px; }

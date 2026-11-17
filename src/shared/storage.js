@@ -6,6 +6,7 @@ export const DEFAULT_SETTINGS = {
   autoDebait: false,  // rewrite bait as soon as it's scored
   localOnly: false,   // never use the cloud
   voice: false,       // talk to Debait
+  orbSize: 1,         // orb scale, 0.75 – 1.6
   disabledSites: [],  // hosts where Debait stays off
 };
 

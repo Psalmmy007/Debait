@@ -85,3 +85,26 @@ or `ONLY_ON_DEVICE` when "Local only" is on. If a call fails, Debait falls back 
 App Check debug token with a Copy button. Add that token in Firebase console → App Check → Apps →
 (the web app) → Manage debug tokens. After that, Gemini answers and the popup chip says
 "On-device AI" or "Cloud AI".
+
+## Update: two Firebase projects, and the voice call
+
+`src/engine/firebaseConfig.js` now lists two projects in `FIREBASE_PROJECTS`:
+
+1. **Team** (`debait-d6d5d`): App Check enforced.
+2. **Backup** (`axi-chat-2026`): App Check registered, but **monitoring only** for AI Logic.
+
+How each feature uses them:
+
+- **Headline scoring.** Gemini Nano runs on the device first. When the cloud is needed, Debait tries the project that answered last, then the other one. The popup and settings chip name the project that answered, e.g. "Gemini in the cloud (gemini-3.5-flash-lite, Backup project)".
+- **Voice call (Gemini Live).** Tries each project with each model in `LIVE_MODELS`.
+
+Why the backup project is monitoring only: the Live API reads App Check only from the `X-Firebase-AppCheck` HTTP header on the WebSocket handshake. Browsers can't set WebSocket headers, and the firebase 13.3.0 SDK doesn't send the token any other way. Chrome also doesn't apply declarativeNetRequest header rules to an extension's own WebSocket (tested). So a project that enforces App Check for AI Logic always rejects voice calls from a browser with "Firebase App Check token is invalid". Normal requests (headline scoring) send the header and work with enforcement on.
+
+Firebase re-enforces App Check on the backup project automatically on Jan 21, 2027.
+
+Live models checked against the API (Nov 2026):
+
+- Work: `gemini-2.5-flash-native-audio-latest`, `gemini-3.1-flash-live-preview`, `gemini-2.5-flash-native-audio-preview-09-2025`, `gemini-2.5-flash-native-audio-preview-12-2025`.
+- Not found: `gemini-live-2.5-flash-preview`.
+
+To use the team project as well, register Debait's debug token (shown in the popup) under App Check > Apps > Manage debug tokens. Never commit the token.

@@ -37,38 +37,48 @@ chrome.runtime.onInstalled.addListener(async () => {
 const CACHE_MAX = 3000;
 
 // ---------- offscreen engine host ----------
-let creating = null;
-async function ensureOffscreen() {
-  const url = chrome.runtime.getURL(OFFSCREEN_URL);
-  const existing = await chrome.runtime.getContexts({
-    contextTypes: ['OFFSCREEN_DOCUMENT'],
-    documentUrls: [url],
-  });
-  if (existing.length) return;
-  if (!creating) {
-    creating = chrome.offscreen
-      .createDocument({
+// One check-and-create at a time: parallel requests used to race, both saw "no document"
+// and both tried to create one; Chrome allows one, so the others failed.
+let ensuring = null;
+function ensureOffscreen() {
+  ensuring ||= (async () => {
+    const url = chrome.runtime.getURL(OFFSCREEN_URL);
+    const existing = await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'], documentUrls: [url] });
+    if (existing.length) return;
+    try {
+      await chrome.offscreen.createDocument({
         url: OFFSCREEN_URL,
         reasons: ['DOM_PARSER', 'USER_MEDIA', 'AUDIO_PLAYBACK'],
         justification: 'Runs the on-device AI (Prompt API) and Firebase AI Logic to score headlines, and the live voice call (microphone and spoken replies).',
-      })
-      .finally(() => { creating = null; });
-  }
-  await creating;
+      });
+    } catch (err) {
+      if (!/single offscreen/i.test(err.message)) throw err; // already there: fine
+    }
+  })().finally(() => { ensuring = null; });
+  return ensuring;
 }
 
 // The App Check debug token for this install (register it in Firebase once).
-async function debugToken() {
-  const { appCheckDebugToken } = await chrome.storage.local.get('appCheckDebugToken');
-  if (appCheckDebugToken) return appCheckDebugToken;
-  const token = crypto.randomUUID();
-  await chrome.storage.local.set({ appCheckDebugToken: token });
-  return token;
+let tokenOnce = null;
+function debugToken() {
+  tokenOnce ||= chrome.storage.local.get('appCheckDebugToken').then(async ({ appCheckDebugToken }) => {
+    if (appCheckDebugToken) return appCheckDebugToken;
+    const token = crypto.randomUUID();
+    await chrome.storage.local.set({ appCheckDebugToken: token });
+    return token;
+  });
+  return tokenOnce;
 }
 
 async function toEngine(payload) {
   await ensureOffscreen();
-  const res = await chrome.runtime.sendMessage({ target: 'offscreen', debugToken: await debugToken(), ...payload });
+  const msg = { target: 'offscreen', debugToken: await debugToken(), ...payload };
+  let res = await chrome.runtime.sendMessage(msg).catch(() => undefined);
+  if (res === undefined) {
+    // a brand-new offscreen page may still be loading its code: give it a moment, once
+    await new Promise((r) => setTimeout(r, 400));
+    res = await chrome.runtime.sendMessage(msg).catch(() => undefined);
+  }
   if (!res?.ok) throw new Error(res?.error || 'engine error');
   return res;
 }
@@ -204,6 +214,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ...res, debugToken: await debugToken() });
       } else if (msg.type === MSG.INIT) {
         sendResponse(await toEngine({ type: MSG.INIT }));
+      } else if (msg.type === MSG.SUMMARY) {
+        const { localOnly } = await getSettings();
+        sendResponse(await toEngine({ type: MSG.SUMMARY, page: msg.page, localOnly }));
       } else if (msg.type === 'debait/tool') {
         // Gemini wants to act on the page: run it in the active tab
         const res = await toActiveTab({ type: 'debait/tool', name: msg.name, args: msg.args });

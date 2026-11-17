@@ -30,7 +30,7 @@ const LEGEND = [
  * @param orbCenter   () => {x, y}
  * @param onOpenChange (open) => void
  */
-export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpenChange }) {
+export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpenChange, onSize, onSummarize }) {
   let el = null;
   let closing = false;
 
@@ -70,6 +70,14 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
         <span class="p-site">${location.hostname.replace(/^www\./, '')}</span>
       </div>
 
+      <section class="p-hero">
+        <span class="p-eyebrow">Today</span>
+        <div class="p-today"><b><span data-v="todayPct">0</span><small>%</small></b></div>
+        <span class="p-today-line" data-v="todayLine">of headlines were bait</span>
+        <div class="p-bar">${LEGEND.map(([k]) => `<span data-k="${k}"></span>`).join('')}</div>
+        <div class="p-legend">${LEGEND.map(([k, name]) => `<span><i data-k="${k}"></i>${name} <b data-v="${k}">0</b></span>`).join('')}</div>
+      </section>
+
       <section class="p-sec">
         <h4>This page</h4>
         <div class="p-split">
@@ -80,11 +88,10 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
         <button class="btn primary p-main" data-act="toggle">Debait this page</button>
       </section>
 
-      <section class="p-sec">
-        <h4>Today</h4>
-        <div class="p-today"><b><span data-v="todayPct">0</span><small>%</small></b><span data-v="todayLine">of headlines were bait</span></div>
-        <div class="p-bar">${LEGEND.map(([k]) => `<span data-k="${k}"></span>`).join('')}</div>
-        <div class="p-legend">${LEGEND.map(([k, name, bg]) => `<span><i data-k="${k}"></i>${name} <b data-v="${k}">0</b></span>`).join('')}</div>
+      <section class="p-sec p-sum">
+        <h4>In short</h4>
+        <p class="p-sum-text">The whole page in two or three calm sentences.</p>
+        <button class="btn p-main" data-act="summary">Summarize this page</button>
       </section>
 
       <section class="p-sec">
@@ -100,10 +107,15 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
             <input type="checkbox" data-setting="${s.key}" ${settings[s.key] ? 'checked' : ''} />
             <span class="sw"></span>
           </label>`).join('')}
+        <label class="p-size">
+          <span>Orb size<small data-v="orbSize">${Math.round((settings.orbSize || 1) * 100)}%</small></span>
+          <input type="range" min="0.75" max="1.6" step="0.05" value="${settings.orbSize || 1}" data-size aria-label="Orb size" />
+        </label>
       </section>
 
       <button class="p-link" data-act="facts">Weekly Mind Facts ${ICON.arrow}</button>
       <p class="p-note" hidden></p>
+      <div class="p-spacer"></div>
       <p class="p-foot"><kbd>2×</kbd> click the orb <span aria-hidden="true">·</span> <kbd>Esc</kbd> to close</p>`);
 
     layer.appendChild(el);
@@ -131,7 +143,7 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
 
     if (!reducedMotion()) {
       el.animate(clipFrames(true), { duration: 700, easing: OUT });
-      const parts = el.querySelectorAll('.p-head, .p-meta, .p-sec h4, .p-split, .p-main, .p-today, .p-bar, .p-legend, .p-row, .p-link, .p-foot');
+      const parts = el.querySelectorAll('.p-head, .p-meta, .p-hero > *, .p-sec h4, .p-split, .p-main, .p-row, .p-size, .p-link, .p-foot');
       parts.forEach((p, i) => {
         p.animate(
           [{ opacity: 0, transform: 'translateY(8px)', filter: 'blur(4px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }],
@@ -142,6 +154,7 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
 
     el.addEventListener('click', onClick);
     el.addEventListener('change', onChange);
+    el.addEventListener('input', onSizeInput);
     setTimeout(() => {
       document.addEventListener('pointerdown', onOutside, true);
       document.addEventListener('keydown', onKey, true);
@@ -178,6 +191,7 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
       onToggle();
       setTimeout(refresh, 50);
     }
+    if (act === 'summary') summarize();
     if (act === 'facts') {
       const res = await chrome.runtime.sendMessage({ type: 'debait/openSidePanel' }).catch(() => null);
       if (!res?.ok && el) {
@@ -188,7 +202,17 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
     }
   }
 
+  function onSizeInput(e) {
+    if (e.target.dataset?.size === undefined) return;
+    el.querySelector('[data-v="orbSize"]').textContent = `${Math.round(e.target.value * 100)}%`;
+    onSize?.(Number(e.target.value));
+  }
+
   async function onChange(e) {
+    if (e.target.dataset?.size !== undefined) {
+      await setSettings({ orbSize: Number(e.target.value) });
+      return;
+    }
     if (e.target.dataset?.site !== undefined) {
       const host = location.hostname.replace(/^www\./, '');
       const cur = await getSettings();
@@ -201,6 +225,31 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
     if (!key) return;
     await setSettings({ [key]: e.target.checked });
     if (key === 'showOrb' && !e.target.checked) close();
+  }
+
+  async function summarize() {
+    const sec = el?.querySelector('.p-sum');
+    if (!sec || sec.classList.contains('loading')) return;
+    const out = sec.querySelector('.p-sum-text');
+    const btn = sec.querySelector('[data-act="summary"]');
+    sec.classList.add('loading');
+    btn.disabled = true;
+    btn.textContent = 'Reading the page…';
+    try {
+      const { summary, source } = await onSummarize();
+      if (!el) return;
+      out.textContent = summary;
+      out.classList.add('done');
+      sec.dataset.src = source;
+      btn.textContent = { 'on-device': 'Summarized on this device', cloud: 'Summarized by Gemini', mock: 'Quick summary (Gemini offline)' }[source] || 'Summarized';
+      if (!reducedMotion()) out.animate([{ opacity: 0, filter: 'blur(6px)', transform: 'translateY(4px)' }, { opacity: 1, filter: 'blur(0)', transform: 'none' }], { duration: 600, easing: OUT });
+    } catch (err) {
+      out.textContent = /LOCAL_ONLY/.test(err.message) ? 'Local only is on, but Gemini Nano is not ready on this computer.' : 'Could not summarize this page. Try again in a moment.';
+      btn.disabled = false;
+      btn.textContent = 'Try again';
+    } finally {
+      sec.classList.remove('loading');
+    }
   }
 
   /** Updates the "This page" numbers and the main button. */

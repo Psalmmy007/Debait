@@ -2,6 +2,7 @@
 import { reducedMotion } from './page.js';
 import { setHTML } from './html.js';
 import { ICON, LABEL, SOURCE } from './icons.js';
+import { shareHeadline } from './share.js';
 
 const OUT = 'cubic-bezier(0.16, 1, 0.3, 1)';
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -66,7 +67,15 @@ export function openCard(layer, rec, rect, { onDebait, onRestore }) {
     </div>
     <p class="card-headline">${markTriggers(rec.text, r.triggers)}</p>
     <div class="card-section"><h4>Why it pulls you in</h4><ul class="ingredients">${rows}</ul></div>
-    ${clean ? '' : `<div class="card-section"><h4>What actually happened</h4><div class="honest">${esc(r.honest_rewrite)}</div></div>`}
+    ${clean ? '' : `<div class="card-section">
+      <h4 class="cmp-head">Bait vs honest <button class="share" data-act="share">${ICON.share}<span>Share</span></button></h4>
+      <div class="compare" style="--cut: 100%">
+        <div class="cmp honest"><span class="cmp-tag">Honest</span>${esc(r.honest_rewrite)}</div>
+        <div class="cmp bait" aria-hidden="true"><span class="cmp-tag">Bait</span>${esc(rec.text)}</div>
+        <span class="cmp-handle" aria-hidden="true"></span>
+        <input type="range" min="0" max="100" value="100" aria-label="Slide between the bait and the honest headline" />
+      </div>
+    </div>`}
     <div class="card-foot">
       <span class="source" data-src="${esc(r.source)}"><i></i>${esc(SOURCE[r.source] || r.source)}</span>
       <div class="btns">
@@ -106,7 +115,7 @@ export function openCard(layer, rec, rect, { onDebait, onRestore }) {
       ],
       { duration: 520, easing: OUT },
     );
-    el.querySelectorAll('.card-headline, .card-section h4, .ingredients li, .honest, .card-foot').forEach((p, i) => {
+    el.querySelectorAll('.card-headline, .card-section h4, .ingredients li, .compare, .card-foot').forEach((p, i) => {
       p.animate(
         [{ opacity: 0, transform: 'translateY(6px)', filter: 'blur(3px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }],
         { duration: 460, delay: 70 + i * 40, easing: OUT, fill: 'backwards' },
@@ -131,7 +140,32 @@ export function openCard(layer, rec, rect, { onDebait, onRestore }) {
     if (act === 'debait') { closeCard(); onDebait(); }
     if (act === 'restore') { closeCard(); onRestore(); }
     if (act === 'close') closeCard();
+    if (act === 'share') {
+      const btn = e.target.closest('.share');
+      shareHeadline({ bait: rec.text, honest: r.honest_rewrite, kind: r.kind, score: r.score })
+        .then((how) => { btn.querySelector('span').textContent = how === 'copied' ? 'Copied' : 'Saved'; })
+        .catch(() => { btn.querySelector('span').textContent = 'Failed'; });
+    }
   });
+
+  // bait vs honest: drag to wipe between them; on open it sweeps once to show it moves
+  const cmp = el.querySelector('.compare');
+  if (cmp) {
+    const range = cmp.querySelector('input');
+    const set = (v) => { cmp.style.setProperty('--cut', `${v}%`); range.value = v; };
+    range.addEventListener('input', () => set(range.value));
+    range.addEventListener('pointerdown', (e) => e.stopPropagation());
+    if (!reducedMotion()) {
+      const t0 = performance.now() + 450;
+      const tick = (t) => {
+        if (!cmp.isConnected || range.matches(':active')) return;
+        const p = Math.min(1, Math.max(0, (t - t0) / 1100));
+        set(Math.round(100 - 55 * (1 - (1 - p) ** 3)));
+        if (p < 1) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    } else set(45);
+  }
 
   const onDown = (e) => {
     const path = e.composedPath();

@@ -6,7 +6,7 @@ import { firebaseEngine } from './firebaseEngine.js';
 
 export const USE_MOCK = false;
 
-const GEMINI_TIMEOUT = 8000;   // a working Gemini answers well within this
+const GEMINI_TIMEOUT = 15000;  // a working Gemini answers well within this (batches run in parallel)
 const PROBE_TIMEOUT = 20000;   // the background check can take longer (first connection, model load)
 const RETRY_AFTER = 2 * 60 * 1000;
 
@@ -25,7 +25,7 @@ function probe(text, opts) {
       gemini = 'failing';
       lastError = err;
       retryAt = Date.now() + RETRY_AFTER;
-      console.warn('[Debait] Gemini not available yet, using the backup engine:', err.message);
+      console.debug('[Debait] Gemini not available yet, using the backup engine:', err.message);
     })
     .finally(() => { probing = null; });
 }
@@ -66,4 +66,12 @@ export const engine = USE_MOCK ? mockEngine : {
     return s;
   },
   initDeviceModel: () => firebaseEngine.initDeviceModel(),
+  async summarize(page, opts) {
+    try {
+      return await withTimeout(firebaseEngine.summarize(page, opts), 25000);
+    } catch (err) {
+      if (opts.localOnly) throw new Error(`LOCAL_ONLY: ${err.message}`);
+      return mockEngine.summarize(page, opts);
+    }
+  },
 };

@@ -9,7 +9,8 @@ import { SPRING, reducedMotion } from './page.js';
 import { createOrbRenderer } from './orb-gl.js';
 import { setHTML, adoptCss } from './html.js';
 
-const ORB = 56;
+const ORB = 56;          // base size; the user can scale it (settings.orbSize)
+const ORB_MAX = 1.6;
 const MARGIN = 16;
 // visible width, not counting the page's scrollbar
 const viewW = () => document.documentElement.clientWidth || innerWidth;
@@ -55,7 +56,10 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
   const tip = wrap.querySelector('.orb-tip');
   const canvas = wrap.querySelector('.orb-gl');
 
-  const gl = createOrbRenderer(canvas, ORB);
+  // drawn once at the largest size, so it stays sharp when scaled up
+  const gl = createOrbRenderer(canvas, Math.round(ORB * ORB_MAX));
+  let k = 1; // orb scale
+  const S = () => ORB * k;
   if (gl) {
     wrap.classList.add('has-gl');
     gl.start();
@@ -66,19 +70,19 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
   let ratio = { x: 1, y: 0.8 };
 
   const clamp = (p) => ({
-    x: Math.min(Math.max(p.x, MARGIN), viewW() - ORB - MARGIN),
-    y: Math.min(Math.max(p.y, MARGIN), innerHeight - ORB - MARGIN),
+    x: Math.min(Math.max(p.x, MARGIN), viewW() - S() - MARGIN),
+    y: Math.min(Math.max(p.y, MARGIN), innerHeight - S() - MARGIN),
   });
   const fromRatio = () => clamp({
-    x: MARGIN + ratio.x * (viewW() - ORB - 2 * MARGIN),
-    y: MARGIN + ratio.y * (innerHeight - ORB - 2 * MARGIN),
+    x: MARGIN + ratio.x * (viewW() - S() - 2 * MARGIN),
+    y: MARGIN + ratio.y * (innerHeight - S() - 2 * MARGIN),
   });
   const toRatio = () => ({
-    x: (pos.x - MARGIN) / Math.max(1, viewW() - ORB - 2 * MARGIN),
-    y: (pos.y - MARGIN) / Math.max(1, innerHeight - ORB - 2 * MARGIN),
+    x: (pos.x - MARGIN) / Math.max(1, viewW() - S() - 2 * MARGIN),
+    y: (pos.y - MARGIN) / Math.max(1, innerHeight - S() - 2 * MARGIN),
   });
   const place = () => {
-    wrap.style.transform = `translate3d(${pos.x}px, ${pos.y}px, 0)`;
+    wrap.style.transform = `translate3d(${pos.x}px, ${pos.y}px, 0) scale(${k})`;
     wrap.classList.toggle('tip-right', pos.x < 240);
   };
 
@@ -230,13 +234,21 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
   });
 
   function center() {
-    return { x: pos.x + ORB / 2, y: pos.y + ORB / 2 };
+    return { x: pos.x + S() / 2, y: pos.y + S() / 2 };
   }
 
   const HINT = '<em><kbd>2×</kbd> settings &nbsp; <kbd>3×</kbd> talk to Debait</em>';
   let lastCount = -1;
   return {
     center,
+    /** 0.75 – 1.6 times the normal size; labels next to it keep their size */
+    setSize(next) {
+      k = Math.min(ORB_MAX, Math.max(0.75, Number(next) || 1));
+      wrap.style.setProperty('--inv', String(1 / k));
+      pos = fromRatio();
+      place();
+    },
+
     setVisible(v) {
       wrap.hidden = !v;
       if (!gl) return;

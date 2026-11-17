@@ -10,6 +10,7 @@ import { createSettingsPanel } from './ui/settings.js';
 import { setSettings } from '../shared/storage.js';
 
 const BATCH = 8;
+const PARALLEL = 3;
 const MIN_LEN = 12;
 const MAX_LEN = 320;
 
@@ -64,9 +65,12 @@ async function start() {
     getPage: pageCounts,
     onToggle: () => toggleDebaitPage(orb.center()),
     orbCenter: () => orb.center(),
+    onSize: (k) => orb.setSize(k),
+    onSummarize: () => summarizePage(),
     onOpenChange: (open) => orb.setPanelOpen(open),
   });
   orb.setVisible(settings.showOrb);
+  orb.setSize(settings.orbSize);
 
   // ---------- call mode: Gemini Live acts on this page through these tools ----------
   function kinds() {
@@ -77,6 +81,29 @@ async function start() {
   const baitList = () => [...records.values()]
     .filter((r) => r.result && r.result.kind !== 'clean')
     .sort((a, b) => b.result.score - a.result.score);
+
+  // ---------- page summary ----------
+  /** The article's text if this is an article, otherwise the headlines Debait found. */
+  function pageForSummary() {
+    const root = document.querySelector('article') || document.querySelector('main') || document.body;
+    const paras = [...root.querySelectorAll('p')]
+      .filter((p) => !p.closest('nav, footer, aside, debait-root') && p.offsetParent !== null)
+      .map((p) => p.innerText.replace(/\s+/g, ' ').trim())
+      .filter((t) => t.length > 60);
+    const text = paras.join('\n').slice(0, 7000);
+    const headlines = [...records.values()].map((r) => r.text).slice(0, 40);
+    const article = (paras.length >= 4 && text.length > 900) || headlines.length < 3;
+    return { kind: article ? 'article' : 'feed', title: document.title, text, headlines };
+  }
+
+  let lastSummary = null;
+  async function summarizePage() {
+    if (lastSummary?.url === location.href) return lastSummary;
+    const res = await chrome.runtime.sendMessage({ type: MSG.SUMMARY, page: pageForSummary() });
+    if (!res?.ok) throw new Error(res?.error || 'no response');
+    lastSummary = { url: location.href, summary: res.summary, source: res.source };
+    return lastSummary;
+  }
 
   async function runTool(name, args) {
     const { bait, debaited, scanned } = pageCounts();
@@ -106,6 +133,10 @@ async function start() {
       await setSettings({ [key]: !!args.on });
       return { ok: true, setting: args.setting, on: !!args.on };
     }
+    if (name === 'summarize_page') {
+      const r = await summarizePage().catch((e) => ({ error: e.message }));
+      return r.error ? { error: r.error } : { summary: r.summary };
+    }
     if (name === 'open_mind_facts') {
       const res = await chrome.runtime.sendMessage({ type: 'debait/openSidePanel' }).catch(() => null);
       return res?.ok ? { ok: true } : { ok: false, tip: 'Tell the user to click the Debait icon, then Weekly Mind Facts.' };
@@ -116,6 +147,9 @@ async function start() {
   function onCallState({ state, message }) {
     if (state === 'connecting') orb.setVoice({ mode: 'speaking', text: 'Calling Debait…' });
     else if (state === 'live') orb.setVoice({ mode: 'listening' });
+    else if (state === 'talking') orb.setVoice({ mode: 'speaking', text: '' });
+    else if (state === 'heard') orb.setVoice({ mode: 'heard', text: message });
+    else if (state === 'reconnecting') orb.setVoice({ mode: 'speaking', text: 'Reconnecting…' });
     else if (state === 'working') orb.setVoice({ mode: 'speaking', text: 'On it…' });
     else if (state === 'error') orb.setVoice({ mode: 'error', text: message });
     else orb.setVoice({ mode: 'idle' });
@@ -162,7 +196,7 @@ async function start() {
       }
     }
     flushSoon();
-  }, { rootMargin: '300px 0px' });
+  }, { rootMargin: '900px 0px' }); // score a little ahead of where you're reading
 
   function scan() {
     for (const el of adapter.find(document)) {
@@ -207,36 +241,53 @@ async function start() {
   }
   let flushing = false;
 
+  // what's on screen first, then nearest to the screen
+  function byDistance(rec) {
+    const r = rec.el?.isConnected ? rec.el.getBoundingClientRect() : null;
+    if (!r || (!r.width && !r.height)) return 1e9;
+    return r.bottom < 0 ? -r.bottom + innerHeight : r.top > innerHeight ? r.top : 0;
+  }
+
+  async function scoreBatch(batch) {
+    inflight++;
+    refreshOrb();
+    try {
+      const res = await chrome.runtime.sendMessage({ type: MSG.SCORE, texts: batch.map((r) => r.text) });
+      if (!res?.ok) throw new Error(res?.error || 'no response');
+      stats.hits += res.cacheHits;
+      stats.scored += batch.length;
+      batch.forEach((rec, i) => applyResult(rec, res.results[i]));
+      console.debug(`[Debait] scored ${batch.length} (cache hits so far: ${stats.hits}/${stats.scored})`);
+    } catch (err) {
+      console.warn('[Debait] scoring failed:', err.message);
+      // keep the records (no rescan loop), hide the waiting pills, tell the user why, retry in a minute
+      batch.forEach((rec) => { rec.queued = false; rec.failed = true; rec.tag?.setVisible(false); });
+      notice = /LOCAL_ONLY/.test(err.message)
+        ? 'Local only is on, but Gemini Nano is not downloaded yet. Open the Debait popup and click Turn on Debait, or turn off Local only.'
+        : 'Debait could not reach its AI. Retrying in a minute.';
+      clearTimeout(retryTimer);
+      retryTimer = setTimeout(() => {
+        notice = '';
+        for (const r of records.values()) if (r.failed && !r.result) { r.failed = false; r.tag?.setVisible(settings.showTags); r.queued = true; queue.push(r); }
+        flushSoon();
+      }, 60000);
+    } finally {
+      inflight--;
+    }
+  }
+
   async function flush() {
     if (flushing) return;
     flushing = true;
-    while (queue.length) {
-      const batch = queue.splice(0, BATCH);
-      inflight++;
-      refreshOrb();
-      try {
-        const res = await chrome.runtime.sendMessage({ type: MSG.SCORE, texts: batch.map((r) => r.text) });
-        if (!res?.ok) throw new Error(res?.error || 'no response');
-        stats.hits += res.cacheHits;
-        stats.scored += batch.length;
-        batch.forEach((rec, i) => applyResult(rec, res.results[i]));
-        console.debug(`[Debait] scored ${batch.length} (cache hits so far: ${stats.hits}/${stats.scored})`);
-      } catch (err) {
-        console.warn('[Debait] scoring failed:', err.message);
-        // keep the records (no rescan loop), hide the waiting pills, tell the user why, retry in a minute
-        batch.forEach((rec) => { rec.queued = false; rec.failed = true; rec.tag?.setVisible(false); });
-        notice = /LOCAL_ONLY/.test(err.message)
-          ? 'Local only is on, but Gemini Nano is not downloaded yet. Open the Debait popup and click Turn on Debait, or turn off Local only.'
-          : 'Debait could not reach its AI. Retrying in a minute.';
-        clearTimeout(retryTimer);
-        retryTimer = setTimeout(() => {
-          notice = '';
-          for (const r of records.values()) if (r.failed && !r.result) { r.failed = false; r.tag?.setVisible(settings.showTags); r.queued = true; queue.push(r); }
-          flushSoon();
-        }, 60000);
-      } finally {
-        inflight--;
+    // up to PARALLEL batches at once (each is one Gemini call), visible headlines first
+    const running = new Set();
+    while (queue.length || running.size) {
+      while (queue.length && running.size < PARALLEL) {
+        queue.sort((x, y) => byDistance(x) - byDistance(y));
+        const job = scoreBatch(queue.splice(0, BATCH)).finally(() => running.delete(job));
+        running.add(job);
       }
+      await Promise.race(running);
     }
     flushing = false;
     paint();
@@ -309,6 +360,7 @@ async function start() {
     const prev = settings;
     settings = next;
     orb.setVisible(next.showOrb);
+    orb.setSize(next.orbSize);
     if (prev.localOnly !== next.localOnly && notice) { clearTimeout(retryTimer); notice = ''; for (const r of records.values()) if (r.failed && !r.result) { r.failed = false; r.tag?.setVisible(next.showTags); r.queued = true; queue.push(r); } flushSoon(); }
     if (prev.voice && !next.voice) onCallState({ state: 'ended' });
     if (prev.showTags !== next.showTags) {

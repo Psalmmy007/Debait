@@ -216,3 +216,7 @@
   .orb-ring .arc, .orb-mic, .voice-bubble .wave i { animation: none !important; }
   .orb, .orb-body, .orb-tip, .orb-shadow, .voice-bubble { transition: none !important; }
 }
+
+/* resizable orb: the wrap scales from its corner; text next to it is scaled back to normal */
+.orb-wrap { transform-origin: 0 0; }
+.orb-tip, .voice-bubble { scale: var(--inv, 1); }

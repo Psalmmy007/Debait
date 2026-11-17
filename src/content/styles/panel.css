@@ -1,15 +1,18 @@
-/* Settings panel (double-click the orb): Apple-style sheet with grouped sections. */
+/* Settings panel (double-click the orb): a tall glass column beside the orb, full height,
+   with today's score as the hero. */
 .panel {
   position: fixed;
   top: 12px;
+  bottom: 12px;
   right: 12px;
-  width: 352px;
+  width: 340px;
   max-width: calc(100vw - 24px);
-  max-height: calc(100vh - 24px);
+  display: flex;
+  flex-direction: column;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 18px 16px 16px;
-  border-radius: 24px;
+  border-radius: 28px;
   background: var(--material);
   backdrop-filter: blur(40px) saturate(1.8);
   -webkit-backdrop-filter: blur(40px) saturate(1.8);
@@ -173,3 +176,57 @@
 .p-legend i[data-k='fear'] { background: color-mix(in srgb, var(--label) 62%, transparent); }
 .p-legend i[data-k='envy'] { background: color-mix(in srgb, var(--label) 34%, transparent); }
 .p-legend i[data-k='clean'] { background: repeating-linear-gradient(-45deg, color-mix(in srgb, var(--label) 40%, transparent) 0 2px, transparent 2px 4px); }
+
+/* ---------- tall column: hero ---------- */
+.p-hero { position: relative; margin: 18px 0 4px; padding: 22px 18px 18px; border-radius: 22px; background: var(--fill-2); overflow: hidden; text-align: center; }
+.p-hero::before {
+  /* a soft glow behind the number, like the orb's light */
+  content: ''; position: absolute; left: 50%; top: -40%; width: 120%; aspect-ratio: 1; translate: -50% 0;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--label) 9%, transparent), transparent);
+  pointer-events: none;
+}
+.p-eyebrow { position: relative; display: block; font: 600 12px/1 var(--font); letter-spacing: 0.08em; text-transform: uppercase; color: var(--label-3); }
+.p-hero .p-today { position: relative; justify-content: center; margin-top: 10px; }
+.p-hero .p-today b { font: 800 76px/0.9 var(--font-display); letter-spacing: -0.06em; }
+.p-hero .p-today b small { font-size: 32px; margin-left: 2px; letter-spacing: -0.02em; }
+.p-today-line { position: relative; display: block; margin-top: 8px; font-size: 13.5px; color: var(--label-2); }
+.p-hero .p-bar { position: relative; margin-top: 16px; }
+.p-hero .p-legend { position: relative; }
+
+/* push the footer to the bottom of the column */
+.p-spacer { flex: 1; min-height: 8px; }
+
+/* orb size slider */
+.p-size { display: block; padding: 12px 0 4px; font: 500 14.5px/1.3 var(--font); letter-spacing: -0.01em; }
+.p-size > span { display: flex; justify-content: space-between; align-items: baseline; }
+.p-size small { font-size: 12.5px; font-weight: 600; color: var(--label-2); font-variant-numeric: tabular-nums; }
+.p-size input { width: 100%; margin: 12px 0 0; height: 28px; background: transparent; -webkit-appearance: none; appearance: none; cursor: pointer; }
+.p-size input::-webkit-slider-runnable-track { height: 4px; border-radius: 999px; background: var(--fill); }
+.p-size input::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 24px; height: 24px; margin-top: -10px; border-radius: 50%; background: #fff;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.18), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+  transition: transform 0.3s var(--spring);
+}
+.p-size input:active::-webkit-slider-thumb { transform: scale(1.12); }
+.p-size input:focus-visible { outline: 2px solid #0071e3; outline-offset: 2px; border-radius: 8px; }
+
+/* the column scrolls; its sections never squash */
+.panel > * { flex-shrink: 0; }
+
+/* kind colors */
+.p-bar [data-k='rage'], .p-legend i[data-k='rage'] { background: var(--rage); }
+.p-bar [data-k='fear'], .p-legend i[data-k='fear'] { background: var(--fear); }
+.p-bar [data-k='envy'], .p-legend i[data-k='envy'] { background: var(--envy); }
+.p-bar [data-k='clean'], .p-legend i[data-k='clean'] { background: var(--clean); }
+
+/* In short: the page summary */
+.p-sum-text { margin: 0; font-size: 13px; line-height: 1.45; color: var(--label-2); }
+.p-sum-text.done { font: 500 15px/1.45 var(--serif); color: var(--label); text-wrap: pretty; }
+.p-sum .p-main { margin-top: 12px; }
+.p-sum.loading .p-sum-text {
+  background: linear-gradient(90deg, var(--label-3) 0%, var(--label) 50%, var(--label-3) 100%) 0 0 / 200% 100%;
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: sum-shimmer 1.4s linear infinite;
+}
+@keyframes sum-shimmer { to { background-position: -200% 0; } }
+.p-sum[data-src] .p-main:disabled { opacity: 0.55; }
