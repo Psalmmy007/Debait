@@ -2,6 +2,7 @@
 
 export const DEFAULT_SETTINGS = {
   showOrb: true,      // the floating Debait ball
+  orbSize: 1,         // user-adjustable floating orb scale (75%–160%)
   showTags: true,     // Rage / Fear / Envy / Clean pills
   autoDebait: false,  // rewrite bait as soon as it's scored
   localOnly: false,   // never use the cloud
