@@ -17,4 +17,4 @@ export const ICON = {
 };
 
 export const LABEL = { rage: 'Rage', fear: 'Fear', envy: 'Envy', clean: 'Clean' };
-export const SOURCE = { 'on-device': 'On-device AI', cloud: 'Cloud AI', mock: 'Quick estimate (Gemini warming up)', none: 'AI not ready' };
+export const SOURCE = { 'on-device': 'Gemini Nano, on this device', cloud: 'Gemini, in the cloud', mock: 'Quick estimate', none: 'AI not ready' };

@@ -1,81 +1,129 @@
-/* Debait on-page design tokens: Apple's design language, light or dark to match the system.
+/* Debait design tokens (on-page). One visual language everywhere: a printed nutrition label.
+   Ink on paper, crisp rules, heavy numbers, a serif for the news itself. Light or dark with the system.
    Everything lives inside Shadow DOM, so the host site can't touch it and it can't touch the host site. */
 :host {
-  /* type: SF on Apple devices, Segoe UI Variable on Windows, bundled Plus Jakarta as a fallback */
-  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI Variable Text', 'Segoe UI', 'Debait Sans', system-ui, sans-serif;
-  --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI Variable Display', 'Segoe UI', 'Debait Sans', system-ui, sans-serif;
-  --serif: 'New York', 'Debait Newsreader', Georgia, serif;
+  --sans: 'Debait Inter', 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --display: 'Debait Bricolage', 'Bricolage Grotesque Variable', 'Debait Inter', -apple-system, 'Segoe UI', system-ui, sans-serif;
+  --serif: 'Debait Newsreader', 'Newsreader Variable', Georgia, 'Times New Roman', serif;
 
-  /* light appearance */
-  --label: #1d1d1f;
-  --label-2: #6e6e73;
-  --label-3: #86868b;
-  --material: rgba(255, 255, 255, 0.78);
-  --material-thick: rgba(255, 255, 255, 0.9);
-  --surface: #ffffff;
-  --fill: rgba(120, 120, 128, 0.12);
-  --fill-2: rgba(120, 120, 128, 0.07);
-  --sep: rgba(60, 60, 67, 0.12);
-  --hairline: rgba(0, 0, 0, 0.08);
-  --button: #1d1d1f;
-  --button-label: #ffffff;
-  --toggle-on: #34c759;
-  /* the four kinds, Apple system colors */
-  --rage: #ff3b30;
-  --fear: #ff9500;
-  --envy: #af52de;
-  --clean: #34c759;
-  --mark: rgba(255, 214, 10, 0.38);
+  --paper: #ffffff;
+  --ink: #111111;
+  --ink-2: #555555;
+  --ink-3: #737373;
+  --rule: rgba(17, 17, 17, 0.12);
+  --fill: rgba(17, 17, 17, 0.07);
+  --fill-2: rgba(17, 17, 17, 0.035);
+  --btn: #111111;
+  --btn-ink: #ffffff;
+  --rage: #e0362c;
+  --fear: #e08600;
+  --envy: #7c5ce0;
+  --clean: #16a058;
+  --mark: rgba(255, 196, 0, 0.36);
+  --focus: #2f6bff;
   --shadow:
-    0 0 0 0.5px rgba(0, 0, 0, 0.08),
-    0 4px 12px rgba(0, 0, 0, 0.05),
-    0 28px 70px -22px rgba(0, 0, 0, 0.32);
+    0 0 0 1px rgba(17, 17, 17, 0.09),
+    0 2px 6px rgba(17, 17, 17, 0.05),
+    0 24px 56px -18px rgba(17, 17, 17, 0.34);
 
-  /* motion: Apple-style ease and a gentle spring */
-  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  /* motion */
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --out: cubic-bezier(0.16, 1, 0.3, 1);
   --spring: linear(0, 0.006, 0.025 2.8%, 0.101 6.1%, 0.539 18.9%, 0.721 25.3%, 0.849 31.5%, 0.937 38.1%, 0.968 41.8%, 0.991 45.7%, 1.006 50.1%, 1.015 55%, 1.017 63.9%, 1.001 85.9%, 1);
 
-  /* names older component styles still use */
-  --ui: var(--font);
-  --brand: var(--font-display);
-  --ink: var(--label);
-  --ink-2: var(--label-2);
-  --ink-3: var(--label-3);
-  --hair: var(--sep);
-  --out: var(--ease);
-
-  font-family: var(--font);
-  color: var(--label);
+  font-family: var(--sans);
+  color: var(--ink);
   -webkit-font-smoothing: antialiased;
 }
 
 @media (prefers-color-scheme: dark) {
   :host {
-    --label: #f5f5f7;
-    --label-2: #a1a1a6;
-    --label-3: #8e8e93;
-    --material: rgba(30, 30, 32, 0.78);
-    --material-thick: rgba(36, 36, 38, 0.92);
-    --surface: #1c1c1e;
-    --fill: rgba(120, 120, 128, 0.24);
-    --fill-2: rgba(120, 120, 128, 0.14);
-    --sep: rgba(84, 84, 88, 0.55);
-    --hairline: rgba(255, 255, 255, 0.1);
-    --button: #f5f5f7;
-    --button-label: #1d1d1f;
-    --toggle-on: #30d158;
-    --rage: #ff453a;
-    --fear: #ff9f0a;
-    --envy: #bf5af2;
-    --clean: #30d158;
-    --mark: rgba(255, 214, 10, 0.3);
+    --paper: #161616;
+    --ink: #f2f2ef;
+    --ink-2: #a8a8a4;
+    --ink-3: #8a8a86;
+    --rule: rgba(242, 242, 239, 0.13);
+    --fill: rgba(242, 242, 239, 0.09);
+    --fill-2: rgba(242, 242, 239, 0.05);
+    --btn: #f2f2ef;
+    --btn-ink: #111111;
+    --rage: #ff5a4e;
+    --fear: #ffaa2c;
+    --envy: #a48bff;
+    --clean: #3ccb7f;
+    --mark: rgba(255, 196, 0, 0.28);
+    --focus: #6f9bff;
     --shadow:
-      0 0 0 0.5px rgba(255, 255, 255, 0.12),
-      0 4px 12px rgba(0, 0, 0, 0.25),
-      0 28px 70px -22px rgba(0, 0, 0, 0.75);
+      0 0 0 1px rgba(255, 255, 255, 0.1),
+      0 2px 6px rgba(0, 0, 0, 0.3),
+      0 24px 56px -18px rgba(0, 0, 0, 0.8);
   }
 }
 
 * { box-sizing: border-box; }
 button { font: inherit; color: inherit; margin: 0; }
+[hidden] { display: none !important; }
 svg { display: block; }
+
+/* shared pieces: label rules, micro headings, buttons, switches */
+.rule { height: 1px; background: var(--rule); border: 0; margin: 0; }
+.rule.ink { height: 2px; background: var(--ink); }
+.rule.thick { height: 8px; background: var(--ink); }
+
+.micro {
+  font: 650 10.5px/1 var(--sans);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--rule);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink);
+  font: 600 13.5px/1 var(--sans);
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s var(--ease), border-color 0.15s var(--ease), transform 0.2s var(--ease), opacity 0.15s var(--ease);
+}
+.btn:hover { background: var(--fill-2); border-color: color-mix(in srgb, var(--ink) 28%, transparent); }
+.btn:active { transform: scale(0.97); }
+.btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.btn.primary { background: var(--btn); border-color: var(--btn); color: var(--btn-ink); }
+.btn.primary:hover { opacity: 0.86; }
+.btn:disabled { cursor: default; opacity: 0.42; transform: none; }
+.btn svg { width: 12px; height: 12px; }
+
+/* switch: ink when on, like a printed checkbox filled in */
+.sw {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 18%, transparent);
+  transition: background 0.2s var(--ease);
+}
+.sw::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--paper);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 0.3s var(--spring);
+}
+input:checked + .sw { background: var(--ink); }
+input:checked + .sw::after { transform: translateX(14px); }
+input:focus-visible + .sw { outline: 2px solid var(--focus); outline-offset: 2px; }

@@ -19,12 +19,11 @@ export function injectPageStyles() {
   const style = document.createElement('style');
   style.id = 'debait-page-styles';
   style.textContent = `
-    @font-face { font-family: 'Debait Sans'; src: url('${url('jakarta.woff2')}') format('woff2'); font-weight: 200 800; font-display: swap; }
     @font-face { font-family: 'Debait Inter'; src: url('${url('inter.woff2')}') format('woff2'); font-weight: 100 900; font-display: swap; }
     @font-face { font-family: 'Debait Bricolage'; src: url('${url('bricolage.woff2')}') format('woff2'); font-weight: 200 800; font-display: swap; }
     @font-face { font-family: 'Debait Newsreader'; src: url('${url('newsreader.woff2')}') format('woff2'); font-weight: 200 800; font-display: swap; }
-    ::highlight(debait-bait) { background-color: rgba(128, 128, 128, 0.2); color: inherit; text-decoration: underline 2px; text-decoration-color: currentColor; }
-    ::highlight(debait-hot) { background-color: rgba(128, 128, 128, 0.42); color: inherit; text-decoration: underline 2px; text-decoration-color: currentColor; }
+    ::highlight(debait-bait) { background-color: rgba(255, 196, 0, 0.3); color: inherit; }
+    ::highlight(debait-hot) { background-color: rgba(255, 184, 0, 0.6); color: inherit; text-decoration: underline 2px; text-decoration-color: currentColor; }
   `;
   (document.head || document.documentElement).appendChild(style);
 }

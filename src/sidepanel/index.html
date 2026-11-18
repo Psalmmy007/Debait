@@ -2,22 +2,20 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Weekly Mind Facts</title>
   <link rel="stylesheet" href="./sidepanel.css" />
 </head>
 <body>
-  <!-- soft moving light behind the glass -->
-  <div class="glow" aria-hidden="true"><i></i><i></i><i></i></div>
-
   <header class="top">
-    <div class="brand"><span class="logo"></span><div><b>Weekly Mind Facts</b><small id="period">Last 7 days</small></div></div>
-    <span class="real" id="realChip">Real numbers</span>
+    <span class="word">Debait</span>
+    <span class="meta" id="period">Last 7 days</span>
   </header>
 
-  <p class="sample-note">Sample week: made-up numbers, not your reading.</p>
+  <p class="sample-note">Sample week. Made-up numbers, not your reading.</p>
 
   <!-- shown when there are no real numbers yet -->
-  <section class="empty-state glass">
+  <section class="empty-state">
     <h2>Your label is empty, for now</h2>
     <p>Debait only counts headlines that Gemini actually checked, so these numbers are always real.</p>
     <ol>
@@ -27,45 +25,41 @@
     </ol>
   </section>
 
-  <main class="label glass">
-    <div class="lab-col lab-a">
+  <main class="label">
     <h1>Mind Facts</h1>
-    <p class="serving">Serving size: your feed this week</p>
-    <div class="rule thick"></div>
+    <div class="row serving"><span>Serving size</span><span>Your feed, 7 days</span></div>
+    <div class="rule bar-10"></div>
 
     <div class="row big"><span>Headlines checked</span><b id="total">0</b></div>
-    <div class="rule mid"></div>
+    <div class="rule bar-4"></div>
+    <div class="row head"><span></span><span class="micro">% of headlines</span></div>
 
-    <div class="row hero"><span>Bait</span><b><em id="baitPct">0</em><small>%</small></b></div>
-    <p class="hint">Share of headlines written to make you angry, scared or envious.</p>
-    <div class="rule"></div>
-
+    <div class="row hero"><span>Bait</span><b><em id="baitPct">0</em>%</b></div>
     <div class="kinds" id="kinds">
-      <div class="row kind" data-k="rage"><span><i></i>Rage</span><span class="meter"><s></s></span><b>0%</b></div>
-      <div class="row kind" data-k="fear"><span><i></i>Fear</span><span class="meter"><s></s></span><b>0%</b></div>
-      <div class="row kind" data-k="envy"><span><i></i>Envy</span><span class="meter"><s></s></span><b>0%</b></div>
-      <div class="row kind" data-k="clean"><span><i></i>Clean</span><span class="meter"><s></s></span><b>0%</b></div>
+      <div class="row kind" data-k="rage"><span><i class="sq"></i>Rage</span><span class="meter"><s></s></span><b>0%</b></div>
+      <div class="row kind" data-k="fear"><span><i class="sq"></i>Fear</span><span class="meter"><s></s></span><b>0%</b></div>
+      <div class="row kind" data-k="envy"><span><i class="sq"></i>Envy</span><span class="meter"><s></s></span><b>0%</b></div>
+      <div class="row kind" data-k="clean"><span><i class="sq"></i>Clean</span><span class="meter"><s></s></span><b>0%</b></div>
     </div>
-    </div>
-    <div class="lab-col lab-b">
+    <div class="rule bar-10"></div>
+
     <h2>Bait by day</h2>
     <div class="days" id="days"></div>
     <p class="note" id="calmest"></p>
-    </div>
-    <div class="lab-col lab-c">
+    <div class="rule bar-4"></div>
+
     <h2>Top bait sources</h2>
     <ol class="sources" id="sources"></ol>
-    <div class="rule mid"></div>
+    <div class="rule bar-4"></div>
 
     <div class="row big"><span>Headlines debaited</span><b id="debaited">0</b></div>
-    <div class="rule thick"></div>
-    <p class="foot">Each headline counts once a day, and only when Gemini analysed it. Counts stay on this device; Debait never uploads your browsing history.</p>
-    </div>
+    <div class="rule bar-10"></div>
+    <p class="foot">* Each headline counts once a day, and only when Gemini analysed it. Counts stay on this device; Debait never uploads your browsing history.</p>
   </main>
 
-  <section class="tip glass-dark" id="tip"></section>
+  <section class="tip" id="tip"></section>
 
-  <button class="demo" id="seed">Show a sample week</button>
+  <button class="text-btn" id="seed">Show a sample week</button>
   <script type="module" src="./sidepanel.js"></script>
 </body>
 </html>

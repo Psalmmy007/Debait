@@ -1,11 +1,20 @@
-// The Ingredients card: why a headline is bait, word by word, plus what actually happened.
+// The Ingredients card: a nutrition label for one headline. Why it is bait, word by word,
+// what actually happened, and one action.
 import { reducedMotion } from './page.js';
 import { setHTML } from './html.js';
-import { ICON, LABEL, SOURCE } from './icons.js';
+import { ICON, SOURCE } from './icons.js';
 import { shareHeadline } from './share.js';
 
 const OUT = 'cubic-bezier(0.16, 1, 0.3, 1)';
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+const KIND = { rage: 'Rage bait', fear: 'Fear bait', envy: 'Envy bait', clean: 'Clean' };
+const WHY = {
+  rage: 'Written to make you angry',
+  fear: 'Written to make you afraid',
+  envy: 'Written to make you feel left behind',
+  clean: 'Plain and factual',
+};
 
 function markTriggers(text, triggers) {
   let html = esc(text);
@@ -26,8 +35,8 @@ export function closeCard() {
   cleanup();
   if (reducedMotion()) return el.remove();
   el.animate(
-    [{ opacity: 1, transform: 'none', filter: 'blur(0)' }, { opacity: 0, transform: 'translateY(-4px) scale(0.97)', filter: 'blur(4px)' }],
-    { duration: 180, easing: 'ease-in' },
+    [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(-3px) scale(0.98)' }],
+    { duration: 140, easing: 'ease-in' },
   ).finished.then(() => el.remove());
 }
 
@@ -47,43 +56,40 @@ export function openCard(layer, rec, rect, { onDebait, onRestore }) {
   el.className = 'card';
   el.dataset.kind = r.kind;
   el.setAttribute('role', 'dialog');
-  el.setAttribute('aria-label', 'Debait ingredients');
+  el.setAttribute('aria-label', `Ingredients: ${KIND[r.kind]}, bait score ${r.score} out of 100`);
 
   const rows = r.triggers.length
-    ? r.triggers.map((t) => `<li><span class="w">${esc(t.word)}</span><span class="why">${esc(t.why)}</span></li>`).join('')
-    : '<li class="none-row"><span class="none">No manipulative words found.</span></li>';
+    ? r.triggers.map((t) => `<li><b>${esc(t.word)}</b><span>${esc(t.why)}</span></li>`).join('')
+    : '<li><span class="none">No manipulative words. It sticks to the facts.</span></li>';
 
-  const C = 2 * Math.PI * 30; // gauge circumference
   setHTML(el, `
-    <div class="card-head">
-      <div>
-        <div class="card-kicker">Ingredients</div>
-        <div class="card-kind"><span class="tag" data-kind="${r.kind}"><span class="ico">${ICON[r.kind]}</span><span class="label">${LABEL[r.kind]}</span></span></div>
-      </div>
-      <div class="gauge" aria-label="Bait score ${r.score} out of 100">
-        <svg viewBox="0 0 68 68"><circle class="track" cx="34" cy="34" r="30"/><circle class="fill" cx="34" cy="34" r="30" stroke-dasharray="${C}" stroke-dashoffset="${C}"/></svg>
-        <b><span class="num">${r.score}</span><small>score</small></b>
-      </div>
+    <header class="c-head">
+      <span class="micro">Ingredients</span>
+      <span class="c-src" data-src="${esc(r.source)}"><i></i>${esc(SOURCE[r.source] || r.source)}</span>
+    </header>
+    <div class="rule thick"></div>
+    <div class="c-verdict">
+      <div><div class="c-kind"><i></i>${KIND[r.kind]}</div><span class="c-sub">${WHY[r.kind]}</span></div>
+      <div class="c-score" aria-hidden="true"><span class="num">${r.score}</span><small>/100</small></div>
     </div>
-    <p class="card-headline">${markTriggers(rec.text, r.triggers)}</p>
-    <div class="card-section"><h4>Why it pulls you in</h4><ul class="ingredients">${rows}</ul></div>
-    ${clean ? '' : `<div class="card-section">
-      <h4 class="cmp-head">Bait vs honest <button class="share" data-act="share">${ICON.share}<span>Share</span></button></h4>
+    <div class="c-meter" aria-hidden="true"><s></s></div>
+    <p class="c-headline">${markTriggers(rec.text, r.triggers)}</p>
+    <section class="c-sec"><h4 class="micro">${clean ? 'Hooks' : 'Why it hooks you'}</h4><ul class="c-list">${rows}</ul></section>
+    ${clean ? '' : `<section class="c-sec">
+      <h4 class="micro">Bait vs honest<span>Drag to compare</span></h4>
       <div class="compare" style="--cut: 100%">
         <div class="cmp honest"><span class="cmp-tag">Honest</span>${esc(r.honest_rewrite)}</div>
         <div class="cmp bait" aria-hidden="true"><span class="cmp-tag">Bait</span>${esc(rec.text)}</div>
         <span class="cmp-handle" aria-hidden="true"></span>
         <input type="range" min="0" max="100" value="100" aria-label="Slide between the bait and the honest headline" />
       </div>
-    </div>`}
-    <div class="card-foot">
-      <span class="source" data-src="${esc(r.source)}"><i></i>${esc(SOURCE[r.source] || r.source)}</span>
-      <div class="btns">
-        ${clean ? '<button class="btn" data-act="close">Close</button>' : debaited
-          ? '<button class="btn" data-act="restore">Show original</button>'
-          : `<button class="btn" data-act="close">Keep</button><button class="btn primary" data-act="debait">Debait it ${ICON.arrow}</button>`}
-      </div>
-    </div>`);
+    </section>
+    <footer class="c-foot">
+      <button class="btn ghost" data-act="share">${ICON.share}<span>Share</span></button>
+      ${debaited
+        ? '<button class="btn" data-act="restore">Show original</button>'
+        : `<button class="btn primary" data-act="debait">Debait it ${ICON.arrow}</button>`}
+    </footer>`}`);
 
   layer.appendChild(el);
 
@@ -101,50 +107,30 @@ export function openCard(layer, rec, rect, { onDebait, onRestore }) {
   el.style.top = `${top}px`;
   el.style.transformOrigin = `${rect.left + rect.width / 2 - left}px ${el.classList.contains('flip') ? '100%' : '0'}`;
 
-  const fill = el.querySelector('.gauge .fill');
-  const num = el.querySelector('.gauge .num');
-  const target = C * (1 - r.score / 100);
+  const meter = el.querySelector('.c-meter s');
+  const num = el.querySelector('.c-score .num');
   if (reducedMotion()) {
-    fill.style.strokeDashoffset = String(target);
+    meter.style.width = `${r.score}%`;
   } else {
-    // rises from the tag in 3D, then the details settle in one by one
     el.animate(
-      [
-        { opacity: 0, transform: 'perspective(900px) rotateX(-14deg) translateY(-6px) scale(0.94)', filter: 'blur(6px)' },
-        { opacity: 1, transform: 'perspective(900px) rotateX(0) translateY(0) scale(1)', filter: 'blur(0)' },
-      ],
-      { duration: 520, easing: OUT },
+      [{ opacity: 0, transform: 'translateY(-4px) scale(0.98)' }, { opacity: 1, transform: 'none' }],
+      { duration: 220, easing: OUT },
     );
-    el.querySelectorAll('.card-headline, .card-section h4, .ingredients li, .compare, .card-foot').forEach((p, i) => {
-      p.animate(
-        [{ opacity: 0, transform: 'translateY(6px)', filter: 'blur(3px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }],
-        { duration: 460, delay: 70 + i * 40, easing: OUT, fill: 'backwards' },
-      );
-    });
-    fill.animate([{ strokeDashoffset: C }, { strokeDashoffset: target }], { duration: 900, delay: 120, easing: OUT, fill: 'forwards' });
-    countUp(num, r.score, 900, 120);
+    meter.animate([{ width: '0%' }, { width: `${r.score}%` }], { duration: 800, delay: 80, easing: OUT, fill: 'forwards' });
+    countUp(num, r.score, 800, 80);
   }
-
-  // a gentle 3D tilt that follows the cursor
-  el.addEventListener('pointermove', (e) => {
-    if (reducedMotion()) return;
-    const r = el.getBoundingClientRect();
-    const x = (e.clientX - r.left) / r.width - 0.5;
-    const y = (e.clientY - r.top) / r.height - 0.5;
-    el.style.transform = `perspective(900px) rotateX(${(-y * 4).toFixed(2)}deg) rotateY(${(x * 4).toFixed(2)}deg)`;
-  });
-  el.addEventListener('pointerleave', () => { el.style.transform = ''; });
 
   el.addEventListener('click', (e) => {
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (act === 'debait') { closeCard(); onDebait(); }
     if (act === 'restore') { closeCard(); onRestore(); }
-    if (act === 'close') closeCard();
     if (act === 'share') {
-      const btn = e.target.closest('.share');
+      const btn = e.target.closest('[data-act="share"]');
+      const label = btn.querySelector('span');
+      label.textContent = 'Making image…';
       shareHeadline({ bait: rec.text, honest: r.honest_rewrite, kind: r.kind, score: r.score })
-        .then((how) => { btn.querySelector('span').textContent = how === 'copied' ? 'Copied' : 'Saved'; })
-        .catch(() => { btn.querySelector('span').textContent = 'Failed'; });
+        .then((how) => { label.textContent = how === 'copied' ? 'Image copied' : 'Image saved'; })
+        .catch(() => { label.textContent = 'Could not share'; });
     }
   });
 

@@ -8,6 +8,7 @@ import tagCss from '../styles/tag.css?inline';
 import { SPRING, reducedMotion } from './page.js';
 import { createOrbRenderer } from './orb-gl.js';
 import { setHTML, adoptCss } from './html.js';
+import { load, save } from '../ext.js';
 
 const ORB = 56;          // base size; the user can scale it (settings.orbSize)
 const ORB_MAX = 1.6;
@@ -86,7 +87,7 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
     wrap.classList.toggle('tip-right', pos.x < 240);
   };
 
-  chrome.storage.local.get('orbPos').then(({ orbPos }) => {
+  load('orbPos').then(({ orbPos }) => {
     if (orbPos) ratio = orbPos;
     pos = fromRatio();
     place();
@@ -101,11 +102,11 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
   addEventListener('resize', () => { pos = fromRatio(); place(); });
 
   // First time only: show the label for a few seconds, so double-click isn't a hidden feature.
-  chrome.storage.local.get('orbHintSeen').then(({ orbHintSeen }) => {
+  load('orbHintSeen').then(({ orbHintSeen }) => {
     if (orbHintSeen) return;
     setTimeout(() => wrap.classList.add('hint'), 1800);
     setTimeout(() => wrap.classList.remove('hint'), 8000);
-    chrome.storage.local.set({ orbHintSeen: true });
+    save({ orbHintSeen: true });
   });
 
   // The light on the glass follows your cursor around the page.
@@ -198,7 +199,7 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
     );
     if (wasDrag) {
       ratio = toRatio();
-      chrome.storage.local.set({ orbPos: ratio });
+      save({ orbPos: ratio });
     } else {
       tap();
     }
@@ -237,7 +238,7 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
     return { x: pos.x + S() / 2, y: pos.y + S() / 2 };
   }
 
-  const HINT = '<em><kbd>2×</kbd> settings &nbsp; <kbd>3×</kbd> talk to Debait</em>';
+  const HINT = '<em><kbd>2×</kbd> settings <kbd>3×</kbd> talk to Debait</em>';
   let lastCount = -1;
   return {
     destroy() { gl?.stop?.(); },

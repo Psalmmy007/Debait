@@ -1,4 +1,5 @@
-import '@fontsource-variable/plus-jakarta-sans';
+import '@fontsource-variable/inter';
+import '@fontsource-variable/bricolage-grotesque';
 // Asks for the microphone once for the whole extension, then starts the call.
 const msg = document.getElementById('msg');
 const btn = document.getElementById('allow');

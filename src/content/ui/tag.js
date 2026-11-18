@@ -1,4 +1,4 @@
-// A Rage / Fear / Envy / Clean keycap placed right after a headline.
+// A Rage / Fear / Envy / Clean label placed right after a headline.
 import tokens from '../styles/tokens.css?inline';
 import tagCss from '../styles/tag.css?inline';
 import { SPRING, reducedMotion } from './page.js';
@@ -38,8 +38,8 @@ export function createTag(anchor, { onClick }) {
 
   if (!reducedMotion()) {
     btn.animate(
-      [{ transform: 'translateY(4px) scale(0.9)', opacity: 0, filter: 'blur(3px)' }, { transform: 'none', opacity: 1, filter: 'blur(0)' }],
-      { duration: 420, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' },
+      [{ transform: 'translateY(3px)', opacity: 0 }, { transform: 'none', opacity: 1 }],
+      { duration: 280, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' },
     );
   }
 
@@ -71,17 +71,17 @@ export function createTag(anchor, { onClick }) {
       morph(() => {
         btn.classList.remove('pending', 'debaited');
         btn.dataset.kind = result.kind;
-        setHTML(ico, ICON[result.kind]);
+        setHTML(ico, result.kind === 'clean' ? ICON.check : ''); // bait kinds show a colour swatch (CSS)
         label.textContent = LABEL[result.kind];
         score.textContent = result.kind === 'clean' ? '' : String(result.score);
-        btn.title = `${LABEL[result.kind]}${result.kind === 'clean' ? '' : ` · bait score ${result.score}`} · ${SOURCE[result.source] || ''} · click for ingredients`;
+        btn.title = `${LABEL[result.kind]}${result.kind === 'clean' ? '' : `, bait score ${result.score}`}. ${SOURCE[result.source] || ''}. Click for ingredients.`;
         btn.setAttribute('aria-label', btn.title);
       });
     },
     setDebaited(on, result) {
       morph(() => {
         btn.classList.toggle('debaited', on);
-        setHTML(ico, on ? ICON.check : ICON[result.kind]);
+        setHTML(ico, on || result.kind === 'clean' ? ICON.check : '');
         label.textContent = on ? 'Debaited' : LABEL[result.kind];
       }, { flip: true });
     },

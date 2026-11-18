@@ -1,6 +1,21 @@
-// Share card: a clean 1200x675 image of a headline, bait vs honest, drawn on a canvas.
-const LABEL = { rage: 'Rage bait', fear: 'Fear bait', envy: 'Envy bait', clean: 'Clean' };
-const FONT = '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+// Share card: a 1200x675 image of a headline, bait vs honest, printed like a Debait label.
+const KIND = { rage: 'Rage bait', fear: 'Fear bait', envy: 'Envy bait', clean: 'Clean' };
+const COLOR = { rage: '#e0362c', fear: '#e08600', envy: '#7c5ce0', clean: '#16a058' };
+const SANS = '"Debait Inter", "Inter Variable", -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+const DISPLAY = `"Debait Bricolage", ${SANS}`;
+const SERIF = '"Debait Newsreader", Georgia, "Times New Roman", serif';
+const INK = '#111111';
+
+// the page declares Debait's fonts; make sure they are loaded before drawing with them
+async function fontsReady() {
+  try {
+    await Promise.all([
+      document.fonts.load(`800 40px "Debait Bricolage"`),
+      document.fonts.load(`600 40px "Debait Inter"`),
+      document.fonts.load(`600 40px "Debait Newsreader"`),
+    ]);
+  } catch { /* fall back to system fonts */ }
+}
 
 function wrap(ctx, text, maxW) {
   const words = text.split(/\s+/);
@@ -14,66 +29,91 @@ function wrap(ctx, text, maxW) {
   return lines;
 }
 
-/** Text block that shrinks until it fits maxLines. Returns the height used. */
-function block(ctx, text, x, y, maxW, { size, weight, color, maxLines = 3, strike = false }) {
+/** Text block that shrinks until it fits maxLines. Draws from baseline y; returns the last baseline. */
+function block(ctx, text, x, y, maxW, { size, weight, family, color, maxLines, strike, lineHeight = 1.18 }) {
   let s = size;
   let lines;
   do {
-    ctx.font = `${weight} ${s}px ${FONT}`;
+    ctx.font = `${weight} ${s}px ${family}`;
     lines = wrap(ctx, text, maxW);
+    if (lines.length <= maxLines) break;
     s -= 2;
-  } while (lines.length > maxLines && s > 22);
-  const lh = Math.round((s + 2) * 1.18);
+  } while (s > 22);
+  lines = lines.slice(0, maxLines);
+  const lh = Math.round(s * lineHeight);
   ctx.fillStyle = color;
-  lines.slice(0, maxLines).forEach((l, i) => {
+  lines.forEach((l, i) => {
     ctx.fillText(l, x, y + i * lh);
     if (strike) {
-      const w = ctx.measureText(l).width;
-      ctx.fillRect(x, y + i * lh - (s + 2) * 0.32, w, Math.max(2, s / 16));
+      ctx.fillStyle = strike;
+      ctx.fillRect(x, y + i * lh - s * 0.32, ctx.measureText(l).width, Math.max(3, s / 12));
+      ctx.fillStyle = color;
     }
   });
-  return Math.min(lines.length, maxLines) * lh;
+  return y + (lines.length - 1) * lh;
 }
 
-function orb(ctx, cx, cy, r) {
-  const g = ctx.createRadialGradient(cx - r * 0.25, cy - r * 0.35, r * 0.1, cx, cy + r * 0.2, r);
-  g.addColorStop(0, '#d9d9de');
-  g.addColorStop(0.45, '#4a4a50');
-  g.addColorStop(1, '#050506');
-  ctx.fillStyle = g;
-  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 1.5; ctx.stroke();
+function micro(ctx, text, x, y, color = '#737373') {
+  ctx.font = `700 17px ${SANS}`;
+  ctx.letterSpacing = '2.5px';
+  ctx.fillStyle = color;
+  ctx.fillText(text.toUpperCase(), x, y);
+  ctx.letterSpacing = '0px';
 }
 
 export async function makeShareImage({ bait, honest, kind, score }) {
-  const W = 1200, H = 675, P = 72;
+  await fontsReady();
+  const W = 1200, H = 675, M = 40, P = 40;
   const c = document.createElement('canvas');
   c.width = W; c.height = H;
   const ctx = c.getContext('2d');
-  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
-  const glow = ctx.createRadialGradient(W * 0.85, -60, 10, W * 0.85, -60, 700);
-  glow.addColorStop(0, 'rgba(255,255,255,0.12)'); glow.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
   ctx.textBaseline = 'alphabetic';
 
-  // header: orb + wordmark, kind + score on the right
-  orb(ctx, P + 18, P + 4, 18);
-  ctx.fillStyle = '#fff'; ctx.font = `700 30px ${FONT}`; ctx.fillText('Debait', P + 48, P + 15);
-  ctx.font = `600 22px ${FONT}`; ctx.fillStyle = 'rgba(255,255,255,0.6)';
-  const right = `${LABEL[kind] || 'Bait'} · ${score}/100`;
-  ctx.fillText(right, W - P - ctx.measureText(right).width, P + 12);
+  // paper, and the label printed on it
+  ctx.fillStyle = '#f3f2ee'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(M, M, W - 2 * M, H - 2 * M);
+  ctx.strokeStyle = INK; ctx.lineWidth = 3; ctx.strokeRect(M + 1.5, M + 1.5, W - 2 * M - 3, H - 2 * M - 3);
+  const L = M + P;
+  const R = W - M - P;
+  const maxW = R - L;
 
-  let y = P + 110;
-  ctx.font = `600 20px ${FONT}`; ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.fillText('THE BAIT', P, y);
-  y += 50;
-  y += block(ctx, bait, P, y, W - 2 * P, { size: 40, weight: 600, color: 'rgba(255,255,255,0.5)', strike: true });
-  y += 44;
-  ctx.font = `600 20px ${FONT}`; ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.fillText('THE NEWS', P, y);
-  y += 58;
-  block(ctx, honest, P, y, W - 2 * P, { size: 52, weight: 700, color: '#fff' });
+  // header: wordmark left, verdict right
+  ctx.fillStyle = INK; ctx.font = `800 46px ${DISPLAY}`; ctx.letterSpacing = '-1.5px';
+  ctx.fillText('Debait', L, M + P + 36);
+  ctx.letterSpacing = '0px';
+  ctx.font = `700 21px ${SANS}`;
+  ctx.letterSpacing = '1.5px';
+  const verdict = `${(KIND[kind] || 'Bait').toUpperCase()}  ·  ${score}/100`;
+  const vw = ctx.measureText(verdict).width;
+  ctx.fillText(verdict, R - vw, M + P + 30);
+  ctx.letterSpacing = '0px';
+  ctx.fillStyle = COLOR[kind] || INK;
+  ctx.fillRect(R - vw - 30, M + P + 13, 16, 16);
 
-  ctx.font = `500 20px ${FONT}`; ctx.fillStyle = 'rgba(255,255,255,0.4)';
-  ctx.fillText('Read the news. Not the bait.', P, H - P + 12);
+  // thick rule
+  let y = M + P + 62;
+  ctx.fillStyle = INK; ctx.fillRect(L, y, maxW, 12);
+  y += 12;
+
+  micro(ctx, 'The bait', L, y + 46);
+  y = block(ctx, bait, L, y + 92, maxW, { size: 34, weight: 600, family: SANS, color: '#8a8a8a', maxLines: 2, strike: COLOR[kind] || INK });
+
+  // medium rule
+  y += 28;
+  ctx.fillStyle = INK; ctx.fillRect(L, y, maxW, 5);
+  y += 5;
+
+  micro(ctx, 'The news', L, y + 44);
+  block(ctx, honest, L, y + 102, maxW, { size: 54, weight: 600, family: SERIF, color: INK, maxLines: 3, lineHeight: 1.12 });
+
+  // footer
+  const fy = H - M - P;
+  ctx.fillStyle = 'rgba(17,17,17,0.14)'; ctx.fillRect(L, fy - 34, maxW, 1);
+  ctx.font = `500 19px ${SANS}`; ctx.fillStyle = '#555555';
+  ctx.fillText('Read the news. Not the bait.', L, fy);
+  const tag = 'Nutrition facts for your feed';
+  ctx.fillText(tag, R - ctx.measureText(tag).width, fy);
+
   return new Promise((r) => c.toBlob(r, 'image/png'));
 }
 

@@ -8,6 +8,7 @@ import { createTag } from './ui/tag.js';
 import { openCard, closeCard } from './ui/card.js';
 import { createSettingsPanel } from './ui/settings.js';
 import { setSettings } from '../shared/storage.js';
+import { send, extensionAlive } from './ext.js';
 
 const BATCH = 8;
 const PARALLEL = 3;
@@ -23,7 +24,7 @@ const mark = (k, v) => { try { document.documentElement.setAttribute(`data-debai
 const report = (err) => {
   const message = String(err?.stack || err?.message || err).slice(0, 600);
   mark('error', message);
-  try { chrome.runtime.sendMessage({ type: 'debait/error', where: `content ${location.hostname}`, message }).catch(() => {}); } catch { /* extension reloaded */ }
+  send({ type: 'debait/error', where: `content ${location.hostname}`, message });
 };
 mark('loaded', chrome.runtime?.getManifest?.().version || 'yes');
 
@@ -59,7 +60,7 @@ async function start() {
   };
   // this copy is the old one now: step aside quietly
   document.addEventListener('debait:takeover', stopHere, { once: true });
-  const extensionGone = () => { if (chrome.runtime?.id) return false; stopHere(); return true; };
+  const extensionGone = () => { if (extensionAlive()) return false; stopHere(); return true; };
   let pageObserver = null;
   injectPageStyles();
 
@@ -121,7 +122,7 @@ async function start() {
   let lastSummary = null;
   async function summarizePage() {
     if (lastSummary?.url === location.href) return lastSummary;
-    const res = await chrome.runtime.sendMessage({ type: MSG.SUMMARY, page: pageForSummary() });
+    const res = await send({ type: MSG.SUMMARY, page: pageForSummary() });
     if (!res?.ok) throw new Error(res?.error || 'no response');
     lastSummary = { url: location.href, summary: res.summary, source: res.source };
     return lastSummary;
@@ -160,7 +161,7 @@ async function start() {
       return r.error ? { error: r.error } : { summary: r.summary };
     }
     if (name === 'open_mind_facts') {
-      const res = await chrome.runtime.sendMessage({ type: 'debait/openSidePanel' }).catch(() => null);
+      const res = await send({ type: 'debait/openSidePanel' });
       return res?.ok ? { ok: true } : { ok: false, tip: 'Tell the user to click the Debait icon, then Weekly Mind Facts.' };
     }
     return { error: 'unknown tool' };
@@ -177,7 +178,7 @@ async function start() {
     else orb.setVoice({ mode: 'idle' });
   }
   // a call may already be running when this page loads
-  if (settings.voice) chrome.runtime.sendMessage({ target: 'offscreen', type: 'debait/call-status' }).then((r) => r?.inCall && onCallState({ state: 'live' })).catch(() => {});
+  if (settings.voice) send({ target: 'offscreen', type: 'debait/call-status' }).then((r) => r?.inCall && onCallState({ state: 'live' }));
 
   // ---------- helpers ----------
   const paint = (hotRecord) => paintHighlights(records.values(), { enabled: settings.showTags, hotRecord });
@@ -283,7 +284,7 @@ async function start() {
     inflight++;
     refreshOrb();
     try {
-      const res = await chrome.runtime.sendMessage({ type: MSG.SCORE, texts: batch.map((r) => r.text) });
+      const res = await send({ type: MSG.SCORE, texts: batch.map((r) => r.text) });
       if (!res?.ok) throw new Error(res?.error || 'no response');
       stats.hits += res.cacheHits;
       stats.scored += batch.length;
@@ -291,7 +292,7 @@ async function start() {
       if (res.results.some((r) => r?.source === 'mock')) upgradeSoon();
       console.debug(`[Debait] scored ${batch.length} (cache hits so far: ${stats.hits}/${stats.scored})`);
     } catch (err) {
-      console.warn('[Debait] scoring failed:', err.message);
+      console.debug('[Debait] scoring failed:', err.message); // the orb tells the user; not an extension error
       // keep the records (no rescan loop), hide the waiting pills, tell the user why, retry in a minute
       batch.forEach((rec) => { rec.queued = false; rec.failed = true; rec.tag?.setVisible(false); });
       notice = /LOCAL_ONLY/.test(err.message)
@@ -360,7 +361,7 @@ async function start() {
   function debaitOne(rec) {
     swapToRewrite(rec).then(() => { paint(); refreshOrb(); });
     setTimeout(() => rec.tag?.setDebaited(true, rec.result), 240);
-    if (rec.result.source !== 'mock') chrome.runtime.sendMessage({ type: 'debait/debaited', count: 1 });
+    if (rec.result.source !== 'mock') send({ type: 'debait/debaited', count: 1 });
     refreshOrb();
   }
 
@@ -393,7 +394,7 @@ async function start() {
       refreshOrb();
       Promise.all(jobs).then(() => { paint(); refreshOrb(); });
       const real = bait.filter((r) => r.result.source !== 'mock').length;
-      if (real) chrome.runtime.sendMessage({ type: 'debait/debaited', count: real });
+      if (real) send({ type: 'debait/debaited', count: real });
     } else if (done.length) {
       // undo: the wave flows back into the orb
       const { R, duration } = playRipple(origin, { undo: true });

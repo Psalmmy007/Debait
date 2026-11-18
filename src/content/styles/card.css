@@ -1,128 +1,91 @@
-/* Ingredients card: an Apple-style popover. */
+/* Ingredients card: a nutrition label for one headline. */
 .card {
+  --k: var(--ink);
   position: fixed;
-  width: 368px;
+  width: 344px;
   max-width: calc(100vw - 24px);
-  padding: 20px;
-  border-radius: 22px;
-  background: var(--material);
-  backdrop-filter: blur(40px) saturate(1.8);
-  -webkit-backdrop-filter: blur(40px) saturate(1.8);
-  color: var(--label);
-  font: 400 14px/1.45 var(--font);
-  letter-spacing: -0.005em;
+  max-height: calc(100vh - 24px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 15px 18px 16px;
+  border-radius: 14px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 13.5px/1.45 var(--sans);
   box-shadow: var(--shadow);
   pointer-events: auto;
   transform-origin: top left;
-  transition: transform 0.3s var(--ease);
-  will-change: transform;
+  scrollbar-width: thin;
 }
 .card.flip { transform-origin: bottom left; }
+.card[data-kind='rage'] { --k: var(--rage); }
+.card[data-kind='fear'] { --k: var(--fear); }
+.card[data-kind='envy'] { --k: var(--envy); }
+.card[data-kind='clean'] { --k: var(--clean); }
 
-.card-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
-.card-kicker { font: 600 13px/1 var(--font); color: var(--label-2); letter-spacing: -0.01em; }
-.card-kind { margin-top: 9px; }
-/* inside the card, the kind capsule follows the card's appearance */
-.card-kind .tag { --bg: var(--button); --fg: var(--button-label); cursor: default; box-shadow: none; padding-right: 9px; }
-.card-kind .tag:hover { transform: none; }
+.c-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.c-src { display: inline-flex; align-items: center; gap: 6px; font: 550 11.5px/1 var(--sans); color: var(--ink-2); white-space: nowrap; }
+.c-src i { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); }
+.c-src[data-src='on-device'] i { background: var(--clean); }
+.c-src[data-src='cloud'] i { background: var(--focus); }
+.card > .rule.thick { margin: 10px 0 13px; }
 
-/* score ring */
-.gauge { position: relative; width: 64px; height: 64px; flex: none; }
-.gauge svg { width: 64px; height: 64px; transform: rotate(-90deg); }
-.gauge circle { fill: none; stroke-width: 5; }
-.gauge .track { stroke: var(--fill); }
-.gauge .fill { stroke: var(--label); stroke-linecap: round; }
-.gauge b {
+/* the verdict: kind on the left, score on the right, a ruled meter under it */
+.c-verdict { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.c-kind { display: flex; align-items: center; gap: 8px; font: 800 25px/1 var(--display); letter-spacing: -0.035em; }
+.c-kind i { width: 12px; height: 12px; border-radius: 3px; background: var(--k); flex: none; }
+.c-sub { display: block; margin-top: 7px; font-size: 12.5px; color: var(--ink-2); }
+.c-score { font: 800 50px/0.78 var(--display); letter-spacing: -0.05em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.c-score small { margin-left: 2px; font: 600 12.5px/1 var(--sans); letter-spacing: 0; color: var(--ink-3); }
+.c-meter { position: relative; height: 6px; margin: 13px 0 0; border-radius: 3px; background: var(--fill); overflow: hidden; }
+.c-meter s { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--k); }
+.c-meter::after {
+  /* a tick every ten points */
+  content: '';
   position: absolute;
   inset: 0;
-  display: grid;
-  place-items: center;
-  align-content: center;
-  font: 700 21px/1 var(--font-display);
-  letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums;
-}
-.gauge b small { display: block; margin-top: 2px; font: 500 10px/1 var(--font); color: var(--label-3); letter-spacing: 0; }
-
-.card-headline { margin: 16px 0 0; font: 600 18px/1.32 var(--serif); color: var(--label); letter-spacing: -0.01em; text-wrap: pretty; }
-.card-headline mark { color: inherit; background: var(--mark); border-radius: 4px; padding: 0 2px; }
-
-.card-section { margin-top: 18px; }
-.card-section h4 { margin: 0 0 8px 2px; font: 600 13px/1 var(--font); color: var(--label-2); letter-spacing: -0.01em; }
-
-/* grouped list, like Settings */
-.ingredients { list-style: none; margin: 0; padding: 0 14px; border-radius: 14px; background: var(--fill-2); }
-.ingredients li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 11px 0; border-bottom: 0.5px solid var(--sep); }
-.ingredients li:last-child { border-bottom: 0; }
-.ingredients .w { font-weight: 600; color: var(--label); }
-.ingredients .why { color: var(--label-2); text-align: right; font-size: 13px; }
-.ingredients .none { color: var(--label-2); }
-
-.honest {
-  padding: 13px 14px;
-  border-radius: 14px;
-  background: var(--surface);
-  color: var(--label);
-  font: 500 16px/1.4 var(--serif);
-  box-shadow: 0 0 0 0.5px var(--hairline), 0 1px 3px rgba(0, 0, 0, 0.06);
-  text-wrap: pretty;
+  background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1.5px), var(--paper) calc(10% - 1.5px) 10%);
 }
 
-.card-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 18px; }
-.source { display: inline-flex; align-items: center; gap: 6px; font: 500 12px/1 var(--font); color: var(--label-3); }
-.source i { width: 6px; height: 6px; border-radius: 50%; background: var(--toggle-on); }
-.source[data-src='mock'] i { background: var(--label-3); }
-.source[data-src='cloud'] i { background: #0a84ff; }
-.btns { display: flex; gap: 8px; }
+.c-headline { margin: 14px 0 0; font: 500 17px/1.36 var(--serif); letter-spacing: -0.005em; text-wrap: pretty; }
+.c-headline mark { color: inherit; background: var(--mark); padding: 0 2px; border-radius: 2px; }
 
-/* capsule buttons */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 34px;
-  padding: 0 15px;
-  border: 0;
-  border-radius: 999px;
-  background: var(--fill);
-  color: var(--label);
-  font: 600 13.5px/1 var(--font);
-  letter-spacing: -0.01em;
-  cursor: pointer;
-  transition: transform 0.3s var(--spring), background 0.2s var(--ease), opacity 0.2s var(--ease);
-}
-.btn:hover { background: color-mix(in srgb, var(--label) 14%, transparent); }
-.btn:active { transform: scale(0.96); }
-.btn:focus-visible { outline: 2px solid #0071e3; outline-offset: 2px; }
-.btn.primary { background: var(--button); color: var(--button-label); }
-.btn.primary:hover { background: var(--button); opacity: 0.86; }
-.btn svg { width: 12px; height: 12px; }
+.c-sec { margin-top: 14px; padding-top: 11px; border-top: 3px solid var(--ink); }
+.c-sec h4 { display: flex; align-items: center; justify-content: space-between; margin: 0 0 8px; }
+.c-sec h4 span { letter-spacing: 0.04em; text-transform: none; font-weight: 500; }
+
+.c-list { list-style: none; margin: 0; padding: 0; }
+.c-list li { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; padding: 7px 0; border-bottom: 1px solid var(--rule); }
+.c-list li:last-child { border-bottom: 0; padding-bottom: 0; }
+.c-list b { font-weight: 700; }
+.c-list span { color: var(--ink-2); text-align: right; font-size: 13px; }
+.c-list .none { color: var(--ink-2); text-align: left; }
 
 /* bait vs honest: two layers in one spot; the bait layer is clipped at --cut, drag to wipe */
-.cmp-head { display: flex; align-items: center; justify-content: space-between; }
-.share {
-  display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px; border: 0; border-radius: 999px;
-  background: var(--fill); color: var(--label); font: 600 12px/1 var(--font); cursor: pointer;
-  transition: transform 0.3s var(--spring);
-}
-.share:active { transform: scale(0.94); }
-.share svg { width: 11px; height: 11px; }
-.compare { position: relative; display: grid; border-radius: 14px; overflow: hidden; box-shadow: 0 0 0 0.5px var(--hairline), 0 1px 3px rgba(0, 0, 0, 0.06); }
-.cmp { grid-area: 1 / 1; padding: 30px 14px 14px; font: 500 16px/1.4 var(--serif); text-wrap: pretty; }
-.cmp.honest { background: var(--surface); color: var(--label); }
-.cmp.bait { background: var(--button); color: var(--button-label); clip-path: inset(0 calc(100% - var(--cut)) 0 0); }
-.cmp-tag { position: absolute; top: 10px; font: 600 10.5px/1 var(--font); letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.6; }
-.cmp.honest .cmp-tag { right: 14px; }
-.cmp.bait .cmp-tag { left: 14px; }
-.cmp-handle { position: absolute; top: 0; bottom: 0; left: var(--cut); width: 2px; translate: -1px 0; background: var(--label); pointer-events: none; }
+.compare { position: relative; display: grid; border: 1px solid var(--rule); border-radius: 9px; overflow: hidden; }
+.compare:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+.cmp { grid-area: 1 / 1; padding: 27px 13px 13px; font: 500 15.5px/1.4 var(--serif); text-wrap: pretty; }
+.cmp.honest { background: var(--paper); color: var(--ink); }
+.cmp.bait { background: var(--btn); color: var(--btn-ink); clip-path: inset(0 calc(100% - var(--cut)) 0 0); }
+.cmp-tag { position: absolute; top: 10px; font: 650 9.5px/1 var(--sans); letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.6; }
+.cmp.honest .cmp-tag { right: 13px; }
+.cmp.bait .cmp-tag { left: 13px; }
+.cmp-handle { position: absolute; top: 0; bottom: 0; left: var(--cut); width: 2px; translate: -1px 0; background: var(--k); pointer-events: none; }
 .cmp-handle::after {
-  content: ''; position: absolute; top: 50%; left: 50%; width: 22px; height: 22px; translate: -50% -50%;
-  border-radius: 50%; background: #fff; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25), 0 0 0 0.5px rgba(0, 0, 0, 0.08);
+  /* the grip: a solid tab with a notch, so it reads as something to drag */
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 28px;
+  translate: -50% -50%;
+  border-radius: 4px;
+  background: var(--k) linear-gradient(var(--paper), var(--paper)) center / 2px 10px no-repeat;
+  box-shadow: 0 0 0 2px var(--paper);
 }
 .compare input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: ew-resize; }
 
-/* score ring in the kind's color */
-.card[data-kind='rage'] .gauge .fill { stroke: var(--rage); }
-.card[data-kind='fear'] .gauge .fill { stroke: var(--fear); }
-.card[data-kind='envy'] .gauge .fill { stroke: var(--envy); }
-.card[data-kind='clean'] .gauge .fill { stroke: var(--clean); }
+.c-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 14px; }
+.btn.ghost { border-color: transparent; padding: 0 10px 0 8px; color: var(--ink-2); }
+.btn.ghost:hover { color: var(--ink); background: var(--fill-2); border-color: transparent; }

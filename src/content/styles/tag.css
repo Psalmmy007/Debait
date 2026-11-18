@@ -1,65 +1,77 @@
-/* Tags: small Apple-style capsules after each headline.
-   They match the page they sit on (light page = dark capsule for bait), not the system theme. */
+/* Tags: a small printed label after each headline: the kind and the bait score.
+   They match the page they sit on (light text = dark page), not the system theme. */
 .tag {
-  --bg: #1d1d1f;
+  --bg: #111111;
   --fg: #ffffff;
-  --chip: rgba(255, 255, 255, 0.18);
+  --line: #111111;
+  --div: rgba(255, 255, 255, 0.24);
+  --rage: #ff5144;
+  --fear: #ffa21f;
+  --envy: #a387ff;
+  --clean: #16a058;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  height: 22px;
-  padding: 0 3px 0 8px;
-  border: 0;
-  border-radius: 999px;
+  gap: 6px;
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
   background: var(--bg);
   color: var(--fg);
-  font: 600 11.5px/1 var(--font);
-  letter-spacing: -0.01em;
+  font: 650 10px/1 var(--sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   white-space: nowrap;
   cursor: pointer;
   vertical-align: middle;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12), 0 4px 10px -4px rgba(0, 0, 0, 0.25);
-  transition: transform 0.35s var(--spring), box-shadow 0.25s var(--ease), background 0.35s var(--ease), color 0.35s var(--ease);
-  -webkit-font-smoothing: antialiased;
+  transition: transform 0.25s var(--spring), box-shadow 0.2s var(--ease), background 0.25s var(--ease), color 0.25s var(--ease), border-color 0.25s var(--ease);
 }
-.tag:hover { transform: scale(1.05); box-shadow: 0 2px 4px rgba(0, 0, 0, 0.14), 0 8px 18px -6px rgba(0, 0, 0, 0.3); }
-.tag:active { transform: scale(0.95); }
-.tag:focus-visible { outline: 2px solid #0071e3; outline-offset: 2px; }
+.tag:hover { transform: translateY(-1px); box-shadow: 0 5px 12px -5px rgba(0, 0, 0, 0.4); }
+.tag:active { transform: scale(0.96); }
+.tag:focus-visible { outline: 2px solid #2f6bff; outline-offset: 2px; }
 
-.tag .ico { display: inline-grid; place-items: center; width: 11px; height: 11px; flex: none; }
-.tag .ico svg { width: 11px; height: 11px; }
+.tag .ico { display: inline-grid; place-items: center; width: 8px; height: 8px; flex: none; border-radius: 2px; }
+.tag .ico svg { width: 10px; height: 10px; }
 .tag .score {
   display: inline-flex;
   align-items: center;
-  height: 16px;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: var(--chip);
-  color: var(--fg);
-  font: 700 10.5px/1 var(--font-display);
+  align-self: stretch;
+  padding-left: 6px;
+  border-left: 1px solid var(--div);
+  font: 700 10.5px/1 var(--sans);
+  letter-spacing: 0;
   font-variant-numeric: tabular-nums;
 }
 
-/* on dark pages, the capsule flips to light */
-.tag[data-tone='dark'] { --bg: #f5f5f7; --fg: #1d1d1f; --chip: rgba(0, 0, 0, 0.1); }
+/* on dark pages the label prints the other way round */
+.tag[data-tone='dark'] { --bg: #f2f2ef; --fg: #111111; --line: #f2f2ef; --div: rgba(0, 0, 0, 0.18); --rage: #e0362c; --fear: #d97f00; --envy: #7c5ce0; --clean: #3ccb7f; }
+
+/* the kind, as a colour swatch beside its name */
+.tag[data-kind='rage'] .ico { background: var(--rage); }
+.tag[data-kind='fear'] .ico { background: var(--fear); }
+.tag[data-kind='envy'] .ico { background: var(--envy); }
 
 /* still reading */
-.tag.pending { --bg: rgba(120, 120, 128, 0.14); --fg: #6e6e73; box-shadow: none; padding-right: 8px; }
-.tag.pending[data-tone='dark'] { --bg: rgba(120, 120, 128, 0.3); --fg: #a1a1a6; }
+.tag.pending { --bg: transparent; --fg: rgba(17, 17, 17, 0.5); --line: rgba(17, 17, 17, 0.18); border-style: dashed; cursor: default; }
+.tag.pending:hover { transform: none; box-shadow: none; }
+.tag.pending .ico { width: 10px; }
 .tag.pending .score { display: none; }
 .tag.pending .ico circle { animation: tag-blink 1.1s ease-in-out infinite; }
 .tag.pending .ico circle:nth-child(2) { animation-delay: 0.15s; }
 .tag.pending .ico circle:nth-child(3) { animation-delay: 0.3s; }
+.tag.pending[data-tone='dark'] { --fg: rgba(255, 255, 255, 0.55); --line: rgba(255, 255, 255, 0.24); }
 
-/* nothing wrong: stay out of the way */
-.tag[data-kind='clean'] { --bg: rgba(120, 120, 128, 0.12); --fg: #3a3a3c; box-shadow: none; padding-right: 8px; font-weight: 550; }
-.tag[data-kind='clean'][data-tone='dark'] { --bg: rgba(120, 120, 128, 0.28); --fg: #e5e5ea; }
+/* nothing wrong: a quiet outline that stays out of the way */
+.tag[data-kind='clean'] { --bg: transparent; --fg: #444444; --line: rgba(17, 17, 17, 0.2); }
+.tag[data-kind='clean'] .ico { width: 10px; color: var(--clean); }
 .tag[data-kind='clean'] .score { display: none; }
+.tag[data-kind='clean'][data-tone='dark'] { --fg: #d6d6d2; --line: rgba(255, 255, 255, 0.26); }
 
-/* rewritten: a calm white capsule with a check */
-.tag.debaited { --bg: #ffffff; --fg: #1d1d1f; padding-right: 8px; box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.12), 0 4px 10px -4px rgba(0, 0, 0, 0.18); }
-.tag.debaited[data-tone='dark'] { --bg: rgba(255, 255, 255, 0.16); --fg: #ffffff; box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.2); }
+/* rewritten: a green outline with a check */
+.tag.debaited { --bg: transparent; --fg: #12804a; --line: rgba(22, 160, 88, 0.6); }
+.tag.debaited .ico { width: 10px; background: none; color: currentColor; }
 .tag.debaited .score { display: none; }
+.tag.debaited[data-tone='dark'] { --fg: #4ad38a; --line: rgba(60, 203, 127, 0.6); }
 
 @keyframes tag-blink { 0%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
 

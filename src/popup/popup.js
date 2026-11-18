@@ -1,11 +1,10 @@
-import '@fontsource-variable/plus-jakarta-sans';
 import '@fontsource-variable/inter';
 import '@fontsource-variable/bricolage-grotesque';
 import { MSG } from '../engine/contract.js';
 import { getSettings, setSettings, getRecentStats } from '../shared/storage.js';
 
 const $ = (s) => document.querySelector(s);
-const SRC_LABEL = { 'on-device': 'On-device', cloud: 'Cloud', mock: 'Quick estimate', none: 'Not ready' };
+const SRC_LABEL = { 'on-device': 'Gemini Nano, on device', cloud: 'Gemini, in the cloud', mock: 'Quick estimate', none: 'AI not ready' };
 
 async function renderToday() {
   const [today] = (await getRecentStats(1));
@@ -13,8 +12,8 @@ async function renderToday() {
   const pct = today.total ? Math.round((bait / today.total) * 100) : 0;
   countUp($('#pct'), pct);
   $('#sub').textContent = today.total
-    ? `of ${today.total} headline${today.total === 1 ? '' : 's'} today were bait`
-    : 'No headlines read yet today';
+    ? `${today.total.toLocaleString()} headline${today.total === 1 ? '' : 's'} read`
+    : 'No headlines yet';
   for (const k of ['rage', 'fear', 'envy', 'clean']) {
     $(`#bar [data-k='${k}']`).style.width = today.total ? `${(today[k] / today.total) * 100}%` : '0';
     $(`#legend [data-k='${k}'] b`).textContent = today[k];
@@ -36,7 +35,7 @@ async function renderEngine() {
     }
   } catch {
     chip.dataset.src = 'none';
-    chip.querySelector('span').textContent = 'Not ready';
+    chip.querySelector('span').textContent = 'AI not ready';
   }
 }
 
@@ -88,9 +87,15 @@ $('#turnOn').addEventListener('click', async () => {
 });
 
 $('#openFacts').addEventListener('click', async () => {
-  const win = await chrome.windows.getCurrent();
-  await chrome.sidePanel.open({ windowId: win.id });
-  window.close();
+  try {
+    const win = await chrome.windows.getCurrent();
+    await chrome.sidePanel.open({ windowId: win.id });
+    window.close();
+  } catch {
+    // the side panel can be blocked on some pages: open Mind Facts in a tab instead
+    chrome.tabs.create({ url: chrome.runtime.getURL('src/sidepanel/index.html') });
+    window.close();
+  }
 });
 
 function countUp(el, to) {
@@ -112,7 +117,7 @@ $('#copyToken').addEventListener('click', async () => {
 (async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   let host = '';
-  try { host = new URL(tab.url).hostname.replace(/^www./, ''); } catch { /* chrome:// pages */ }
+  try { if (/^https?:/.test(tab.url)) host = new URL(tab.url).hostname.replace(/^www./, ''); } catch { /* chrome:// pages */ }
   if (!host) { $('.site').hidden = true; return; }
   $('#host').textContent = host;
   const s = await getSettings();
