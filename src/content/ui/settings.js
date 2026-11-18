@@ -33,7 +33,7 @@ const LEGEND = [
  * @param orbCenter   () => {x, y}
  * @param onOpenChange (open) => void
  */
-export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpenChange }) {
+export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpenChange, onSize }) {
   let el = null;
   let closing = false;
   let restoreFocus = () => {};
@@ -112,6 +112,10 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
             <input type="checkbox" data-setting="${s.key}" ${settings[s.key] ? 'checked' : ''} />
             <span class="sw"></span>
           </label>`).join('')}
+        <label class="p-size" for="debait-orb-size">
+          <span>Orb size <small data-v="orbSize">${Math.round((settings.orbSize || 1) * 100)}%</small></span>
+          <input id="debait-orb-size" type="range" min="0.75" max="1.6" step="0.05" value="${settings.orbSize || 1}" data-size aria-label="Orb size" />
+        </label>
       </section>
 
       <button class="p-link" data-act="facts">Weekly Mind Facts ${ICON.arrow}</button>
@@ -156,6 +160,13 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
 
     el.addEventListener('click', onClick);
     el.addEventListener('change', onChange);
+    el.addEventListener('input', (event) => {
+      if (event.target.dataset?.size === undefined) return;
+      const value = Number(event.target.value);
+      const label = el?.querySelector('[data-v="orbSize"]');
+      if (label) label.textContent = `${Math.round(value * 100)}%`;
+      onSize?.(value);
+    });
     setTimeout(() => {
       document.addEventListener('pointerdown', onOutside, true);
       document.addEventListener('keydown', onKey, true);
@@ -205,6 +216,11 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
   }
 
   async function onChange(e) {
+    if (e.target.dataset?.size !== undefined) {
+      const size = Number(e.target.value);
+      if (Number.isFinite(size)) await setSettings({ orbSize: Math.max(0.75, Math.min(1.6, size)) });
+      return;
+    }
     if (e.target.dataset?.site !== undefined) {
       const host = location.hostname.replace(/^www\./, '');
       const cur = await getSettings();
