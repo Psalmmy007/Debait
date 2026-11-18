@@ -65,21 +65,24 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
   // position kept as a fraction of the free space, so it survives window resizes
   let pos = { x: 0, y: 0 };
   let ratio = { x: 1, y: 0.8 };
+  let size = 1;
+  const diameter = () => ORB * size;
 
   const clamp = (p) => ({
-    x: Math.min(Math.max(p.x, MARGIN), viewW() - ORB - MARGIN),
-    y: Math.min(Math.max(p.y, MARGIN), innerHeight - ORB - MARGIN),
+    x: Math.min(Math.max(p.x, MARGIN), viewW() - diameter() - MARGIN),
+    y: Math.min(Math.max(p.y, MARGIN), innerHeight - diameter() - MARGIN),
   });
   const fromRatio = () => clamp({
-    x: MARGIN + ratio.x * (viewW() - ORB - 2 * MARGIN),
-    y: MARGIN + ratio.y * (innerHeight - ORB - 2 * MARGIN),
+    x: MARGIN + ratio.x * (viewW() - diameter() - 2 * MARGIN),
+    y: MARGIN + ratio.y * (innerHeight - diameter() - 2 * MARGIN),
   });
   const toRatio = () => ({
-    x: (pos.x - MARGIN) / Math.max(1, viewW() - ORB - 2 * MARGIN),
-    y: (pos.y - MARGIN) / Math.max(1, innerHeight - ORB - 2 * MARGIN),
+    x: (pos.x - MARGIN) / Math.max(1, viewW() - diameter() - 2 * MARGIN),
+    y: (pos.y - MARGIN) / Math.max(1, innerHeight - diameter() - 2 * MARGIN),
   });
   const place = () => {
-    wrap.style.transform = `translate3d(${pos.x}px, ${pos.y}px, 0)`;
+    wrap.style.transform = `translate3d(${pos.x}px, ${pos.y}px, 0) scale(${size})`;
+    wrap.style.transformOrigin = 'top left';
     wrap.classList.toggle('tip-right', pos.x < 240);
   };
 
@@ -231,13 +234,20 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
   });
 
   function center() {
-    return { x: pos.x + ORB / 2, y: pos.y + ORB / 2 };
+    return { x: pos.x + diameter() / 2, y: pos.y + diameter() / 2 };
   }
 
   const HINT = '<em><kbd>2×</kbd> settings &nbsp; <kbd>3×</kbd> talk to Debait</em>';
   let lastCount = -1;
   return {
     center,
+    setSize(value) {
+      // Clamp values stored by older/corrupted settings too; never allow an invisible or enormous orb.
+      const next = Number(value);
+      size = Number.isFinite(next) ? Math.max(0.75, Math.min(1.6, next)) : 1;
+      pos = fromRatio();
+      place();
+    },
     setVisible(v) {
       wrap.hidden = !v;
       if (!gl) return;
