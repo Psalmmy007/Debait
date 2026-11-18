@@ -80,3 +80,25 @@ test('audio setup failure closes the opened session', async () => {
   await f.voice.startCall('test');
   assert.equal(f.calls.closes, 1); assert.equal(f.voice.inCall(), false);
 });
+
+test('failed page tool returns an explicit failure instead of dropping voice session', async () => {
+  const f = fixture({ sendTool: async () => { throw new Error('tab closed'); } });
+  await f.voice.startCall('test');
+  const response = await f.handler()([{ id: '1', name: 'page_report' }]);
+  assert.equal(response.id, '1');
+  assert.match(response.response.error, /failed/);
+  assert.equal(f.voice.inCall(), true);
+  await f.voice.endCall();
+});
+
+test('failed page tool cannot return even an error after privacy changes', async () => {
+  const pending = deferred();
+  const f = fixture({ sendTool: () => pending.promise });
+  await f.voice.startCall('test');
+  const response = f.handler()([{ id: '1', name: 'page_report' }]);
+  await tick();
+  f.disallow();
+  await f.voice.endCall();
+  pending.resolve(Promise.reject(new Error('tab closed')));
+  await assert.rejects(response, /LOCAL_ONLY/);
+});
