@@ -63,7 +63,7 @@ let browser;
     await popup.goto(`http://127.0.0.1:${port}/pages.html?page=popup`);
     await popup.waitForFunction(() => document.querySelector('#engine')?.dataset.src === 'mock');
     await popup.locator('#debaitPage').click();
-    await popup.waitForFunction(() => document.querySelector('#debaitPage').textContent.includes('Applied 1'));
+    await popup.waitForFunction(() => document.querySelector('#pageStatus').textContent.includes('Applied 1'));
     assert.equal(popup.isClosed(), false);
     await popup.close(); await invoke('debait/tool', { name: 'restore_page' });
 

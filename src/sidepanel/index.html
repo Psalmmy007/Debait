@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Weekly Mind Facts</title>
   <link rel="stylesheet" href="./sidepanel.css" />
 </head>
@@ -36,7 +37,7 @@
     <div class="rule mid"></div>
 
     <div class="row hero"><span>Bait</span><b><em id="baitPct">0</em><small>%</small></b></div>
-    <p class="hint">Share of headlines written to make you angry, scared or envious.</p>
+    <p class="hint">Share classified as Rage, Fear or Envy. These are framing judgments, not fact-checks.</p>
     <div class="rule"></div>
 
     <div class="kinds" id="kinds">
@@ -63,7 +64,17 @@
 
   <section class="tip glass-dark" id="tip"></section>
 
+  <section class="education glass">
+    <h2>Understanding Your Feed</h2>
+    <p>The flagged percentage is Rage, Fear and Envy headlines divided by all analyzed headlines, including Clean. Headlines that failed analysis and developer evaluations do not count.</p>
+    <p>A difficult subject or a genuine distressing quotation is not automatically manipulation. Read the evidence before deciding whether to change the wording.</p>
+    <p>Clean means no supported current emotional category was identified. It does not verify a claim. Scores are model judgments, not probabilities that a story is false.</p>
+    <p>Source rankings count flagged headlines; they do not prove a source intended to manipulate you. Samples are fictional and are never saved to your statistics.</p>
+  </section>
+  <div id="guide"></div>
+
   <button class="demo" id="seed">Show a sample week</button>
   <script type="module" src="./sidepanel.js"></script>
+  <script type="module" src="./education.js"></script>
 </body>
 </html>

@@ -165,7 +165,8 @@ export function createOrbRenderer(canvas, size = 56, { dpr: forcedDpr, preserve 
   }
   if (!init()) return null;
 
-  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const motion = matchMedia('(prefers-reduced-motion: reduce)');
+  let reduced = motion.matches;
   const cur = { ...MOODS.idle, lx: 0, ly: 0, vx: 0, vy: 0 };
   const tgt = { ...cur };
   let phase = Math.random() * 60;
@@ -175,6 +176,7 @@ export function createOrbRenderer(canvas, size = 56, { dpr: forcedDpr, preserve 
   let raf = 0;
   let lastDraw = 0;
   let lost = false;
+  let running = false;
 
   function draw(now) {
     const dt = Math.min(0.05, (now - (lastDraw || now)) / 1000);
@@ -188,7 +190,7 @@ export function createOrbRenderer(canvas, size = 56, { dpr: forcedDpr, preserve 
     cur.ly += (tgt.ly - cur.ly) * fast;
     cur.vx += (tgt.vx - cur.vx) * fast;
     cur.vy += (tgt.vy - cur.vy) * fast;
-    phase += dt * cur.speed * boost * (reduced ? 0.15 : 1);
+    phase += dt * cur.speed * boost * (reduced ? 0 : 1);
     if (pulsing) {
       pulse += dt / 0.95;
       if (pulse >= 1) { pulse = 0; pulsing = false; }
@@ -201,6 +203,12 @@ export function createOrbRenderer(canvas, size = 56, { dpr: forcedDpr, preserve 
     gl.uniform2f(u.uVel, cur.vx, cur.vy);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
+
+  motion.addEventListener('change', event => {
+    reduced = event.matches;
+    if (reduced) { cancelAnimationFrame(raf); raf = 0; draw(performance.now()); }
+    else if (running && !document.hidden) raf = requestAnimationFrame(frame);
+  });
 
   function frame(now) {
     raf = requestAnimationFrame(frame);
@@ -215,15 +223,15 @@ export function createOrbRenderer(canvas, size = 56, { dpr: forcedDpr, preserve 
   canvas.addEventListener('webglcontextrestored', () => { lost = !init(); });
 
   return {
-    start() { if (!raf) raf = requestAnimationFrame(frame); },
-    stop() { cancelAnimationFrame(raf); raf = 0; },
+    start() { running = true; if (reduced) { draw(performance.now()); return; } if (!raf) raf = requestAnimationFrame(frame); },
+    stop() { running = false; cancelAnimationFrame(raf); raf = 0; },
     /** Draws a single frame right now (used by the demo lab and for reduced motion). */
     drawOnce() { if (!lost) draw(performance.now()); },
-    setMood(name) { Object.assign(tgt, MOODS[name] || MOODS.idle); },
+    setMood(name) { Object.assign(tgt, MOODS[name] || MOODS.idle); if (reduced) { Object.assign(cur, tgt); draw(performance.now()); } },
     setBoost(b) { boost = b; },
     setLight(x, y) { tgt.lx = x; tgt.ly = y; },
     setVelocity(x, y) { tgt.vx = x; tgt.vy = y; },
-    pulse() { pulse = 0.0001; pulsing = true; },
+    pulse() { if (!reduced) { pulse = 0.0001; pulsing = true; } },
     /** Draws one frame from explicit values, with no smoothing (used to render the video ad). */
     drawFrame({ t, turb, bright, pulse: p = 0, lx = 0, ly = 0, vx = 0, vy = 0 }) {
       if (lost) return;

@@ -2,14 +2,17 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Debait</title>
   <link rel="stylesheet" href="./popup.css" />
 </head>
 <body>
   <header>
     <div class="brand"><div class="logo"></div><b>Debait</b></div>
-    <span class="chip" id="engine" data-src="mock"><i></i><span>Checking…</span></span>
+    <span class="chip" id="engine" data-src="none"><i></i><span>Checking…</span></span>
   </header>
+
+  <p id="engineNote" class="status-note" role="status" aria-live="polite"></p>
 
   <section class="setup" id="setup" hidden>
     <b>One step to turn on Gemini</b>
@@ -20,18 +23,19 @@
   <section class="setup" id="problems" hidden>
     <b>Recent problems</b>
     <p id="problemList"></p>
-    <div class="token"><code>Copy them for Claude</code><button id="copyProblems">Copy</button></div>
+    <div class="token"><code>Diagnostic details</code><button id="copyProblems">Copy</button></div>
   </section>
 
   <label class="site"><span>Run on <b id="host">this site</b></span><input type="checkbox" id="siteOn" checked /><i></i></label>
 
   <section class="today">
-    <div class="kicker">Today</div>
+    <div class="kicker">Today’s Feed</div>
     <div class="big"><b id="pct">0</b><span>%</span></div>
     <p id="sub">of your headlines were bait</p>
     <div class="bar" id="bar">
       <span data-k="rage"></span><span data-k="fear"></span><span data-k="envy"></span><span data-k="clean"></span>
     </div>
+    <p class="breakdown-title">Emotional Ingredients</p>
     <ul class="legend" id="legend">
       <li data-k="rage"><i></i>Rage <b>0</b></li>
       <li data-k="fear"><i></i>Fear <b>0</b></li>
@@ -42,6 +46,7 @@
 
   <div class="actions">
     <button class="primary" id="debaitPage">Debait this page</button>
+    <p id="pageStatus" class="status-note" role="status" aria-live="polite"></p>
     <button id="turnOn" hidden>Turn on Debait</button>
   </div>
 
@@ -49,11 +54,13 @@
     <label><span>Talk to Debait<small>A live voice call with Gemini about this page</small></span><input type="checkbox" data-setting="voice" /><i></i></label>
     <label><span>Show the orb<small>Floating sphere you can drag anywhere</small></span><input type="checkbox" data-setting="showOrb" /><i></i></label>
     <label><span>Show tags<small>Labels and highlights on headlines</small></span><input type="checkbox" data-setting="showTags" /><i></i></label>
-    <label><span>Debait automatically<small>Rewrite bait as soon as it appears</small></span><input type="checkbox" data-setting="autoDebait" /><i></i></label>
+    <label><span>Debait automatically<small>Apply safe alternatives on enabled sites</small></span><input type="checkbox" data-setting="autoDebait" /><i></i></label>
     <label><span>Local only<small>Never send headlines to the cloud</small></span><input type="checkbox" data-setting="localOnly" /><i></i></label>
   </section>
 
   <button class="link" id="openFacts">Weekly Mind Facts <span aria-hidden="true">→</span></button>
+
+  <div id="guide"></div>
 
   <script type="module" src="./popup.js"></script>
 </body>

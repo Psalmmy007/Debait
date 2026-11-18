@@ -1,3 +1,4 @@
+import { focusPopover } from './focus.js';
 import { hasMeaningfulRewrite } from '../../engine/qualityPolicy.js';
 // The Ingredients card: why a headline is bait, word by word, plus safe wording and plain-language assistance.
 import { reducedMotion } from './page.js';
@@ -55,7 +56,7 @@ export function openCard(layer, rec, rect, { onDebait, onRestore, onAssist }) {
 
   const rows = r.triggers.length
     ? r.triggers.map((t) => `<li><span class="w">${esc(t.word)}</span><span class="why">${esc(t.why)}</span></li>`).join('')
-    : '<li class="none-row"><span class="none">No manipulative words found.</span></li>';
+    : '<li class="none-row"><span class="none">No supported Rage, Fear or Envy framing identified.</span></li>';
 
   const C = 2 * Math.PI * 30; // gauge circumference
   setHTML(el, `
@@ -69,15 +70,17 @@ export function openCard(layer, rec, rect, { onDebait, onRestore, onAssist }) {
         <b><span class="num">${r.score}</span><small>score</small></b>
       </div>
     </div>
+    <h4 class="comparison-label">Original headline</h4>
     <p class="card-headline" aria-label="Original headline">${markTriggers(rec.text, r.triggers)}</p>
-    <div class="card-section"><h4>Why it pulls you in</h4><ul class="ingredients">${rows}</ul></div>
-    ${clean ? '' : `<div class="card-section"><h4>Suggested rewrite</h4><div class="honest">${available ? esc(r.honest_rewrite) : 'No safe alternative available'}</div><p data-rewrite-source>Wording suggestion only. Not a fact-check. Source: ${esc(SOURCE[rec.rewriteSource || r.source])}.</p></div>`}
+    <div class="card-section"><h4>${clean ? 'Framing assessment' : 'Why it pulls you in'}</h4><ul class="ingredients">${rows}</ul></div>
+    ${clean ? '' : `<div class="card-section"><h4>Suggested neutral wording</h4><div class="honest">${available ? esc(r.honest_rewrite) : 'No safe alternative available'}</div><p data-rewrite-source>Wording suggestion only. Not a fact-check. Source: ${esc(SOURCE[rec.rewriteSource || r.source])}.</p></div>`}
     <div class="card-section">
       ${!clean && !debaited ? '<button class="btn" data-act="request-rewrite">Request neutral wording</button>' : ''}
       <button class="btn" data-act="explain">Explain Simply</button>
       <p data-assistance-status role="status" aria-live="polite"></p>
       <div data-explanation hidden></div>
     </div>
+    ${debaited ? `<p class="transformation-note">${rec.autoApplied ? "Auto-Debait applied this safe alternative." : "A safe alternative is applied."} You can restore the original below.</p>` : ''}
     <div class="card-foot">
       <span class="source" data-src="${esc(r.source)}" title="Classification source"><i></i>${esc(SOURCE[r.source] || r.source)}</span>
       <div class="btns">
@@ -88,6 +91,7 @@ export function openCard(layer, rec, rect, { onDebait, onRestore, onAssist }) {
     </div>`);
 
   layer.appendChild(el);
+  const restoreFocus = focusPopover(el);
 
   // position under the tag; flip above if there's no room
   const W = el.offsetWidth;
@@ -129,7 +133,7 @@ export function openCard(layer, rec, rect, { onDebait, onRestore, onAssist }) {
 
   // a gentle 3D tilt that follows the cursor
   el.addEventListener('pointermove', (e) => {
-    if (reducedMotion()) return;
+    if (reducedMotion() || e.pointerType === 'touch' || el.scrollHeight > el.clientHeight || el.offsetHeight > innerHeight - 48) return;
     const r = el.getBoundingClientRect();
     const x = (e.clientX - r.left) / r.width - 0.5;
     const y = (e.clientY - r.top) / r.height - 0.5;
@@ -197,7 +201,7 @@ export function openCard(layer, rec, rect, { onDebait, onRestore, onAssist }) {
     if (path.includes(el) || path.some((n) => n.tagName === 'DEBAIT-TAG')) return; // tag clicks toggle it themselves
     closeCard();
   };
-  const onKey = (e) => { if (e.key === 'Escape') closeCard(); };
+  const onKey = (e) => { if (e.key === 'Escape' && current?.el === el) { e.stopPropagation(); closeCard(); } };
   const onScroll = () => closeCard();
   setTimeout(() => {
     document.addEventListener('pointerdown', onDown, true);
@@ -209,6 +213,7 @@ export function openCard(layer, rec, rect, { onDebait, onRestore, onAssist }) {
     el,
     rec,
     cleanup() {
+      restoreFocus();
       document.removeEventListener('pointerdown', onDown, true);
       document.removeEventListener('keydown', onKey, true);
       removeEventListener('scroll', onScroll);

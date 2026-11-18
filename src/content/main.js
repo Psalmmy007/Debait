@@ -1,3 +1,4 @@
+import { orbFeedback } from '../shared/uiState.js';
 import { canRewriteRecord, hasMeaningfulRewrite } from '../engine/qualityPolicy.js';
 import { isQuotaError, planAnalysisRetry } from '../shared/quota.js';
 import { sendRuntimeMessage } from '../shared/messaging.js';
@@ -152,7 +153,13 @@ async function start() {
       else if (r.result.kind !== 'clean') bait++;
     }
     const state = inflight > 0 && bait === 0 ? 'busy' : bait > 0 ? 'bait' : debaited > 0 ? 'calm' : 'idle';
-    orb.update({ state, bait, debaited, scanned, notice });
+    const feedback = orbFeedback({
+      results: [...records.values()].filter(r => r.state !== 'debaited' && (!settings.localOnly || r.result?.source === 'on-device')).map(r => r.result),
+      busy: inflight > 0,
+      error: [...records.values()].some(r => r.failed),
+      unavailable: contextLost,
+    });
+    orb.update({ state, bait, debaited, scanned, notice, feedback });
     panel.refresh();
   }
 
@@ -299,6 +306,7 @@ async function start() {
     const changed = await swapToRewrite(rec, { canApply: permitted, delay });
     if (changed) {
       rec.autoRestored = false;
+      rec.autoApplied = automatic;
       if (!pageAction) notice = automatic ? 'Auto-Debait applied a safe alternative. The original can be restored.' : 'Safe rewrite applied. Open its tag to restore the original.';
       rec.tag?.setDebaited(true, rec.result);
       if (rec.result.source !== 'mock') sendRuntimeMessage({ type: 'debait/debaited', count: 1 }).catch(() => {});
@@ -311,6 +319,7 @@ async function start() {
   async function restoreOne(rec, { delay = 0, manual = true } = {}) {
     const restored = await swapToOriginal(rec, { delay });
     if (restored) {
+      rec.autoApplied = false;
       if (manual) rec.autoRestored = true;
       if (manual && !pageAction) notice = settings.autoDebait ? 'Original restored. Auto-Debait will leave this headline unchanged.' : 'Original wording restored.';
       rec.tag?.setDebaited(false, rec.result);

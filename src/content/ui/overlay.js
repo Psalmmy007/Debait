@@ -1,3 +1,4 @@
+import guideCss from '../../shared/guide.css?inline';
 // The floating layer: one Shadow DOM root holding the orb, the card and the settings panel,
 // plus a second host for the page-wide wave (it needs its own blend mode to invert the page).
 import tokens from '../styles/tokens.css?inline';
@@ -20,7 +21,7 @@ export function createOverlay() {
   host.style.cssText =
     'all: initial !important; position: fixed !important; inset: 0 !important; z-index: 2147483646 !important; pointer-events: none !important; display: block !important;';
   const shadow = host.attachShadow({ mode: 'open' });
-  adoptCss(shadow, tokens + orbCss + tagCss + cardCss + panelCss);
+  adoptCss(shadow, tokens + orbCss + tagCss + cardCss + panelCss + guideCss);
   setHTML(shadow, `
     <div class="card-layer"></div>
     <div class="panel-layer"></div>
@@ -150,7 +151,7 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
       vx: 0,
       vy: 0,
     };
-    orb.animate([{ transform: 'scale(1)' }, { transform: 'scale(0.92)' }], { duration: 140, easing: 'ease-out', fill: 'forwards' });
+    orb.animate([{ transform: 'scale(1)' }, { transform: 'scale(0.92)' }], { duration: reducedMotion() ? 0 : 140, easing: 'ease-out', fill: 'forwards' });
   });
 
   orb.addEventListener('pointermove', (e) => {
@@ -175,7 +176,7 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
     const s = speed * 0.07;
     const ang = (Math.atan2(drag.vy, drag.vx) * 180) / Math.PI;
     cancelJs();
-    orb.style.transform = `rotate(${ang}deg) scale(${0.95 + s}, ${0.95 - s * 0.6}) rotate(${-ang}deg)`;
+    orb.style.transform = reducedMotion() ? '' : `rotate(${ang}deg) scale(${0.95 + s}, ${0.95 - s * 0.6}) rotate(${-ang}deg)`;
     gl?.setVelocity(Math.max(-1.5, Math.min(1.5, -drag.vx)), Math.max(-1.5, Math.min(1.5, drag.vy)));
   });
 
@@ -190,7 +191,7 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
     gl?.setVelocity(0, 0);
     orb.animate(
       [{ transform: from }, { transform: 'scale(1.06, 0.95)', offset: 0.35 }, { transform: 'scale(0.98, 1.02)', offset: 0.7 }, { transform: 'scale(1)' }],
-      { duration: 600, easing: 'ease-out' },
+      { duration: reducedMotion() ? 0 : 600, easing: 'ease-out' },
     );
     if (wasDrag) {
       ratio = toRatio();
@@ -244,9 +245,14 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
       else gl.stop();
     },
     /** state: idle | busy | bait | calm */
-    update({ state, bait, debaited, scanned, notice }) {
+    update({ state, bait, debaited, scanned, notice, feedback }) {
       wrap.dataset.state = state;
-      gl?.setMood(state);
+      const statusOnly = feedback && ['busy', 'error', 'unavailable', 'disabled'].includes(feedback.state);
+      wrap.dataset.feedback = feedback?.state || state;
+      wrap.dataset.emotion = statusOnly ? '' : feedback?.category || '';
+      const mood = statusOnly ? (feedback.state === 'busy' ? 'busy' : 'idle') : feedback?.category === 'clean' ? 'calm' : state;
+      gl?.setMood(mood);
+      orb.setAttribute('aria-label', `Debait this page. ${feedback?.label || 'Page status'}. Shift+Enter opens settings.`);
       const count = state === 'calm' ? debaited : bait;
       badge.textContent = String(count);
       badge.classList.toggle('show', count > 0);
@@ -257,17 +263,19 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
       if (notice) {
         tip.replaceChildren();
         const b = document.createElement('span');
-        b.textContent = 'Debait is paused';
+        b.textContent = 'Debait status';
         const sm = document.createElement('small');
         sm.textContent = notice;
         sm.style.whiteSpace = 'normal';
         sm.style.maxWidth = '240px';
         tip.append(b, sm);
         if (!wrap.dataset.noticeShown) { wrap.dataset.noticeShown = '1'; wrap.classList.add('hint'); setTimeout(() => wrap.classList.remove('hint'), 7000); }
+      } else if (statusOnly && feedback.state !== 'busy') {
+        tip.textContent = feedback.label;
       } else if (state === 'calm') {
         setHTML(tip, `Restore originals<small>${debaited} headline${debaited === 1 ? '' : 's'} debaited</small>${HINT}`);
       } else if (bait > 0) {
-        setHTML(tip, `Debait this page<small>${bait} bait of ${scanned} headlines</small>${HINT}`);
+        setHTML(tip, `Debait this page<small>${bait} flagged of ${scanned} headlines · ${feedback?.label || 'Mixed presentation'}</small>${HINT}`);
       } else if (state === 'busy') {
         setHTML(tip, `Reading headlines…${HINT}`);
       } else {

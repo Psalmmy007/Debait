@@ -1,3 +1,6 @@
+import { focusPopover } from './focus.js';
+import { createIngredientsGuide } from '../../shared/ingredientsView.js';
+import { summarizeWeek } from '../../sidepanel/statistics.js';
 // Settings panel: double-click (or right-click) the orb.
 // It opens out of the orb and folds back into it when closed.
 import { MSG } from '../../engine/contract.js';
@@ -11,7 +14,7 @@ const OUT = 'cubic-bezier(0.16, 1, 0.3, 1)';
 const SWITCHES = [
   { key: 'voice', title: 'Talk to Debait', hint: 'A live voice call with Gemini. Ask anything about this page.' },
   { key: 'showTags', title: 'Show tags', hint: 'Labels and highlights on headlines' },
-  { key: 'autoDebait', title: 'Debait automatically', hint: 'Rewrite bait the moment it appears' },
+  { key: 'autoDebait', title: 'Debait automatically', hint: 'Apply only safe alternatives on enabled sites' },
   { key: 'localOnly', title: 'Local only', hint: 'Never send headlines to the cloud' },
   { key: 'showOrb', title: 'Show the orb', hint: 'Bring it back from the toolbar popup' },
 ];
@@ -33,8 +36,10 @@ const LEGEND = [
 export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpenChange }) {
   let el = null;
   let closing = false;
-
-  const pct = (n, total) => (total ? Math.round((n / total) * 100) : 0);
+  let restoreFocus = () => {};
+  let opening = false;
+  let engineRevision = 0;
+  let todayRevision = 0;
 
   function clipFrames(open) {
     // a circle that grows out of the orb (in the panel's own coordinates)
@@ -52,8 +57,10 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
   }
 
   async function open() {
-    if (el) return;
-    const settings = await getSettings();
+    if (el || opening) return;
+    opening = true;
+    let settings;
+    try { settings = await getSettings(); } finally { opening = false; }
     el = document.createElement('aside');
     el.className = 'panel';
     el.setAttribute('role', 'dialog');
@@ -70,6 +77,16 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
         <span class="p-site">${location.hostname.replace(/^www\./, '')}</span>
       </div>
 
+      <p class="p-engine-note" role="status" aria-live="polite"></p>
+
+      <section class="p-hero">
+        <span class="p-eyebrow">Today’s Feed</span>
+        <div class="p-today"><b><span data-v="todayPct">0</span><small>%</small></b></div>
+        <span class="p-today-line" data-v="todayLine">of analyzed headlines were flagged</span>
+        <div class="p-bar">${LEGEND.map(([k]) => `<span data-k="${k}"></span>`).join('')}</div>
+        <div class="p-legend">${LEGEND.map(([k, name]) => `<span><i data-k="${k}"></i>${name} <b data-v="${k}">0</b></span>`).join('')}</div>
+      </section>
+
       <section class="p-sec">
         <h4>This page</h4>
         <div class="p-split">
@@ -80,12 +97,7 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
         <button class="btn primary p-main" data-act="toggle">Debait this page</button>
       </section>
 
-      <section class="p-sec">
-        <h4>Today</h4>
-        <div class="p-today"><b><span data-v="todayPct">0</span><small>%</small></b><span data-v="todayLine">of headlines were bait</span></div>
-        <div class="p-bar">${LEGEND.map(([k]) => `<span data-k="${k}"></span>`).join('')}</div>
-        <div class="p-legend">${LEGEND.map(([k, name, bg]) => `<span><i style="background:${bg}"></i>${name} <b data-v="${k}">0</b></span>`).join('')}</div>
-      </section>
+
 
       <section class="p-sec">
         <h4>Settings</h4>
@@ -103,10 +115,12 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
       </section>
 
       <button class="p-link" data-act="facts">Weekly Mind Facts ${ICON.arrow}</button>
-      <p class="p-note" hidden></p>
+      <p class="p-note" role="status" aria-live="polite" hidden></p>
       <p class="p-foot"><kbd>2×</kbd> click the orb <span aria-hidden="true">·</span> <kbd>Esc</kbd> to close</p>`);
 
+    el.insertBefore(createIngredientsGuide(), el.querySelector('.p-foot'));
     layer.appendChild(el);
+    restoreFocus = focusPopover(el);
 
     // sit beside the orb (not under it); fall back to the screen edge if there's no room
     const c = orbCenter();
@@ -126,7 +140,7 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
 
     onOpenChange?.(true);
     refresh();
-    loadToday();
+    loadToday().catch(() => { if (el) el.querySelector('[data-v="todayLine"]').textContent = 'Reading statistics are temporarily unavailable.'; });
     loadEngine();
 
     if (!reducedMotion()) {
@@ -151,6 +165,8 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
   async function close() {
     if (!el || closing) return;
     closing = true;
+    engineRevision++; todayRevision++;
+    restoreFocus();
     document.removeEventListener('pointerdown', onOutside, true);
     document.removeEventListener('keydown', onKey, true);
     if (!reducedMotion()) {
@@ -175,8 +191,8 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (act === 'close') close();
     if (act === 'toggle') {
-      onToggle();
-      setTimeout(refresh, 50);
+      const button = e.target.closest('[data-act]'); button.disabled = true;
+      try { await onToggle(); } finally { refresh(); }
     }
     if (act === 'facts') {
       const res = await chrome.runtime.sendMessage({ type: 'debait/openSidePanel' }).catch(() => null);
@@ -199,7 +215,9 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
     }
     const key = e.target.dataset?.setting;
     if (!key) return;
-    await setSettings({ [key]: e.target.checked });
+    try { await setSettings({ [key]: e.target.checked }); }
+    catch { e.target.checked = !e.target.checked; const note = el?.querySelector('.p-note'); if (note) { note.hidden = false; note.textContent = 'The setting could not be saved. Please try again.'; } return; }
+    await loadEngine();
     if (key === 'showOrb' && !e.target.checked) close();
   }
 
@@ -223,29 +241,43 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
   }
 
   async function loadToday() {
-    const [t] = await getRecentStats(1);
-    if (!el) return;
+    const revision = ++todayRevision;
+    const summary = summarizeWeek(await getRecentStats(1));
+    const t = summary.sum;
+    if (!el || revision !== todayRevision) return;
     const bait = t.rage + t.fear + t.envy;
-    el.querySelector('[data-v="todayPct"]').textContent = pct(bait, t.total);
-    el.querySelector('[data-v="todayLine"]').textContent = t.total
-      ? `of ${t.total.toLocaleString()} headlines were bait`
+    el.querySelector('[data-v="todayPct"]').textContent = summary.percentage(bait) ?? '—';
+    el.querySelector('[data-v="todayLine"]').textContent = !summary.complete ? 'Category data is incomplete' : t.total
+      ? `of ${t.total.toLocaleString()} analyzed headlines were flagged`
       : 'No headlines read yet today';
     for (const k of ['rage', 'fear', 'envy', 'clean']) {
-      el.querySelector(`[data-v="${k}"]`).textContent = t[k];
+      el.querySelector(`[data-v="${k}"]`).textContent = summary.complete ? t[k] : '—';
       const bar = el.querySelector(`.p-bar [data-k="${k}"]`);
-      requestAnimationFrame(() => { bar.style.width = `${pct(t[k], t.total)}%`; });
+      requestAnimationFrame(() => { bar.style.width = `${summary.percentage(t[k]) ?? 0}%`; });
     }
   }
 
   async function loadEngine() {
+    const revision = ++engineRevision;
     const res = await chrome.runtime.sendMessage({ type: MSG.STATUS }).catch(() => null);
     if (!el) return;
-    const s = res?.status || { source: 'none' };
+    if (revision !== engineRevision) return;
+    const s = res?.ok ? res.status || { source: 'none' } : { source: 'none', message: 'AI status could not be verified.' };
     const chip = el.querySelector('.chip');
     chip.dataset.src = s.source;
     chip.querySelector('span').textContent = SOURCE[s.source] || s.source;
     chip.title = s.message || '';
+    el.querySelector('.p-engine-note').textContent = s.message || (s.source === 'none' ? 'No inference source has been verified yet.' : '');
   }
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !el) return;
+    if (changes.settings) {
+      getSettings().then(settings => { if (el) for (const input of el.querySelectorAll('[data-setting]')) input.checked = !!settings[input.dataset.setting]; }).catch(() => {});
+      loadEngine();
+    }
+    if (changes.stats) loadToday().catch(() => {});
+  });
 
   return {
     open,
