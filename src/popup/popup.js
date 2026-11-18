@@ -5,7 +5,7 @@ import { MSG } from '../engine/contract.js';
 import { getSettings, setSettings, getRecentStats } from '../shared/storage.js';
 
 const $ = (s) => document.querySelector(s);
-const SRC_LABEL = { 'on-device': 'On-device', cloud: 'Cloud', mock: 'Mock engine', none: 'Not ready' };
+const SRC_LABEL = { 'on-device': 'On-device', cloud: 'Cloud', mock: 'Quick estimate', none: 'Not ready' };
 
 async function renderToday() {
   const [today] = (await getRecentStats(1));

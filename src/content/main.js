@@ -39,6 +39,28 @@ async function start() {
     if (next.disabledSites.includes(host) !== settings.disabledSites.includes(host)) location.reload();
   });
   if (settings.disabledSites.includes(host)) return; // switched off for this site
+
+  // When Debait reloads (an update or a new build) Chrome puts a fresh copy into open tabs, but the
+  // old copy keeps running in its own sandbox. Tell any old copy to stop and clear its tags and orb,
+  // so a headline never shows two or three tags.
+  document.dispatchEvent(new CustomEvent('debait:takeover'));
+  document.querySelectorAll('debait-tag, debait-root').forEach((n) => n.remove());
+  let alive = true;
+  const stopHere = () => {
+    if (!alive) return;
+    alive = false;
+    try {
+      pageObserver?.disconnect();
+      io.disconnect();
+      clearTimeout(scanTimer); clearTimeout(retryTimer); clearTimeout(upgradeTimer);
+      queue.length = 0;
+      orb.destroy?.();
+    } catch { /* still starting up: the alive flag is enough */ }
+  };
+  // this copy is the old one now: step aside quietly
+  document.addEventListener('debait:takeover', stopHere, { once: true });
+  const extensionGone = () => { if (chrome.runtime?.id) return false; stopHere(); return true; };
+  let pageObserver = null;
   injectPageStyles();
 
   /** @type {Map<Element, {el, text, result, state, tag, original}>} */
@@ -199,6 +221,11 @@ async function start() {
   }, { rootMargin: '900px 0px' }); // score a little ahead of where you're reading
 
   function scan() {
+    if (!alive || extensionGone()) return;
+    // the site redrew or removed a headline (Google, React apps): drop its old tag so tags never pile up
+    for (const [el, rec] of records) {
+      if (!el.isConnected) { rec.tag?.remove(); io.unobserve(el); records.delete(el); }
+    }
     for (const el of adapter.find(document)) {
       if (el.closest('debait-tag, debait-root')) continue;
       const existing = records.get(el);
@@ -219,7 +246,10 @@ async function start() {
   }
 
   function mountTag(rec) {
-    rec.tag = createTag(adapter.place?.(rec.el) || rec.el, {
+    const anchor = adapter.place?.(rec.el) || rec.el;
+    // never two tags on one headline (a stray one left behind by a redraw)
+    if (anchor.nextElementSibling?.localName === 'debait-tag') anchor.nextElementSibling.remove();
+    rec.tag = createTag(anchor, {
       onClick: (rect) => {
         if (!rec.result) return;
         paint(rec);
@@ -249,6 +279,7 @@ async function start() {
   }
 
   async function scoreBatch(batch) {
+    if (!alive || extensionGone()) return;
     inflight++;
     refreshOrb();
     try {
@@ -257,6 +288,7 @@ async function start() {
       stats.hits += res.cacheHits;
       stats.scored += batch.length;
       batch.forEach((rec, i) => applyResult(rec, res.results[i]));
+      if (res.results.some((r) => r?.source === 'mock')) upgradeSoon();
       console.debug(`[Debait] scored ${batch.length} (cache hits so far: ${stats.hits}/${stats.scored})`);
     } catch (err) {
       console.warn('[Debait] scoring failed:', err.message);
@@ -274,6 +306,25 @@ async function start() {
     } finally {
       inflight--;
     }
+  }
+
+  // The first headlines of a session are answered by the backup engine while Gemini warms up.
+  // Re-ask for those a little later so the placeholder tags turn into real Gemini results.
+  let upgradeTimer = null;
+  let upgradeDelay = 6000;
+  function upgradeSoon() {
+    if (upgradeTimer) return;
+    upgradeTimer = setTimeout(() => {
+      upgradeTimer = null;
+      let n = 0;
+      for (const r of records.values()) {
+        if (r.state === 'scored' && r.result?.source === 'mock' && !r.queued && (r.upgrades || 0) < 4) {
+          r.upgrades = (r.upgrades || 0) + 1; r.queued = true; queue.push(r); n++;
+        }
+      }
+      upgradeDelay = Math.min(upgradeDelay * 2, 120000); // back off while Gemini stays down
+      if (n) flushSoon();
+    }, upgradeDelay);
   }
 
   async function flush() {
@@ -297,6 +348,7 @@ async function start() {
   function applyResult(rec, result) {
     if (!records.has(rec.el) || !result) return;
     rec.result = result;
+    rec.queued = false;
     rec.state = 'scored';
     rec.tag?.setResult(result);
     if (settings.autoDebait && result.kind !== 'clean' && result.source !== 'mock') {
@@ -390,9 +442,10 @@ async function start() {
   scan();
   let scanTimer = null;
   // rescan at most every 600ms while the page changes (infinite scroll, live updates)
-  new MutationObserver((muts) => {
-    if (scanTimer) return;
+  pageObserver = new MutationObserver((muts) => {
+    if (scanTimer || !alive) return;
     if (muts.every((m) => m.target.nodeName === 'DEBAIT-TAG' || m.target.closest?.('debait-tag'))) return;
     scanTimer = setTimeout(() => { scanTimer = null; scan(); }, 600);
-  }).observe(document.body, { childList: true, subtree: true });
+  });
+  pageObserver.observe(document.body, { childList: true, subtree: true });
 }

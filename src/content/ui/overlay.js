@@ -240,6 +240,7 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
   const HINT = '<em><kbd>2×</kbd> settings &nbsp; <kbd>3×</kbd> talk to Debait</em>';
   let lastCount = -1;
   return {
+    destroy() { gl?.stop?.(); },
     center,
     /** 0.75 – 1.6 times the normal size; labels next to it keep their size */
     setSize(next) {

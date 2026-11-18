@@ -7,6 +7,18 @@ const textOf = (el) => (el.innerText || el.textContent || '').replace(/\s+/g, ' 
 
 const adapters = [
   {
+    // AI chat apps: answers and your own messages are not headlines
+    name: 'off',
+    match: (h) => /(^|.)(gemini.google.com|chatgpt.com|chat.openai.com|claude.ai|copilot.microsoft.com|perplexity.ai|chat.deepseek.com)$/.test(h),
+    find: () => [],
+  },
+  {
+    name: 'google',
+    match: (h) => /^(www.)?google.[a-z.]+$/.test(h),
+    // only the result titles and Top stories / News cards; never AI Overviews, AI Mode or your own query
+    find: (root) => (/[?&]udm=50(&|$)/.test(location.search) ? [] : root.querySelectorAll('#rso a h3, #rso g-section-with-header a [role="heading"], #rso a [role="heading"][aria-level="3"]')),
+  },
+  {
     name: 'demo',
     match: (h) => h === 'localhost' || h === '127.0.0.1',
     find: (root) => root.querySelectorAll('[data-debait-headline]'),

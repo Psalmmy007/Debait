@@ -21,6 +21,9 @@ history. A **Local only** switch turns the cloud off.
 - **Tags.** Each headline gets a Rage / Fear / Envy / Clean keycap with its bait score.
 - **Highlights.** Manipulative words are underlined.
 - **Ingredients card.** Click a tag to see why a headline is bait, word by word, and what actually happened.
+  Drag the before/after slider to compare the bait and honest versions, or copy a share card image.
+- **In short.** A 2–3 sentence summary of the whole page, from the orb panel.
+- **Voice call.** Talk to Debait (Gemini Live). Ask what is on the page, what is bait, or to debait it.
 - **Popup.** Today's bait %, breakdown, switches, and which engine is running (on-device / cloud).
 - **Weekly Mind Facts.** A side panel laid out like a nutrition label for your week.
 
@@ -61,7 +64,7 @@ Design tools on the same server:
 
 ```
 src/content/     on-page UI: orb, tags, highlights, Ingredients card, ripple
-src/engine/      the AI: mock engine now, Firebase AI Logic engine (see docs/ENGINE.md)
+src/engine/      the AI: Firebase AI Logic (on-device first, cloud fallback, two projects), quick backup engine (see docs/ENGINE.md)
 src/offscreen/   hidden page that hosts the engine
 src/background/  service worker: message routing, cache, daily stats
 src/popup/       toolbar popup
