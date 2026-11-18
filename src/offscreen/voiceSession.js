@@ -37,10 +37,18 @@ export function createVoiceSession({ isAllowed, connect, startAudio, sendTool, s
           await assertAllowed();
           const call = calls[0];
           state('working', call.name);
-          const res = await sendTool(call);
+          let response;
+          try {
+            const res = await sendTool(call);
+            response = res?.result ?? { error: 'Debait is not running on this page.' };
+          } catch {
+            // A page-tool failure must not end the live conversation or invent a successful action.
+            // Recheck permission before returning even an error to the cloud model.
+            response = { error: 'The page action failed. Tell the user it did not complete.' };
+          }
           await assertAllowed(); // Never return page data after Local Only was enabled.
           state('live');
-          return { id: call.id, name: call.name, response: res?.result ?? { error: 'Debait is not running on this page.' } };
+          return { id: call.id, name: call.name, response };
         },
       });
       await assertAllowed();
