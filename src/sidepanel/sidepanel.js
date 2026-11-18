@@ -1,5 +1,5 @@
 import '@fontsource-variable/inter/opsz.css';
-import { getRecentStats, dayKey, emptyDay } from '../shared/storage.js';
+import { getRecentStats, emptyDay } from '../shared/storage.js';
 import { ICON } from '../content/ui/icons.js';
 
 const $ = (s) => document.querySelector(s);
@@ -10,11 +10,9 @@ const LABEL_H = 25; // day letters under the bars
 
 for (const el of document.querySelectorAll('[data-icon]')) el.innerHTML = ICON[el.dataset.icon];
 
-let showingSample = false;
-
+// Only real numbers: every count here comes from headlines Gemini actually checked while you browsed.
 async function render() {
-  const days = showingSample ? sampleWeek() : await getRecentStats(7);
-  document.body.classList.toggle('sample', showingSample);
+  const days = await getRecentStats(7);
   const sum = { ...emptyDay() };
   for (const d of days) {
     for (const k of ['total', 'debaited', ...KINDS]) sum[k] += d[k];
@@ -25,7 +23,7 @@ async function render() {
 
   const fmt = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   $('#period').textContent = `${fmt(at(days[0].date))} – ${fmt(at(days[6].date))}`;
-  document.body.classList.toggle('empty', !showingSample && sum.total === 0);
+  document.body.classList.toggle('empty', sum.total === 0);
   $('#baitPct').textContent = pct(bait);
   $('#checkedLine').textContent = `${sum.total.toLocaleString()} headline${sum.total === 1 ? '' : 's'} checked`;
   $('#total').textContent = sum.total.toLocaleString();
@@ -41,8 +39,10 @@ async function render() {
   const rates = days.map((d) => (d.total ? (d.rage + d.fear + d.envy) / d.total : null));
   const known = rates.filter((r) => r !== null);
   const max = Math.max(0.01, ...known);
-  const avg = known.length ? known.reduce((a, b) => a + b, 0) / known.length : 0;
-  const calmest = known.length ? rates.indexOf(Math.min(...known)) : -1;
+  const avg = sum.total ? bait / sum.total : 0; // the week's real share, the same number as the big %
+  // a calmest day only means something once there are two days to compare
+  const calmest = known.length >= 2 ? rates.indexOf(Math.min(...known)) : -1;
+  const only = known.length === 1 ? rates.findIndex((r) => r !== null) : -1;
   $('#days').innerHTML = days.map((d, i) => `
     <div class="day ${i === calmest ? 'calmest' : ''} ${rates[i] === null ? 'none' : ''}" title="${rates[i] === null ? 'No headlines' : `${Math.round(rates[i] * 100)}% bait`}">
       <div class="col" data-h="${rates[i] === null ? 0 : Math.max(4, (rates[i] / max) * 100)}"></div>
@@ -55,9 +55,12 @@ async function render() {
     avgEl.hidden = !known.length;
     avgEl.style.bottom = `${LABEL_H + (avg / max) * chartH}px`;
   });
+  const weekday = (i) => at(days[i].date).toLocaleDateString('en-US', { weekday: 'long' });
   $('#calmest').innerHTML = calmest >= 0
-    ? `Calmest day: <b>${at(days[calmest].date).toLocaleDateString('en-US', { weekday: 'long' })}</b>, ${Math.round(rates[calmest] * 100)}% bait. Average ${Math.round(avg * 100)}%.`
-    : 'No days with real data yet.';
+    ? `Calmest day: <b>${weekday(calmest)}</b>, ${Math.round(rates[calmest] * 100)}% bait. Average ${Math.round(avg * 100)}%.`
+    : only >= 0
+      ? `Only <b>${weekday(only)}</b> so far: ${Math.round(rates[only] * 100)}% bait. Your calmest day shows up as the week fills in.`
+      : 'No days with real data yet.';
 
   // sources
   const top = Object.entries(sum.sources).sort((a, b) => b[1] - a[1]).slice(0, 5);
@@ -65,39 +68,20 @@ async function render() {
     ? top.map(([h, n], i) => `<li><span class="rank">${i + 1}</span><span class="dom">${h}</span><b>${n}</b></li>`).join('')
     : '<li class="empty">Nothing yet</li>';
 
-  // one suggestion
-  const worst = top.slice(0, 3).map(([h]) => h);
+  // one suggestion, worded from the real numbers so it never claims more than they show
+  const kindName = { rage: 'anger', fear: 'fear', envy: 'envy' };
   const topKind = ['rage', 'fear', 'envy'].sort((a, b) => sum[b] - sum[a])[0];
+  const worst = top.slice(0, 3);
+  const worstShare = bait ? Math.round((worst.reduce((n, [, c]) => n + c, 0) / bait) * 100) : 0;
+  const list = (hosts) => (hosts.length > 1 ? `${hosts.slice(0, -1).join(', ')} and ${hosts[hosts.length - 1]}` : hosts[0]);
   $('#tip').innerHTML = !sum.total
-    ? '<b>Suggestion</b>Browse as usual. Debait counts only headlines that Gemini actually checked, so your week fills in once Gemini is on.'
-    : worst.length >= 2
-      ? `<b>Suggestion</b>Mute these ${worst.length} sources: ${worst.join(', ')}. They served most of your ${topKind}.`
-      : `<b>Suggestion</b>Your feed leans ${topKind}. Try “Debait automatically” for a calmer week.`;
+    ? '<b>Suggestion</b>Browse as usual. Debait counts only headlines that Gemini actually checked, so your week fills in as you read.'
+    : !bait
+      ? '<b>Suggestion</b>No bait in what you read this week. Keep it up.'
+      : worst.length >= 2
+        ? `<b>Suggestion</b>${list(worst.map(([h]) => h))} served ${worstShare}% of your bait this week. Muting ${worst.length === 2 ? 'both' : 'them'} would calm your feed the most.`
+        : `<b>Suggestion</b>Most of your bait this week played on ${kindName[topKind]}. Try “Debait automatically” for a calmer week.`;
 }
-
-// A made-up week for previews and the demo video. It is only drawn on screen and never saved,
-// so it can't mix with your real numbers.
-function sampleWeek() {
-  const out = [];
-  const shape = [0.46, 0.41, 0.52, 0.33, 0.24, 0.38, 0.44];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const total = [212, 188, 247, 176, 151, 203, 229][6 - i]; // fixed, so the demo looks the same every time
-    const bait = Math.round(total * shape[6 - i]);
-    const rage = Math.round(bait * 0.48), fear = Math.round(bait * 0.32), envy = bait - rage - fear;
-    out.push({
-      date: dayKey(d), total, rage, fear, envy, clean: total - bait, debaited: Math.round(bait * 0.6),
-      sources: { 'x.com': Math.round(bait * 0.45), 'youtube.com': Math.round(bait * 0.3), 'dailyoutrage.news': Math.round(bait * 0.15), 'bbc.com': Math.round(bait * 0.1) },
-    });
-  }
-  return out;
-}
-$('#seed').addEventListener('click', () => {
-  showingSample = !showingSample;
-  $('#seed').textContent = showingSample ? 'Back to my real week' : 'Show a sample week';
-  render();
-});
 
 chrome.storage.onChanged.addListener((c, area) => { if (area === 'local' && c.stats) render(); });
 render();

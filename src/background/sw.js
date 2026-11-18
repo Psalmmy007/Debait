@@ -70,15 +70,28 @@ function debugToken() {
   return tokenOnce;
 }
 
+// What the engine learned about the Firebase projects (which one answers, which one rejects us),
+// remembered across restarts so a fresh start goes straight to the one that works (see offscreen.js).
+let engineMemory;
+const memoryLoaded = chrome.storage.local.get('engineMemory').then(({ engineMemory: m }) => { engineMemory = m; });
+function rememberEngine(res) {
+  if (!res?.memory) return;
+  if (JSON.stringify(res.memory) === JSON.stringify(engineMemory)) return;
+  engineMemory = res.memory;
+  chrome.storage.local.set({ engineMemory });
+}
+
 async function toEngine(payload) {
   await ensureOffscreen();
-  const msg = { target: 'offscreen', debugToken: await debugToken(), ...payload };
+  await memoryLoaded;
+  const msg = { target: 'offscreen', debugToken: await debugToken(), memory: engineMemory, ...payload };
   let res = await chrome.runtime.sendMessage(msg).catch(() => undefined);
   if (res === undefined) {
     // a brand-new offscreen page may still be loading its code: give it a moment, once
     await new Promise((r) => setTimeout(r, 400));
     res = await chrome.runtime.sendMessage(msg).catch(() => undefined);
   }
+  rememberEngine(res);
   if (!res?.ok) throw new Error(res?.error || 'engine error');
   return res;
 }
@@ -135,12 +148,22 @@ function recordStats(results, host, texts) {
   });
   return statsQueue;
 }
-function recordDebaited(count) {
+// a headline counts once a day, however many times it is debaited and restored
+function recordDebaited(texts, count) {
   statsQueue = statsQueue.then(async () => {
     const { stats = {} } = await chrome.storage.local.get('stats');
     const key = dayKey();
     const day = { ...emptyDay(), ...(stats[key] || {}) };
-    day.debaited += count;
+    if (texts.length) {
+      const done = new Set(day.debaitedSeen || []);
+      for (const t of texts) {
+        const id = shortHash(t);
+        if (!done.has(id)) { done.add(id); day.debaited += 1; }
+      }
+      day.debaitedSeen = [...done].slice(-4000);
+    } else {
+      day.debaited += count;
+    }
     stats[key] = day;
     await chrome.storage.local.set({ stats });
   });
@@ -183,7 +206,8 @@ async function startCallFlow() {
     chrome.tabs.create({ url: chrome.runtime.getURL('src/voice/index.html') });
     return;
   }
-  await chrome.runtime.sendMessage({ target: 'offscreen', type: 'debait/call-start', debugToken: await debugToken() });
+  await memoryLoaded;
+  await chrome.runtime.sendMessage({ target: 'offscreen', type: 'debait/call-start', debugToken: await debugToken(), memory: engineMemory });
 }
 async function endCallFlow() {
   const has = await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
@@ -231,14 +255,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         sendResponse({ ok: true });
       } else if (msg.type === 'debait/mic-granted') {
-        await chrome.runtime.sendMessage({ target: 'offscreen', type: 'debait/call-start', debugToken: await debugToken() }).catch(() => {});
+        await memoryLoaded;
+        await chrome.runtime.sendMessage({ target: 'offscreen', type: 'debait/call-start', debugToken: await debugToken(), memory: engineMemory }).catch(() => {});
         sendResponse({ ok: true });
       } else if (msg.type === 'debait/mic-denied') {
         const s = await getSettings();
         await chrome.storage.local.set({ settings: { ...s, voice: false } });
         sendResponse({ ok: true });
       } else if (msg.type === 'debait/debaited') {
-        recordDebaited(msg.count || 0);
+        recordDebaited(Array.isArray(msg.texts) ? msg.texts : [], msg.count || 0);
         sendResponse({ ok: true });
       } else if (msg.type === 'debait/openSidePanel') {
         await chrome.sidePanel.open({ tabId: sender.tab.id });

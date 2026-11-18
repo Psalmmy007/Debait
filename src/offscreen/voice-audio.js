@@ -3,6 +3,8 @@
 // The processors live in public/voice-worklets.js (extensions can't load worklets from blob: URLs).
 const MIC_RATE = 16000;
 const SPEAKER_RATE = 24000;
+// while Debait speaks, mic frames quieter than this are treated as its own echo
+const ECHO_GATE = 0.035;
 
 function toBase64(bytes) {
   let bin = '';
@@ -18,13 +20,24 @@ export async function openAudio({ onMic, onTalking }) {
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
   });
-  const micCtx = new AudioContext({ latencyHint: 'interactive' });
+  // Capture at 16 kHz: Chrome then resamples the microphone with a proper anti-aliasing filter,
+  // which is much cleaner than averaging samples down ourselves, so Gemini hears you clearly.
+  // (If this Chrome can't, fall back to the device rate and let the worklet downsample.)
+  let micCtx;
+  let src;
+  try {
+    micCtx = new AudioContext({ sampleRate: MIC_RATE, latencyHint: 'interactive' });
+    src = micCtx.createMediaStreamSource(stream);
+  } catch {
+    await micCtx?.close().catch(() => {});
+    micCtx = new AudioContext({ latencyHint: 'interactive' });
+    src = micCtx.createMediaStreamSource(stream);
+  }
   const outCtx = new AudioContext({ sampleRate: SPEAKER_RATE, latencyHint: 'interactive' });
   const url = chrome.runtime.getURL('voice-worklets.js');
   await Promise.all([micCtx.audioWorklet.addModule(url), outCtx.audioWorklet.addModule(url)]);
   await Promise.all([micCtx.resume(), outCtx.resume()]);
 
-  const src = micCtx.createMediaStreamSource(stream);
   const mic = new AudioWorkletNode(micCtx, 'debait-mic', { processorOptions: { targetSampleRate: MIC_RATE } });
   let muted = false;
   let talking = false;
@@ -37,7 +50,7 @@ export async function openAudio({ onMic, onTalking }) {
       // interrupt itself. Only let the mic through if someone is clearly talking over it.
       let sum = 0;
       for (let i = 0; i < pcm.length; i++) sum += pcm[i] * pcm[i];
-      if (Math.sqrt(sum / pcm.length) / 32768 < 0.05) pcm = silence;
+      if (Math.sqrt(sum / pcm.length) / 32768 < ECHO_GATE) pcm = silence;
     }
     onMic(toBase64(new Uint8Array(pcm.buffer)));
   };

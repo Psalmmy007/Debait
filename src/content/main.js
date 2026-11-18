@@ -314,7 +314,7 @@ async function start() {
   // The first headlines of a session are answered by the backup engine while Gemini warms up.
   // Re-ask for those a little later so the placeholder tags turn into real Gemini results.
   let upgradeTimer = null;
-  let upgradeDelay = 6000;
+  let upgradeDelay = 21000; // just after Gemini's retry window (engine/index.js)
   function upgradeSoon() {
     if (upgradeTimer) return;
     upgradeTimer = setTimeout(() => {
@@ -356,6 +356,7 @@ async function start() {
     rec.tag?.setResult(result);
     if (settings.autoDebait && result.kind !== 'clean' && result.source !== 'mock') {
       swapToRewrite(rec).then(() => rec.tag?.setDebaited(true, result));
+      send({ type: 'debait/debaited', texts: [rec.text] }); // auto-debaited headlines count too
     }
   }
 
@@ -363,7 +364,7 @@ async function start() {
   function debaitOne(rec) {
     swapToRewrite(rec).then(() => { paint(); refreshOrb(); });
     setTimeout(() => rec.tag?.setDebaited(true, rec.result), 240);
-    if (rec.result.source !== 'mock') send({ type: 'debait/debaited', count: 1 });
+    if (rec.result.source !== 'mock') send({ type: 'debait/debaited', texts: [rec.text] });
     refreshOrb();
   }
 
@@ -395,8 +396,8 @@ async function start() {
       });
       refreshOrb();
       Promise.all(jobs).then(() => { paint(); refreshOrb(); });
-      const real = bait.filter((r) => r.result.source !== 'mock').length;
-      if (real) send({ type: 'debait/debaited', count: real });
+      const real = bait.filter((r) => r.result.source !== 'mock').map((r) => r.text);
+      if (real.length) send({ type: 'debait/debaited', texts: real });
     } else if (done.length) {
       // undo: the wave flows back into the orb
       const { R, duration } = playRipple(origin, { undo: true });

@@ -1,13 +1,13 @@
-// The active engine: real Gemini (Firebase AI Logic) once it's confirmed working, the fast
-// backup engine until then. Pages never wait on a Gemini connection that isn't ready:
-// the first request answers instantly from the backup and checks Gemini in the background.
+// The active engine: real Gemini (Firebase AI Logic). Headlines show "Reading" for the second or
+// two Gemini takes; the quick backup estimate is only used while Gemini is really unreachable,
+// and those guesses are never counted in Weekly Mind Facts.
 import { mockEngine } from './mockEngine.js';
 import { firebaseEngine } from './firebaseEngine.js';
 
 export const USE_MOCK = false;
 
-const GEMINI_TIMEOUT = 15000;  // a working Gemini answers well within this (batches run in parallel)
-const PROBE_TIMEOUT = 20000;   // the background check can take longer (first connection, model load)
+const FIRST_TIMEOUT = 25000;   // the first answer also connects (App Check, picking the project)
+const GEMINI_TIMEOUT = 20000;  // a working Gemini answers well within this (slow requests are re-sent after 4 s)
 const RETRY_AFTER = 2 * 60 * 1000;     // after an App Check / permission rejection
 const RETRY_SOON = 20 * 1000;          // after a passing server error (busy, network)
 const retryDelay = (err) => (/app check|401|403|permission|api key/i.test(String(err?.message || err)) ? RETRY_AFTER : RETRY_SOON);
@@ -15,22 +15,8 @@ const retryDelay = (err) => (/app check|401|403|permission|api key/i.test(String
 let gemini = 'unknown';        // unknown | ok | failing
 let lastError = null;
 let retryAt = 0;
-let probing = null;
 
 const withTimeout = (p, ms) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error('Gemini took too long')), ms))]);
-
-function probe(text, opts) {
-  if (probing || (gemini === 'failing' && Date.now() < retryAt)) return;
-  probing = withTimeout(firebaseEngine.scoreHeadlines([text], opts), PROBE_TIMEOUT)
-    .then(() => { gemini = 'ok'; lastError = null; })
-    .catch((err) => {
-      gemini = 'failing';
-      lastError = err;
-      retryAt = Date.now() + retryDelay(err);
-      console.debug('[Debait] Gemini not available yet, using the backup engine:', err.message);
-    })
-    .finally(() => { probing = null; });
-}
 
 /** @type {import('./contract.js').Engine} */
 export const engine = USE_MOCK ? mockEngine : {
@@ -41,16 +27,18 @@ export const engine = USE_MOCK ? mockEngine : {
       if (st.source !== 'on-device') throw new Error(`LOCAL_ONLY: ${st.message}`);
       return withTimeout(firebaseEngine.scoreHeadlines(texts, opts), 30000);
     }
-    if (gemini !== 'ok') {
-      probe(texts[0], opts);
-      return mockEngine.scoreHeadlines(texts, opts);
-    }
+    // Gemini just failed: don't make every page wait on it; quick estimates until the retry time
+    if (gemini === 'failing' && Date.now() < retryAt) return mockEngine.scoreHeadlines(texts, opts);
     try {
-      return await withTimeout(firebaseEngine.scoreHeadlines(texts, opts), GEMINI_TIMEOUT);
+      const res = await withTimeout(firebaseEngine.scoreHeadlines(texts, opts), gemini === 'ok' ? GEMINI_TIMEOUT : FIRST_TIMEOUT);
+      gemini = 'ok';
+      lastError = null;
+      return res;
     } catch (err) {
       gemini = 'failing';
       lastError = err;
       retryAt = Date.now() + retryDelay(err);
+      console.debug('[Debait] Gemini unavailable, using quick estimates for now:', err.message);
       return mockEngine.scoreHeadlines(texts, opts);
     }
   },

@@ -18,6 +18,11 @@ let preferred = 0; // the project that answered last; tried first next time
 const skipUntil = []; // a project that rejected us is skipped for a while instead of failing every request
 const SKIP_FOR = 6 * 60 * 60 * 1000; // App Check approval doesn't change mid-session; reload Debait after registering
 export const skipProject = (i) => { skipUntil[i] = Date.now() + SKIP_FOR; };
+/** Skips still in force, as {projectIndex: untilMs}, so the service worker can remember them across restarts. */
+export const projectSkips = () => Object.fromEntries(skipUntil.map((t, i) => [i, t]).filter(([, t]) => t > Date.now()));
+export const applySkips = (skips = {}) => {
+  for (const [i, t] of Object.entries(skips)) if (t > Date.now()) skipUntil[i] = Math.max(skipUntil[i] || 0, t);
+};
 
 // ---------- a steadier connection ----------
 // Gemini usually answers in 1-2 s, but under load the same request can sit for 8 s or fail with
@@ -270,7 +275,7 @@ export const firebaseEngine = {
       try {
         const m = model(localOnly, debugToken, i);
         const request = prompt(texts);
-        res = await hedged((signal) => m.generateContent(request, { signal }), onDevice ? Infinity : 5000);
+        res = await hedged((signal) => m.generateContent(request, { signal }), onDevice ? Infinity : 4000);
         preferred = i;
         break;
       } catch (err) {

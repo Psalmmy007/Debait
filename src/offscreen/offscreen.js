@@ -2,42 +2,53 @@
 import { engine } from '../engine/index.js';
 import { MSG, normalizeResult } from '../engine/contract.js';
 import { startCall, endCall, inCall } from './call.js';
+import { setPreferredProject, preferredProject, projectSkips, applySkips } from '../engine/firebaseEngine.js';
+
+// Start from what the service worker remembers: the Firebase project that answered last, and any
+// project that rejected us (App Check). A fresh start then doesn't wait on a project that will fail.
+let primed = false;
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.target !== 'offscreen') return false;
+  if (!primed && msg.memory) {
+    if (Number.isInteger(msg.memory.prefer)) setPreferredProject(msg.memory.prefer);
+    applySkips(msg.memory.skips);
+    primed = true;
+  }
+  const reply = (o) => sendResponse({ ...o, memory: { prefer: preferredProject(), skips: projectSkips() } });
 
   (async () => {
     try {
       if (msg.type === MSG.SCORE) {
         const raw = await engine.scoreHeadlines(msg.texts, { localOnly: msg.localOnly, debugToken: msg.debugToken });
         const results = msg.texts.map((t, i) => normalizeResult(raw?.[i], t));
-        sendResponse({ ok: true, results });
+        reply({ ok: true, results });
       } else if (msg.type === MSG.STATUS) {
-        sendResponse({ ok: true, status: await engine.getStatus({ localOnly: msg.localOnly }) });
+        reply({ ok: true, status: await engine.getStatus({ localOnly: msg.localOnly }) });
       } else if (msg.type === 'debait/call-start') {
         startCall(msg.debugToken);
-        sendResponse({ ok: true });
+        reply({ ok: true });
       } else if (msg.type === 'debait/call-end') {
         await endCall();
-        sendResponse({ ok: true });
+        reply({ ok: true });
       } else if (msg.type === 'debait/call-status') {
-        sendResponse({ ok: true, inCall: inCall() });
+        reply({ ok: true, inCall: inCall() });
       } else if (msg.type === 'debait/mic-state') {
         const p = await navigator.permissions.query({ name: 'microphone' }).catch(() => null);
-        sendResponse({ ok: true, state: p?.state || 'prompt' });
+        reply({ ok: true, state: p?.state || 'prompt' });
       } else if (msg.type === MSG.SUMMARY) {
         // stream the words to the tab that asked, through the service worker
         const onText = msg.stream && msg.tabId
           ? (text) => chrome.runtime.sendMessage({ type: 'debait/summary-chunk', tabId: msg.tabId, text }).catch(() => {})
           : undefined;
-        sendResponse({ ok: true, ...(await engine.summarize(msg.page, { localOnly: msg.localOnly, debugToken: msg.debugToken, onText })) });
+        reply({ ok: true, ...(await engine.summarize(msg.page, { localOnly: msg.localOnly, debugToken: msg.debugToken, onText })) });
       } else if (msg.type === MSG.INIT) {
-        sendResponse({ ok: true, status: await engine.initDeviceModel() });
+        reply({ ok: true, status: await engine.initDeviceModel() });
       } else {
-        sendResponse({ ok: false, error: 'unknown message' });
+        reply({ ok: false, error: 'unknown message' });
       }
     } catch (err) {
-      sendResponse({ ok: false, error: String(err?.message || err) });
+      reply({ ok: false, error: String(err?.message || err) });
     }
   })();
   return true; // keep the channel open for the async reply
