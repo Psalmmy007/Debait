@@ -74,7 +74,9 @@ async function start() {
     onToggle: () => toggleDebaitPage(orb.center()).catch(report),
     orbCenter: () => orb.center(),
     onOpenChange: (open) => orb.setPanelOpen(open),
+    onSize: (value) => orb.setSize(value),
   });
+  orb.setSize(settings.orbSize);
   orb.setVisible(settings.showOrb);
 
   // ---------- call mode: Gemini Live acts on this page through these tools ----------
@@ -413,6 +415,7 @@ async function start() {
     const prev = settings;
     settings = next;
     orb.setVisible(next.showOrb);
+    if (prev.orbSize !== next.orbSize) orb.setSize(next.orbSize);
     if (prev.localOnly !== next.localOnly) {
       privacyEpoch++; closeCard();
       for (const rec of records.values()) if (next.localOnly && (rec.result?.source !== 'on-device' || rec.rewriteSource === 'cloud')) {
