@@ -300,7 +300,7 @@ test('website content scripts cannot supply or obtain trusted installation metad
   assert.equal(response.ok, false); assert.equal(response.installType, undefined);
 });
 
-for (const version of [undefined, 'old-policy', 'quality-semantic-prefix-v3']) {
+for (const version of [undefined, 'old-policy', 'quality-semantic-prefix-v3', 'quality-classification-evidence-v4']) {
   test(`outdated quality cache is invalidated before reuse: ${version}`, async t => {
     const stats = { '2026-11-01': { total: 3, fear: 3, seen: ['existing'] } };
     const f = await fixture(t, { scoreCacheVersion: version === undefined ? null : version,

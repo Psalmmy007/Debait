@@ -31,6 +31,9 @@ export function importDataset(input) {
   if (new Set(names).size !== names.length) throw new Error('CSV column names must be unique.');
   const column = aliases => names.findIndex(n => aliases.includes(n));
   const columns = {
+    datasetId: column(['dataset_id']),
+    caseType: column(['case_type']),
+    pairId: column(['pair_id']),
     id: column(['headline_id', 'id', 'test_id', 'case_id']),
     text: column(['headline', 'text', 'headline_text', 'original_headline']),
     draftLabel: column(['draft_label', 'expected_label', 'expected_category', 'draft_category', 'expected']),

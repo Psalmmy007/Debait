@@ -1,12 +1,15 @@
 import { defineConfig, loadEnv } from 'vite';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { classificationPolicy } from './src/engine/classificationPolicy.js';
 import { quotaConfig } from './src/shared/quotaConfig.js';
 import { crx } from '@crxjs/vite-plugin';
 import manifest from './manifest.config.js';
 
 export default defineConfig(({ mode }) => {
-  quotaConfig({ ...loadEnv(mode, process.cwd(), 'VITE_'), ...process.env });
+  const environment = { ...loadEnv(mode, process.cwd(), 'VITE_'), ...process.env };
+  quotaConfig(environment);
+  classificationPolicy(environment.VITE_DEBAIT_CLASSIFICATION_POLICY || 'subtle-v5');
   let gitSha = 'unknown', gitDirty = true;
   try {
     gitSha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();

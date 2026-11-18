@@ -52,7 +52,9 @@ export function createRun(dataset, { send, changed = () => {}, wait = pause, now
             apply(group, { status: 'active' });
             group.forEach(row => row.attempts++);
             notify('Analyzing the next batch using the real Debait pipeline…');
+            const submittedAt = now();
             const response = await send({ type: 'debait/evaluation-score', runId, texts });
+            const batchRoundTripMs = Math.max(0, now() - submittedAt);
             if (cancelled) break;
             if (response?.ok) {
               if (!Array.isArray(response.results) || response.results.length !== texts.length || response.results.some(r =>
@@ -61,7 +63,7 @@ export function createRun(dataset, { send, changed = () => {}, wait = pause, now
               }
               for (const row of group) {
                 Object.assign(row, { status: 'success', result: response.results[texts.indexOf(row.text)],
-                  modelMetadata: response.evaluationMetadata, analyzedAt: new Date(now()).toISOString() });
+                  modelMetadata: response.evaluationMetadata, batchId: `${runId}:${offset / 4 + 1}`, batchSize: texts.length, batchRoundTripMs, analyzedAt: new Date(now()).toISOString() });
               }
               done = true;
             } else {
@@ -97,6 +99,8 @@ export function createRun(dataset, { send, changed = () => {}, wait = pause, now
     },
     csv() {
       const records = rows.map(row => ({
+        dataset_id: row.datasetId || '', case_type: row.caseType || '', pair_id: row.pairId || '',
+        batch_id: row.batchId || '', batch_size: row.batchSize ?? '', batch_round_trip_ms: row.batchRoundTripMs ?? '',
         headline_id: row.id, headline: row.text, draft_label: row.draftLabel,
         human_reference_label: row.humanLabel, review_status: row.reviewStatus,
         model_classification: row.result?.kind || '',
