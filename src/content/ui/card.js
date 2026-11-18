@@ -1,4 +1,5 @@
 import { focusPopover } from './focus.js';
+import { shareHeadline } from './share.js';
 import { hasMeaningfulRewrite } from '../../engine/qualityPolicy.js';
 // The Ingredients card: why a headline is bait, word by word, plus safe wording and plain-language assistance.
 import { reducedMotion } from './page.js';
@@ -84,6 +85,7 @@ export function openCard(layer, rec, rect, { onDebait, onRestore, onAssist }) {
     <div class="card-foot">
       <span class="source" data-src="${esc(r.source)}" title="Classification source"><i></i>${esc(SOURCE[r.source] || r.source)}</span>
       <div class="btns">
+        ${available && r.source !== 'mock' ? '<button class="btn" data-act="share" title="Share a wording suggestion (not fact-checked)">Share image</button>' : ''}
         ${clean || (!available && !debaited) ? '<button class="btn" data-act="close">Close</button>' : debaited
           ? '<button class="btn" data-act="restore">Show original</button>'
           : `<button class="btn" data-act="close">Keep</button><button class="btn primary" data-act="debait">Apply rewrite ${ICON.arrow}</button>`}
@@ -163,6 +165,13 @@ export function openCard(layer, rec, rect, { onDebait, onRestore, onAssist }) {
             el.querySelector('.btns').append(apply);
           }
           if (!available) apply?.remove();
+          let share = el.querySelector('[data-act="share"]');
+          if (available && !share && r.source !== 'mock') {
+            share = document.createElement('button'); share.className = 'btn'; share.dataset.act = 'share';
+            share.textContent = 'Share image'; share.title = 'Share a wording suggestion (not fact-checked)';
+            el.querySelector('.btns').prepend(share);
+          }
+          if (!available) share?.remove();
         } else {
           const content = el.querySelector('[data-explanation]'); content.replaceChildren(); content.hidden = false;
           const paragraph = text => { const p = document.createElement('p'); p.textContent = text; content.append(p); };
@@ -181,6 +190,17 @@ export function openCard(layer, rec, rect, { onDebait, onRestore, onAssist }) {
           if (bounds.bottom > innerHeight - 12) el.style.top = `${Math.max(12, innerHeight - bounds.height - 12)}px`;
         }
       }
+    }
+    if (act === 'share') {
+      const button = e.target.closest('[data-act]');
+      if (!available || r.source === 'mock' || !hasMeaningfulRewrite(rec.text, rec.result.honest_rewrite)) return;
+      button.disabled = true;
+      const status = el.querySelector('[data-assistance-status]');
+      try {
+        const outcome = await shareHeadline({ bait: rec.text, honest: rec.result.honest_rewrite, kind: r.kind, score: r.score });
+        if (current?.el === el) status.textContent = outcome === 'copied' ? 'Image copied. Wording suggestion only, not a fact-check.' : 'Share image saved. Wording suggestion only, not a fact-check.';
+      } catch { if (current?.el === el) status.textContent = 'The image could not be shared. No headline was changed.'; }
+      finally { button.disabled = false; }
     }
     if ((act === 'debait' && available) || act === 'restore') {
       const button = e.target.closest('[data-act]'); button.disabled = true;
