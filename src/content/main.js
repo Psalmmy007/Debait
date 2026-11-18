@@ -124,6 +124,10 @@ async function start() {
 
   function onCallState({ state, message }) {
     if (state === 'connecting') orb.setVoice({ mode: 'speaking', text: 'Calling Debait…' });
+    else if (state === 'reconnecting' || state === 'buffering' || state === 'reconnected') orb.setVoice({ mode: 'speaking', text: message });
+    else if (state === 'talking') orb.setVoice({ mode: 'speaking', text: 'Debait is speaking…' });
+    else if (state === 'heard') orb.setVoice({ mode: 'heard', text: message });
+    else if (state === 'tool-error') orb.setVoice({ mode: 'error', text: message });
     else if (state === 'live') orb.setVoice({ mode: 'listening' });
     else if (state === 'working') orb.setVoice({ mode: 'speaking', text: 'On it…' });
     else if (state === 'error') orb.setVoice({ mode: 'error', text: message });

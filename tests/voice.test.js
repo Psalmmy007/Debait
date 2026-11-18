@@ -102,3 +102,55 @@ test('failed page tool cannot return even an error after privacy changes', async
   pending.resolve(Promise.reject(new Error('tab closed')));
   await assert.rejects(response, /LOCAL_ONLY/);
 });
+
+test('rapid duplicate start requests open one audio session and one connection', async () => {
+  const f=fixture();await Promise.all([f.voice.startCall(),f.voice.startCall(),f.voice.startCall()]);
+  assert.equal(f.calls.connects,1);assert.equal(f.calls.audio,1);await f.voice.endCall();
+});
+test('replayed action IDs return the recorded result without executing the page tool twice',async()=>{
+  const f=fixture();await f.voice.startCall();const handler=f.handler();
+  const call={id:'same-id',name:'debait_page',args:{}};
+  const [a,b]=await Promise.all([handler([call]),handler([call])]);
+  assert.equal(f.calls.tools,1);assert.equal(a.id,b.id);assert.equal(b.response.debait_replayed,true);
+  const changed=await handler([{...call,args:{different:true}}]);assert.match(changed.response.error,/Reused/);assert.equal(f.calls.tools,1);
+  await f.voice.endCall();
+});
+function reconnectFixture(overrides={}) {
+  const controllers=[],connections=[],states=[],delays=[];let allowed=true,activeAudio=0,maxAudio=0,greetings=0;
+  const voice=createVoiceSession({isAllowed:async()=>allowed,
+    connect:async(_token,guard,options)=>{await guard();connections.push(options);return{send:async()=>{greetings++;},close:async()=>{}};},
+    startAudio:async(_session,options)=>{const d=deferred();activeAudio++;maxAudio=Math.max(maxAudio,activeAudio);options.onResumeHandle('controlled-server-handle');
+      const c={handler:options.functionCallingHandler,done:d.promise,drop:()=>d.resolve({reason:'network'}),stop:async()=>{activeAudio--;d.resolve({reason:'stopped'});}};controllers.push(c);return c;},
+    sendTool:async()=>({result:{ok:true}}),state:(...s)=>states.push(s),wait:async ms=>{delays.push(ms);},maxRetries:2,...overrides});
+  return{voice,controllers,connections,states,delays,disallow:()=>{allowed=false;},maxAudio:()=>maxAudio,greetings:()=>greetings};
+}
+test('supported server resumption is bounded across the call and never duplicates the microphone',async()=>{
+  const f=reconnectFixture();await f.voice.startCall();
+  for(let i=0;i<3;i++){f.controllers[i].drop();await tick();await tick();}
+  assert.equal(f.connections.length,3);assert.deepEqual(f.delays,[10000,20000]);assert.equal(f.connections[1].handle,'controlled-server-handle');
+  assert.equal(f.maxAudio(),1);assert.equal(f.greetings(),1);assert.equal(f.voice.inCall(),false);
+  assert.ok(f.states.some(([s,m])=>s==='reconnected'&&m.includes('may be missing')));
+});
+test('cancellation during backoff prevents a reconnect even after the wait finishes',async()=>{
+  const waiting=deferred();const f=reconnectFixture({wait:()=>waiting.promise});await f.voice.startCall();
+  f.controllers[0].drop();await tick();f.disallow();await f.voice.endCall();waiting.resolve();await tick();
+  assert.equal(f.connections.length,1);assert.equal(f.voice.inCall(),false);
+});
+test('a dropped connection without a server handle ends honestly instead of silently starting a new conversation',async()=>{
+  const d=deferred();const states=[];let connections=0;
+  const f=fixture({connect:async()=>{connections++;return{send:async()=>{},close:async()=>{}};},
+    startAudio:async()=>({done:d.promise,stop:async()=>{}}),state:(...s)=>states.push(s)});
+  await f.voice.startCall();d.resolve({reason:'network'});await tick();await tick();
+  assert.equal(connections,1);assert.equal(f.voice.inCall(),false);assert.match(states.at(-1)[1],/new conversation/);
+});
+test('privacy revocation during backoff fails closed before opening another session',async()=>{
+  const f=reconnectFixture({wait:async()=>{f.disallow();}});await f.voice.startCall();f.controllers[0].drop();await tick();await tick();
+  assert.equal(f.connections.length,1);assert.equal(f.voice.inCall(),false);
+});
+
+test('a tool replay after resumption still cannot execute a page action twice',async()=>{
+ let tools=0;const f=reconnectFixture({sendTool:async()=>{tools++;return{result:{ok:true}};}});await f.voice.startCall();
+ const request={id:'resume-tool',name:'debait_page',args:{}};
+ await f.controllers[0].handler([request]);f.controllers[0].drop();await tick();await tick();
+ await f.controllers[1].handler([request]);assert.equal(tools,1);await f.voice.endCall();
+});

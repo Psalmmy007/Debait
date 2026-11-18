@@ -22,3 +22,7 @@ Branch: `integration/chisom-features` (based on `feature/ui-completion`).
 8. Only after test evidence and user approval, merge selected features into the product branch.
 
 Current status: code committed, not build-verified or native-Chrome-verified in this environment. This branch is **not production ready**.
+
+## Subsequent voice integration update
+
+The original work-in-progress status above describes the earlier integration checkpoint. Supported packaged audio, guarded lifecycle and bounded server-handle resumption have now been implemented and controlled-tested. See [VOICE_INTEGRATION.md](VOICE_INTEGRATION.md) for the current design, SDK evidence, exclusions and manual verification checklist. Native Chrome/Gemini voice remains unverified; controlled browser audio is not proof of a real conversation.

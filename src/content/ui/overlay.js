@@ -299,7 +299,7 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
       wrap.dataset.voice = mode;
       gl?.setBoost(mode === 'speaking' ? 2.6 : mode === 'listening' ? 1.4 : 1);
       if (mode === 'idle') { bubble.classList.remove('show'); return; }
-      const label = { listening: 'On a call with Debait', heard: 'You said', speaking: 'Debait', error: 'Voice' }[mode];
+      const label = { listening: 'On a cloud call with Debait', heard: 'You said', speaking: 'Debait', error: 'Voice' }[mode];
       bubble.replaceChildren();
       const b = document.createElement('b');
       b.textContent = label;
@@ -316,7 +316,7 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
       }
       bubble.classList.add('show');
       clearTimeout(this._vt);
-      if (mode === 'heard' || mode === 'error') this._vt = setTimeout(() => bubble.classList.remove('show'), 4000);
+      if (mode === 'heard' || mode === 'error') this._vt = setTimeout(() => bubble.classList.remove('show'), mode === 'error' ? 12000 : 4000);
     },
     pulse() {
       gl?.pulse();

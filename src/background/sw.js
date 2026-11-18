@@ -1,3 +1,4 @@
+import { quotaError } from '../shared/quota.js';
 import { assistanceReason } from '../engine/errors.js';
 // Service worker: routes messages, keeps the score cache and the daily stats.
 import { normalizeAssistance } from '../engine/assistance.js';
@@ -337,6 +338,12 @@ function reportVoiceError(error) {
   disableVoice().catch(() => {});
 }
 
+// Connection setup (including resume handshakes) uses the shared conservative local gate.
+// This is not a reservation of Live streaming token/minute quota; the server still enforces it.
+const requireVoiceOffscreen = sender => {
+  if (sender.id !== chrome.runtime.id || sender.tab || sender.url !== chrome.runtime.getURL(OFFSCREEN_URL)) throw new Error('Voice connection controls require the extension offscreen document.');
+};
+
 // ---------- message router ----------
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.target === 'offscreen') return false; // not for us
@@ -371,6 +378,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ...res, ...(popup ? { debugToken: await debugToken() } : {}) });
       } else if (msg.type === MSG.INIT) {
         sendResponse(await toEngine({ type: MSG.INIT }));
+      } else if (msg.type === 'debait/voice-connect-slot') {
+        requireVoiceOffscreen(sender); await requireVoiceAllowed();
+        const { voiceRetryAt = 0 } = await chrome.storage.local.get('voiceRetryAt');
+        if (voiceRetryAt > Date.now()) throw quotaError('Gemini Live is cooling down. Start voice later.', voiceRetryAt, false);
+        await requestGate.run(requireVoiceAllowed);
+        await requireVoiceAllowed(); sendResponse({ ok: true });
+      } else if (msg.type === 'debait/voice-rate-limited') {
+        requireVoiceOffscreen(sender);
+        const delay = Number.isFinite(msg.retryAfterMs) && msg.retryAfterMs >= 0 ? msg.retryAfterMs : 30000;
+        const { voiceRetryAt = 0 } = await chrome.storage.local.get('voiceRetryAt');
+        await chrome.storage.local.set({ voiceRetryAt: Math.max(voiceRetryAt, Date.now() + Math.max(30000, delay)) });
+        sendResponse({ ok: true });
       } else if (msg.type === 'debait/voice-allowed') {
         sendResponse({ ok: true, allowed: await voiceAllowed() });
       } else if (msg.type === 'debait/tool') {
@@ -379,6 +398,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const res = await toActiveTab({ type: 'debait/tool', name: msg.name, args: msg.args });
         sendResponse(res || { result: { error: 'Debait is not running on this page. Ask the user to refresh it.' } });
       } else if (msg.type === 'debait/call-state') {
+        requireVoiceOffscreen(sender);
+        if (msg.state === 'error') await disableVoice();
         toActiveTab({ type: 'debait/call-state', state: msg.state, message: msg.message });
         if (msg.state === 'error') {
           const s = await getSettings();

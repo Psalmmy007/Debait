@@ -483,3 +483,17 @@ test('assistance validation reason crosses the worker boundary without retries, 
   assert.deepEqual(f.data.stats, {}); assert.deepEqual(f.data.scoreCache, []);
   assert.ok(!JSON.stringify(f.data).includes('Synthetic private headline'));
 });
+
+test('Live connection slots require an authorized offscreen sender and reserve the existing shared quota',async t=>{
+  const f=await fixture(t,{voice:true});
+  assert.equal((await f.send({type:'debait/voice-connect-slot'})).ok,false);
+  assert.equal((await f.sendOffscreen({type:'debait/voice-connect-slot'})).ok,true);assert.equal(f.data.aiRequestBudget.count,1);
+  assert.equal((await f.sendOffscreen({type:'debait/voice-connect-slot'})).code,'debait/quota-pacing');
+});
+test('Local Only prohibits Live slots and a reported server cooldown survives another start',async t=>{
+  const f=await fixture(t,{voice:true,localOnly:true});
+  assert.equal((await f.sendOffscreen({type:'debait/voice-connect-slot'})).ok,false);
+  await f.settings({localOnly:false,voice:false});await f.sendOffscreen({type:'debait/voice-rate-limited',retryAfterMs:65000});
+  await f.settings({voice:true});
+  const denied=await f.sendOffscreen({type:'debait/voice-connect-slot'});assert.equal(denied.code,'debait/quota');assert.equal(denied.autoRetry,false);
+});
