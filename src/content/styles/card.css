@@ -1,91 +1,58 @@
-/* Ingredients card: a nutrition label for one headline. */
+/* Ingredients card: an Apple-style popover for one headline. */
 .card {
-  --k: var(--ink);
   position: fixed;
   width: 344px;
   max-width: calc(100vw - 24px);
   max-height: calc(100vh - 24px);
   overflow: auto;
   overscroll-behavior: contain;
-  padding: 15px 18px 16px;
-  border-radius: 14px;
-  background: var(--paper);
-  color: var(--ink);
-  font: 400 13.5px/1.45 var(--sans);
+  padding: 16px;
+  border-radius: 20px;
+  background: var(--material);
+  backdrop-filter: blur(30px) saturate(1.8);
+  -webkit-backdrop-filter: blur(30px) saturate(1.8);
+  color: var(--label);
+  font: 400 14px/1.45 var(--font);
+  letter-spacing: -0.005em;
   box-shadow: var(--shadow);
   pointer-events: auto;
   transform-origin: top left;
   scrollbar-width: thin;
 }
 .card.flip { transform-origin: bottom left; }
-.card[data-kind='rage'] { --k: var(--rage); }
-.card[data-kind='fear'] { --k: var(--fear); }
-.card[data-kind='envy'] { --k: var(--envy); }
-.card[data-kind='clean'] { --k: var(--clean); }
 
-.c-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.c-src { display: inline-flex; align-items: center; gap: 6px; font: 550 11.5px/1 var(--sans); color: var(--ink-2); white-space: nowrap; }
-.c-src i { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); }
-.c-src[data-src='on-device'] i { background: var(--clean); }
-.c-src[data-src='cloud'] i { background: var(--focus); }
-.card > .rule.thick { margin: 10px 0 13px; }
+/* verdict: symbol, kind, and the score ring */
+.c-top { display: flex; align-items: center; gap: 11px; }
+.c-icon { display: grid; place-items: center; width: 36px; height: 36px; flex: none; border-radius: 50%; background: var(--ink); color: var(--on-ink); }
+.c-icon svg { width: 15px; height: 15px; }
+.card[data-kind='clean'] .c-icon { background: var(--fill); color: var(--label); }
+.c-title { flex: 1; min-width: 0; }
+.c-title b { display: block; font: 700 17px/1.15 var(--font); letter-spacing: -0.02em; }
+.c-title span { display: block; margin-top: 2px; font-size: 12.5px; color: var(--label-2); }
+.c-ring { position: relative; width: 48px; height: 48px; flex: none; }
+.c-ring svg { width: 48px; height: 48px; transform: rotate(-90deg); }
+.c-ring circle { fill: none; stroke-width: 4.5; }
+.c-ring .t { stroke: var(--fill); }
+.c-ring .f { stroke: var(--ink); stroke-linecap: round; }
+.c-ring b { position: absolute; inset: 0; display: grid; place-items: center; font: 700 15px/1 var(--font); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 
-/* the verdict: kind on the left, score on the right, a ruled meter under it */
-.c-verdict { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
-.c-kind { display: flex; align-items: center; gap: 8px; font: 800 25px/1 var(--display); letter-spacing: -0.035em; }
-.c-kind i { width: 12px; height: 12px; border-radius: 3px; background: var(--k); flex: none; }
-.c-sub { display: block; margin-top: 7px; font-size: 12.5px; color: var(--ink-2); }
-.c-score { font: 800 50px/0.78 var(--display); letter-spacing: -0.05em; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.c-score small { margin-left: 2px; font: 600 12.5px/1 var(--sans); letter-spacing: 0; color: var(--ink-3); }
-.c-meter { position: relative; height: 6px; margin: 13px 0 0; border-radius: 3px; background: var(--fill); overflow: hidden; }
-.c-meter s { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--k); }
-.c-meter::after {
-  /* a tick every ten points */
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1.5px), var(--paper) calc(10% - 1.5px) 10%);
-}
+.c-head { margin: 14px 2px 0; font: 600 15.5px/1.38 var(--font); letter-spacing: -0.012em; text-wrap: pretty; }
+.c-head mark { color: inherit; background: var(--mark); border-radius: 4px; padding: 0 3px; }
 
-.c-headline { margin: 14px 0 0; font: 500 17px/1.36 var(--serif); letter-spacing: -0.005em; text-wrap: pretty; }
-.c-headline mark { color: inherit; background: var(--mark); padding: 0 2px; border-radius: 2px; }
+.c-sec { margin-top: 16px; }
+.c-sec .h { margin-left: 4px; }
+.c-row { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; padding: 10px 0; border-bottom: 0.5px solid var(--sep); font-size: 13.5px; }
+.c-row:last-child { border-bottom: 0; }
+.c-row b { font-weight: 600; }
+.c-row span { color: var(--label-2); text-align: right; font-size: 13px; }
+.c-row .none { color: var(--label-2); text-align: left; }
 
-.c-sec { margin-top: 14px; padding-top: 11px; border-top: 3px solid var(--ink); }
-.c-sec h4 { display: flex; align-items: center; justify-content: space-between; margin: 0 0 8px; }
-.c-sec h4 span { letter-spacing: 0.04em; text-transform: none; font-weight: 500; }
+/* bait vs honest: a segmented control and the chosen wording */
+.c-alt { margin: 10px 4px 0; font: 500 15px/1.42 var(--font); letter-spacing: -0.01em; text-wrap: pretty; }
+.c-alt.bait { color: var(--label-2); }
 
-.c-list { list-style: none; margin: 0; padding: 0; }
-.c-list li { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; padding: 7px 0; border-bottom: 1px solid var(--rule); }
-.c-list li:last-child { border-bottom: 0; padding-bottom: 0; }
-.c-list b { font-weight: 700; }
-.c-list span { color: var(--ink-2); text-align: right; font-size: 13px; }
-.c-list .none { color: var(--ink-2); text-align: left; }
-
-/* bait vs honest: two layers in one spot; the bait layer is clipped at --cut, drag to wipe */
-.compare { position: relative; display: grid; border: 1px solid var(--rule); border-radius: 9px; overflow: hidden; }
-.compare:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
-.cmp { grid-area: 1 / 1; padding: 27px 13px 13px; font: 500 15.5px/1.4 var(--serif); text-wrap: pretty; }
-.cmp.honest { background: var(--paper); color: var(--ink); }
-.cmp.bait { background: var(--btn); color: var(--btn-ink); clip-path: inset(0 calc(100% - var(--cut)) 0 0); }
-.cmp-tag { position: absolute; top: 10px; font: 650 9.5px/1 var(--sans); letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.6; }
-.cmp.honest .cmp-tag { right: 13px; }
-.cmp.bait .cmp-tag { left: 13px; }
-.cmp-handle { position: absolute; top: 0; bottom: 0; left: var(--cut); width: 2px; translate: -1px 0; background: var(--k); pointer-events: none; }
-.cmp-handle::after {
-  /* the grip: a solid tab with a notch, so it reads as something to drag */
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 8px;
-  height: 28px;
-  translate: -50% -50%;
-  border-radius: 4px;
-  background: var(--k) linear-gradient(var(--paper), var(--paper)) center / 2px 10px no-repeat;
-  box-shadow: 0 0 0 2px var(--paper);
-}
-.compare input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: ew-resize; }
-
-.c-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 14px; }
-.btn.ghost { border-color: transparent; padding: 0 10px 0 8px; color: var(--ink-2); }
-.btn.ghost:hover { color: var(--ink); background: var(--fill-2); border-color: transparent; }
+.c-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 16px; }
+.c-src { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font: 500 11.5px/1.2 var(--font); color: var(--label-2); }
+.c-src i { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--label-3); }
+.c-src[data-src='on-device'] i, .c-src[data-src='cloud'] i { background: var(--label); }
+.c-btns { display: flex; gap: 8px; flex: none; }

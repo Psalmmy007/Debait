@@ -1,4 +1,4 @@
-// A Rage / Fear / Envy / Clean label placed right after a headline.
+// A Rage / Fear / Envy / Clean capsule placed right after a headline.
 import tokens from '../styles/tokens.css?inline';
 import tagCss from '../styles/tag.css?inline';
 import { SPRING, reducedMotion } from './page.js';
@@ -38,8 +38,8 @@ export function createTag(anchor, { onClick }) {
 
   if (!reducedMotion()) {
     btn.animate(
-      [{ transform: 'translateY(3px)', opacity: 0 }, { transform: 'none', opacity: 1 }],
-      { duration: 280, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' },
+      [{ transform: 'scale(0.85)', opacity: 0 }, { transform: 'none', opacity: 1 }],
+      { duration: 360, easing: SPRING },
     );
   }
 
@@ -71,7 +71,7 @@ export function createTag(anchor, { onClick }) {
       morph(() => {
         btn.classList.remove('pending', 'debaited');
         btn.dataset.kind = result.kind;
-        setHTML(ico, result.kind === 'clean' ? ICON.check : ''); // bait kinds show a colour swatch (CSS)
+        setHTML(ico, ICON[result.kind]);
         label.textContent = LABEL[result.kind];
         score.textContent = result.kind === 'clean' ? '' : String(result.score);
         btn.title = `${LABEL[result.kind]}${result.kind === 'clean' ? '' : `, bait score ${result.score}`}. ${SOURCE[result.source] || ''}. Click for ingredients.`;
@@ -81,7 +81,7 @@ export function createTag(anchor, { onClick }) {
     setDebaited(on, result) {
       morph(() => {
         btn.classList.toggle('debaited', on);
-        setHTML(ico, on || result.kind === 'clean' ? ICON.check : '');
+        setHTML(ico, on ? ICON.check : ICON[result.kind]);
         label.textContent = on ? 'Debaited' : LABEL[result.kind];
       }, { flip: true });
     },

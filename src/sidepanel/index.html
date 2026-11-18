@@ -8,15 +8,15 @@
 </head>
 <body>
   <header class="top">
-    <span class="word">Debait</span>
-    <span class="meta" id="period">Last 7 days</span>
+    <h1 class="title">Mind Facts</h1>
+    <p class="period" id="period">Last 7 days</p>
   </header>
 
-  <p class="sample-note">Sample week. Made-up numbers, not your reading.</p>
+  <p class="sample-note">Sample week · made-up numbers, not your reading</p>
 
   <!-- shown when there are no real numbers yet -->
-  <section class="empty-state">
-    <h2>Your label is empty, for now</h2>
+  <section class="card empty-state">
+    <h2>Your week fills in as you browse</h2>
     <p>Debait only counts headlines that Gemini actually checked, so these numbers are always real.</p>
     <ol>
       <li>Make sure Gemini is on (open the Debait popup).</li>
@@ -25,41 +25,39 @@
     </ol>
   </section>
 
-  <main class="label">
-    <h1>Mind Facts</h1>
-    <div class="row serving"><span>Serving size</span><span>Your feed, 7 days</span></div>
-    <div class="rule bar-10"></div>
-
-    <div class="row big"><span>Headlines checked</span><b id="total">0</b></div>
-    <div class="rule bar-4"></div>
-    <div class="row head"><span></span><span class="micro">% of headlines</span></div>
-
-    <div class="row hero"><span>Bait</span><b><em id="baitPct">0</em>%</b></div>
-    <div class="kinds" id="kinds">
-      <div class="row kind" data-k="rage"><span><i class="sq"></i>Rage</span><span class="meter"><s></s></span><b>0%</b></div>
-      <div class="row kind" data-k="fear"><span><i class="sq"></i>Fear</span><span class="meter"><s></s></span><b>0%</b></div>
-      <div class="row kind" data-k="envy"><span><i class="sq"></i>Envy</span><span class="meter"><s></s></span><b>0%</b></div>
-      <div class="row kind" data-k="clean"><span><i class="sq"></i>Clean</span><span class="meter"><s></s></span><b>0%</b></div>
+  <section class="card hero">
+    <h4 class="h">Bait this week<span id="checkedLine">0 headlines checked</span></h4>
+    <div class="big"><b id="baitPct">0</b><span>%</span></div>
+    <div class="chart">
+      <div class="avg" id="avg"><span>avg</span></div>
+      <div class="days" id="days"></div>
     </div>
-    <div class="rule bar-10"></div>
-
-    <h2>Bait by day</h2>
-    <div class="days" id="days"></div>
     <p class="note" id="calmest"></p>
-    <div class="rule bar-4"></div>
+  </section>
 
-    <h2>Top bait sources</h2>
-    <ol class="sources" id="sources"></ol>
-    <div class="rule bar-4"></div>
+  <div class="tiles">
+    <section class="card tile"><h4 class="h">Checked</h4><b id="total">0</b><span>headlines</span></section>
+    <section class="card tile"><h4 class="h">Debaited</h4><b id="debaited">0</b><span>rewritten for you</span></section>
+  </div>
 
-    <div class="row big"><span>Headlines debaited</span><b id="debaited">0</b></div>
-    <div class="rule bar-10"></div>
-    <p class="foot">* Each headline counts once a day, and only when Gemini analysed it. Counts stay on this device; Debait never uploads your browsing history.</p>
-  </main>
+  <h4 class="h out">Kinds of bait</h4>
+  <section class="card">
+    <div class="bar" id="stack"><span data-k="rage"></span><span data-k="fear"></span><span data-k="envy"></span><span data-k="clean"></span></div>
+    <div class="kinds" id="kinds">
+      <div class="kind" data-k="rage"><span class="ico" data-icon="rage"></span><span class="name">Rage<small>Anger, fights, us against them</small></span><b>0%</b></div>
+      <div class="kind" data-k="fear"><span class="ico" data-icon="fear"></span><span class="name">Fear<small>Danger, doom, false urgency</small></span><b>0%</b></div>
+      <div class="kind" data-k="envy"><span class="ico" data-icon="envy"></span><span class="name">Envy<small>Money, status, comparison</small></span><b>0%</b></div>
+      <div class="kind" data-k="clean"><span class="ico" data-icon="clean"></span><span class="name">Clean<small>Plain and factual</small></span><b>0%</b></div>
+    </div>
+  </section>
 
-  <section class="tip" id="tip"></section>
+  <h4 class="h out">Top bait sources</h4>
+  <section class="group"><ol class="sources" id="sources"></ol></section>
 
-  <button class="text-btn" id="seed">Show a sample week</button>
+  <section class="card tip" id="tip"></section>
+
+  <p class="foot">Each headline counts once a day, and only when Gemini analysed it. Counts stay on this device; Debait never uploads your browsing history.</p>
+  <button class="btn sample" id="seed">Show a sample week</button>
   <script type="module" src="./sidepanel.js"></script>
 </body>
 </html>

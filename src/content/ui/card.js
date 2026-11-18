@@ -1,5 +1,4 @@
-// The Ingredients card: a nutrition label for one headline. Why it is bait, word by word,
-// what actually happened, and one action.
+// The Ingredients card: why a headline is bait, word by word, what actually happened, and one action.
 import { reducedMotion } from './page.js';
 import { setHTML } from './html.js';
 import { ICON, SOURCE } from './icons.js';
@@ -12,7 +11,7 @@ const KIND = { rage: 'Rage bait', fear: 'Fear bait', envy: 'Envy bait', clean: '
 const WHY = {
   rage: 'Written to make you angry',
   fear: 'Written to make you afraid',
-  envy: 'Written to make you feel left behind',
+  envy: 'Written to make you feel behind',
   clean: 'Plain and factual',
 };
 
@@ -35,8 +34,8 @@ export function closeCard() {
   cleanup();
   if (reducedMotion()) return el.remove();
   el.animate(
-    [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(-3px) scale(0.98)' }],
-    { duration: 140, easing: 'ease-in' },
+    [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(0.96)' }],
+    { duration: 150, easing: 'ease-in' },
   ).finished.then(() => el.remove());
 }
 
@@ -56,40 +55,40 @@ export function openCard(layer, rec, rect, { onDebait, onRestore }) {
   el.className = 'card';
   el.dataset.kind = r.kind;
   el.setAttribute('role', 'dialog');
-  el.setAttribute('aria-label', `Ingredients: ${KIND[r.kind]}, bait score ${r.score} out of 100`);
+  el.setAttribute('aria-label', `${KIND[r.kind]}, bait score ${r.score} out of 100`);
 
   const rows = r.triggers.length
-    ? r.triggers.map((t) => `<li><b>${esc(t.word)}</b><span>${esc(t.why)}</span></li>`).join('')
-    : '<li><span class="none">No manipulative words. It sticks to the facts.</span></li>';
+    ? r.triggers.map((t) => `<div class="c-row"><b>${esc(t.word)}</b><span>${esc(t.why)}</span></div>`).join('')
+    : '<div class="c-row"><span class="none">No manipulative words. It sticks to the facts.</span></div>';
 
+  const C = 2 * Math.PI * 19.5; // ring circumference
   setHTML(el, `
-    <header class="c-head">
-      <span class="micro">Ingredients</span>
-      <span class="c-src" data-src="${esc(r.source)}"><i></i>${esc(SOURCE[r.source] || r.source)}</span>
-    </header>
-    <div class="rule thick"></div>
-    <div class="c-verdict">
-      <div><div class="c-kind"><i></i>${KIND[r.kind]}</div><span class="c-sub">${WHY[r.kind]}</span></div>
-      <div class="c-score" aria-hidden="true"><span class="num">${r.score}</span><small>/100</small></div>
-    </div>
-    <div class="c-meter" aria-hidden="true"><s></s></div>
-    <p class="c-headline">${markTriggers(rec.text, r.triggers)}</p>
-    <section class="c-sec"><h4 class="micro">${clean ? 'Hooks' : 'Why it hooks you'}</h4><ul class="c-list">${rows}</ul></section>
-    ${clean ? '' : `<section class="c-sec">
-      <h4 class="micro">Bait vs honest<span>Drag to compare</span></h4>
-      <div class="compare" style="--cut: 100%">
-        <div class="cmp honest"><span class="cmp-tag">Honest</span>${esc(r.honest_rewrite)}</div>
-        <div class="cmp bait" aria-hidden="true"><span class="cmp-tag">Bait</span>${esc(rec.text)}</div>
-        <span class="cmp-handle" aria-hidden="true"></span>
-        <input type="range" min="0" max="100" value="100" aria-label="Slide between the bait and the honest headline" />
+    <div class="c-top">
+      <span class="c-icon">${ICON[r.kind]}</span>
+      <div class="c-title"><b>${KIND[r.kind]}</b><span>${WHY[r.kind]}</span></div>
+      <div class="c-ring" aria-hidden="true">
+        <svg viewBox="0 0 48 48"><circle class="t" cx="24" cy="24" r="19.5"/><circle class="f" cx="24" cy="24" r="19.5" stroke-dasharray="${C}" stroke-dashoffset="${C}"/></svg>
+        <b class="num">${r.score}</b>
       </div>
-    </section>
-    <footer class="c-foot">
-      <button class="btn ghost" data-act="share">${ICON.share}<span>Share</span></button>
-      ${debaited
-        ? '<button class="btn" data-act="restore">Show original</button>'
-        : `<button class="btn primary" data-act="debait">Debait it ${ICON.arrow}</button>`}
-    </footer>`}`);
+    </div>
+    <p class="c-head">${markTriggers(rec.text, r.triggers)}</p>
+    <div class="c-sec"><h4 class="h">${clean ? 'Hooks' : 'Why it hooks you'}</h4><div class="group">${rows}</div></div>
+    ${clean ? '' : `<div class="c-sec">
+      <div class="seg" role="tablist" aria-label="Compare wording">
+        <button role="tab" aria-selected="true" data-v="honest">Honest</button>
+        <button role="tab" aria-selected="false" data-v="bait">Bait</button>
+      </div>
+      <p class="c-alt" aria-live="polite">${esc(r.honest_rewrite)}</p>
+    </div>`}
+    <div class="c-foot">
+      <span class="c-src" data-src="${esc(r.source)}"><i></i>${esc(SOURCE[r.source] || r.source)}</span>
+      ${clean ? '' : `<div class="c-btns">
+        <button class="btn round" data-act="share" aria-label="Share as an image" title="Share as an image">${ICON.share}</button>
+        ${debaited
+          ? '<button class="btn" data-act="restore">Show original</button>'
+          : '<button class="btn primary" data-act="debait">Debait it</button>'}
+      </div>`}
+    </div>`);
 
   layer.appendChild(el);
 
@@ -107,51 +106,42 @@ export function openCard(layer, rec, rect, { onDebait, onRestore }) {
   el.style.top = `${top}px`;
   el.style.transformOrigin = `${rect.left + rect.width / 2 - left}px ${el.classList.contains('flip') ? '100%' : '0'}`;
 
-  const meter = el.querySelector('.c-meter s');
-  const num = el.querySelector('.c-score .num');
+  const fill = el.querySelector('.c-ring .f');
+  const num = el.querySelector('.c-ring .num');
+  const target = C * (1 - r.score / 100);
   if (reducedMotion()) {
-    meter.style.width = `${r.score}%`;
+    fill.style.strokeDashoffset = String(target);
   } else {
     el.animate(
-      [{ opacity: 0, transform: 'translateY(-4px) scale(0.98)' }, { opacity: 1, transform: 'none' }],
-      { duration: 220, easing: OUT },
+      [{ opacity: 0, transform: 'scale(0.94)' }, { opacity: 1, transform: 'none' }],
+      { duration: 280, easing: OUT },
     );
-    meter.animate([{ width: '0%' }, { width: `${r.score}%` }], { duration: 800, delay: 80, easing: OUT, fill: 'forwards' });
-    countUp(num, r.score, 800, 80);
+    fill.animate([{ strokeDashoffset: C }, { strokeDashoffset: target }], { duration: 900, delay: 80, easing: OUT, fill: 'forwards' });
+    countUp(num, r.score, 900, 80);
   }
 
   el.addEventListener('click', (e) => {
+    const tab = e.target.closest('.seg button');
+    if (tab) {
+      const bait = tab.dataset.v === 'bait';
+      el.querySelectorAll('.seg button').forEach((b) => b.setAttribute('aria-selected', String(b === tab)));
+      const alt = el.querySelector('.c-alt');
+      alt.textContent = bait ? rec.text : r.honest_rewrite;
+      alt.classList.toggle('bait', bait);
+      return;
+    }
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (act === 'debait') { closeCard(); onDebait(); }
     if (act === 'restore') { closeCard(); onRestore(); }
     if (act === 'share') {
       const btn = e.target.closest('[data-act="share"]');
-      const label = btn.querySelector('span');
-      label.textContent = 'Making image…';
+      btn.disabled = true;
       shareHeadline({ bait: rec.text, honest: r.honest_rewrite, kind: r.kind, score: r.score })
-        .then((how) => { label.textContent = how === 'copied' ? 'Image copied' : 'Image saved'; })
-        .catch(() => { label.textContent = 'Could not share'; });
+        .then((how) => { btn.title = how === 'copied' ? 'Image copied' : 'Image saved'; setHTML(btn, ICON.check); })
+        .catch(() => { btn.title = 'Could not share'; })
+        .finally(() => { btn.disabled = false; });
     }
   });
-
-  // bait vs honest: drag to wipe between them; on open it sweeps once to show it moves
-  const cmp = el.querySelector('.compare');
-  if (cmp) {
-    const range = cmp.querySelector('input');
-    const set = (v) => { cmp.style.setProperty('--cut', `${v}%`); range.value = v; };
-    range.addEventListener('input', () => set(range.value));
-    range.addEventListener('pointerdown', (e) => e.stopPropagation());
-    if (!reducedMotion()) {
-      const t0 = performance.now() + 450;
-      const tick = (t) => {
-        if (!cmp.isConnected || range.matches(':active')) return;
-        const p = Math.min(1, Math.max(0, (t - t0) / 1100));
-        set(Math.round(100 - 55 * (1 - (1 - p) ** 3)));
-        if (p < 1) requestAnimationFrame(tick);
-      };
-      requestAnimationFrame(tick);
-    } else set(45);
-  }
 
   const onDown = (e) => {
     const path = e.composedPath();

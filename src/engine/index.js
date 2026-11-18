@@ -8,7 +8,9 @@ export const USE_MOCK = false;
 
 const GEMINI_TIMEOUT = 15000;  // a working Gemini answers well within this (batches run in parallel)
 const PROBE_TIMEOUT = 20000;   // the background check can take longer (first connection, model load)
-const RETRY_AFTER = 2 * 60 * 1000;
+const RETRY_AFTER = 2 * 60 * 1000;     // after an App Check / permission rejection
+const RETRY_SOON = 20 * 1000;          // after a passing server error (busy, network)
+const retryDelay = (err) => (/app check|401|403|permission|api key/i.test(String(err?.message || err)) ? RETRY_AFTER : RETRY_SOON);
 
 let gemini = 'unknown';        // unknown | ok | failing
 let lastError = null;
@@ -24,7 +26,7 @@ function probe(text, opts) {
     .catch((err) => {
       gemini = 'failing';
       lastError = err;
-      retryAt = Date.now() + RETRY_AFTER;
+      retryAt = Date.now() + retryDelay(err);
       console.debug('[Debait] Gemini not available yet, using the backup engine:', err.message);
     })
     .finally(() => { probing = null; });
@@ -48,7 +50,7 @@ export const engine = USE_MOCK ? mockEngine : {
     } catch (err) {
       gemini = 'failing';
       lastError = err;
-      retryAt = Date.now() + RETRY_AFTER;
+      retryAt = Date.now() + retryDelay(err);
       return mockEngine.scoreHeadlines(texts, opts);
     }
   },

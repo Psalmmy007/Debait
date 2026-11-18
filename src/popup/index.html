@@ -7,27 +7,26 @@
 </head>
 <body>
   <header class="top">
-    <span class="word">Debait</span>
-    <span class="engine" id="engine" data-src="none"><i></i><span>Checking the AI…</span></span>
+    <h1 class="title">Debait</h1>
+    <span class="pill" id="engine" data-src="none"><i></i><span>Checking…</span></span>
   </header>
-  <div class="rule thick"></div>
 
-  <section class="notice" id="setup" hidden>
+  <section class="card notice" id="setup" hidden>
     <b>One step to turn on Gemini</b>
     <p>Send this code to your teammate. They add it in Firebase console → App Check → Apps → Manage debug tokens. Until then Debait uses its backup engine.</p>
     <div class="token"><code id="token"></code><button class="btn" id="copyToken">Copy</button></div>
   </section>
 
-  <section class="notice" id="problems" hidden>
+  <section class="card notice" id="problems" hidden>
     <b>Recent problems</b>
     <p id="problemList"></p>
     <div class="token"><code>Details for a bug report</code><button class="btn" id="copyProblems">Copy</button></div>
   </section>
 
-  <section class="today">
-    <div class="row-h"><span class="micro">Today</span><span class="meta" id="sub">No headlines yet</span></div>
+  <section class="card today">
+    <h4 class="h">Today<span id="sub">No headlines yet</span></h4>
     <div class="big"><b id="pct">0</b><span class="unit">%</span><span class="cap">of headlines<br />were bait</span></div>
-    <div class="stack" id="bar">
+    <div class="bar" id="bar">
       <span data-k="rage"></span><span data-k="fear"></span><span data-k="envy"></span><span data-k="clean"></span>
     </div>
     <ul class="legend" id="legend">
@@ -39,20 +38,22 @@
   </section>
 
   <div class="actions">
-    <button class="btn primary" id="debaitPage">Debait this page</button>
-    <button class="btn" id="turnOn" hidden>Turn on Debait</button>
+    <button class="btn primary wide" id="debaitPage">Debait this page</button>
+    <button class="btn wide" id="turnOn" hidden>Turn on Debait</button>
   </div>
 
-  <section class="settings">
-    <label class="sw-row site"><span>Run on <b id="host">this site</b></span><input type="checkbox" id="siteOn" checked /><span class="sw"></span></label>
-    <label class="sw-row"><span>Show tags</span><input type="checkbox" data-setting="showTags" /><span class="sw"></span></label>
-    <label class="sw-row"><span>Debait automatically<small>Rewrite bait as it appears</small></span><input type="checkbox" data-setting="autoDebait" /><span class="sw"></span></label>
-    <label class="sw-row"><span>Talk to Debait<small>Live voice call with Gemini</small></span><input type="checkbox" data-setting="voice" /><span class="sw"></span></label>
-    <label class="sw-row"><span>Local only<small>Keep every headline on this device</small></span><input type="checkbox" data-setting="localOnly" /><span class="sw"></span></label>
-    <label class="sw-row"><span>Show the orb</span><input type="checkbox" data-setting="showOrb" /><span class="sw"></span></label>
-  </section>
+  <div class="group">
+    <label class="row site"><span>Run on <b id="host">this site</b></span><input type="checkbox" id="siteOn" checked /><span class="sw"></span></label>
+    <label class="row"><span>Show tags</span><input type="checkbox" data-setting="showTags" /><span class="sw"></span></label>
+    <label class="row"><span>Debait automatically<small>Rewrite bait as it appears</small></span><input type="checkbox" data-setting="autoDebait" /><span class="sw"></span></label>
+    <label class="row"><span>Talk to Debait<small>Live voice call with Gemini</small></span><input type="checkbox" data-setting="voice" /><span class="sw"></span></label>
+    <label class="row"><span>Local only<small>Keep every headline on this device</small></span><input type="checkbox" data-setting="localOnly" /><span class="sw"></span></label>
+    <label class="row"><span>Show the orb</span><input type="checkbox" data-setting="showOrb" /><span class="sw"></span></label>
+  </div>
 
-  <button class="link" id="openFacts">Weekly Mind Facts <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 6h8M6.5 2.5 10 6l-3.5 3.5"/></svg></button>
+  <div class="group links">
+    <button class="row" id="openFacts">Weekly Mind Facts <svg class="chev" viewBox="0 0 8 13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 1.5 6.5 6.5l-5 5"/></svg></button>
+  </div>
 
   <script type="module" src="./popup.js"></script>
 </body>

@@ -1,5 +1,4 @@
-import '@fontsource-variable/inter';
-import '@fontsource-variable/bricolage-grotesque';
+import '@fontsource-variable/inter/opsz.css';
 // Asks for the microphone once for the whole extension, then starts the call.
 const msg = document.getElementById('msg');
 const btn = document.getElementById('allow');

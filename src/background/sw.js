@@ -202,6 +202,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.target === 'offscreen') return false; // not for us
   checkBuild();
   if (msg?.type === 'debait/error') { logError(msg.where, msg.message); sendResponse({ ok: true }); return false; }
+  // summary words from the engine, on their way to the tab that asked
+  if (msg?.type === 'debait/summary-chunk') { if (msg.tabId) chrome.tabs.sendMessage(msg.tabId, msg).catch(() => {}); return false; }
 
   (async () => {
     try {
@@ -216,7 +218,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse(await toEngine({ type: MSG.INIT }));
       } else if (msg.type === MSG.SUMMARY) {
         const { localOnly } = await getSettings();
-        sendResponse(await toEngine({ type: MSG.SUMMARY, page: msg.page, localOnly }));
+        sendResponse(await toEngine({ type: MSG.SUMMARY, page: msg.page, localOnly, stream: !!msg.stream, tabId: sender.tab?.id }));
       } else if (msg.type === 'debait/tool') {
         // Gemini wants to act on the page: run it in the active tab
         const res = await toActiveTab({ type: 'debait/tool', name: msg.name, args: msg.args });

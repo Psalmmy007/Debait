@@ -26,7 +26,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         const p = await navigator.permissions.query({ name: 'microphone' }).catch(() => null);
         sendResponse({ ok: true, state: p?.state || 'prompt' });
       } else if (msg.type === MSG.SUMMARY) {
-        sendResponse({ ok: true, ...(await engine.summarize(msg.page, { localOnly: msg.localOnly, debugToken: msg.debugToken })) });
+        // stream the words to the tab that asked, through the service worker
+        const onText = msg.stream && msg.tabId
+          ? (text) => chrome.runtime.sendMessage({ type: 'debait/summary-chunk', tabId: msg.tabId, text }).catch(() => {})
+          : undefined;
+        sendResponse({ ok: true, ...(await engine.summarize(msg.page, { localOnly: msg.localOnly, debugToken: msg.debugToken, onText })) });
       } else if (msg.type === MSG.INIT) {
         sendResponse({ ok: true, status: await engine.initDeviceModel() });
       } else {

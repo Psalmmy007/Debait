@@ -89,7 +89,7 @@ async function start() {
     onToggle: () => toggleDebaitPage(orb.center()),
     orbCenter: () => orb.center(),
     onSize: (k) => orb.setSize(k),
-    onSummarize: () => summarizePage(),
+    onSummarize: (onText) => summarizePage(onText),
     onOpenChange: (open) => orb.setPanelOpen(open),
   });
   orb.setVisible(settings.showOrb);
@@ -120,9 +120,11 @@ async function start() {
   }
 
   let lastSummary = null;
-  async function summarizePage() {
+  let onSummaryText = null; // the panel, while a summary is being written
+  async function summarizePage(onText) {
     if (lastSummary?.url === location.href) return lastSummary;
-    const res = await send({ type: MSG.SUMMARY, page: pageForSummary() });
+    onSummaryText = onText || null;
+    const res = await send({ type: MSG.SUMMARY, page: pageForSummary(), stream: !!onText }).finally(() => { onSummaryText = null; });
     if (!res?.ok) throw new Error(res?.error || 'no response');
     lastSummary = { url: location.href, summary: res.summary, source: res.source };
     return lastSummary;
@@ -423,6 +425,10 @@ async function start() {
   });
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg?.type === 'debait/summary-chunk') {
+      onSummaryText?.(msg.text);
+      return false;
+    }
     if (msg?.type === 'debait/tool') {
       runTool(msg.name, msg.args || {}).then((result) => sendResponse({ result }), (e) => sendResponse({ result: { error: String(e?.message || e) } }));
       return true;

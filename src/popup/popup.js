@@ -1,10 +1,9 @@
-import '@fontsource-variable/inter';
-import '@fontsource-variable/bricolage-grotesque';
+import '@fontsource-variable/inter/opsz.css';
 import { MSG } from '../engine/contract.js';
 import { getSettings, setSettings, getRecentStats } from '../shared/storage.js';
 
 const $ = (s) => document.querySelector(s);
-const SRC_LABEL = { 'on-device': 'Gemini Nano, on device', cloud: 'Gemini, in the cloud', mock: 'Quick estimate', none: 'AI not ready' };
+const SRC_LABEL = { 'on-device': 'Gemini Nano', cloud: 'Gemini Cloud', mock: 'Connecting', none: 'Not ready' };
 
 async function renderToday() {
   const [today] = (await getRecentStats(1));
@@ -35,7 +34,7 @@ async function renderEngine() {
     }
   } catch {
     chip.dataset.src = 'none';
-    chip.querySelector('span').textContent = 'AI not ready';
+    chip.querySelector('span').textContent = 'Not ready';
   }
 }
 

@@ -18,11 +18,11 @@ history. A **Local only** switch turns the cloud off.
   dark storm when the page is full of bait and a calm pearl once it's clean. Drag it anywhere.
   Click it and a ring sweeps across the page while every bait headline decodes into an honest one.
   Click again to restore the originals. Double-click for settings.
-- **Tags.** Each headline gets a small printed label: Rage / Fear / Envy / Clean, with its bait score.
+- **Tags.** Each headline gets a small capsule with a symbol: Rage / Fear / Envy / Clean, with its bait score.
 - **Highlights.** Manipulative words are underlined.
 - **Ingredients card.** Click a tag to see why a headline is bait, word by word, and what actually happened.
-  Drag the before/after slider to compare the bait and honest versions, or copy a share card image.
-- **In short.** A 2–3 sentence summary of the whole page, from the orb panel.
+  Switch between the bait and honest versions, or copy a share card image.
+- **In short.** A 2–3 sentence summary of the whole page, written live in the orb panel as soon as it opens.
 - **Voice call.** Talk to Debait (Gemini Live). Ask what is on the page, what is bait, or to debait it.
 - **Popup.** Today's bait %, breakdown, switches, and which engine is running (on-device / cloud).
 - **Weekly Mind Facts.** A side panel laid out like a nutrition label for your week.

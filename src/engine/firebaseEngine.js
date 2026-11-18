@@ -16,8 +16,105 @@ import { FIREBASE_PROJECTS, CLOUD_MODEL } from './firebaseConfig.js';
 const ais = [];
 let preferred = 0; // the project that answered last; tried first next time
 const skipUntil = []; // a project that rejected us is skipped for a while instead of failing every request
-const SKIP_FOR = 30 * 60 * 1000;
+const SKIP_FOR = 6 * 60 * 60 * 1000; // App Check approval doesn't change mid-session; reload Debait after registering
 export const skipProject = (i) => { skipUntil[i] = Date.now() + SKIP_FOR; };
+
+// ---------- a steadier connection ----------
+// Gemini usually answers in 1-2 s, but under load the same request can sit for 8 s or fail with
+// "high demand". So: if a cloud request is slow (or fails with a passing server error), send the
+// same request once more and use whichever answers first; the slower one is cancelled.
+const isAuth = (err) => /app check|401|403|permission|api key/i.test(String(err?.message || err));
+const isTransient = (err) => !isAuth(err) && /\b(5\d\d|429)\b|high demand|overloaded|unavailable|deadline|timed? ?out|network|fetch/i.test(String(err?.message || err));
+
+function hedged(run, after) {
+  return new Promise((resolve, reject) => {
+    const ctrls = [];
+    let settled = false;
+    let launched = 0;
+    let running = 0;
+    let timer = null;
+    const finish = (fn, v, keep) => {
+      settled = true;
+      clearTimeout(timer);
+      ctrls.forEach((c) => c !== keep && c.abort());
+      fn(v);
+    };
+    const launch = () => {
+      if (settled || launched >= 2) return;
+      launched++;
+      running++;
+      const c = new AbortController();
+      ctrls.push(c);
+      run(c.signal).then((v) => { running--; if (!settled) finish(resolve, v, c); }, (err) => {
+        running--;
+        if (settled) return;
+        if (launched < 2 && isTransient(err)) { clearTimeout(timer); launch(); return; }
+        if (running === 0) finish(reject, err);
+      });
+    };
+    launch();
+    if (Number.isFinite(after)) timer = setTimeout(launch, after);
+  });
+}
+
+/** Like hedged(), for a streamed answer: the first request to start writing wins and keeps streaming. */
+function hedgedStream(start, after, onText) {
+  return new Promise((resolve, reject) => {
+    const ctrls = [];
+    let owner = -1;
+    let settled = false;
+    let launched = 0;
+    let running = 0;
+    let timer = null;
+    const finish = (fn, v, keep) => {
+      settled = true;
+      clearTimeout(timer);
+      ctrls.forEach((c, k) => k !== keep && c.abort());
+      fn(v);
+    };
+    const launch = () => {
+      if (settled || owner !== -1 || launched >= 2) return;
+      const id = launched++;
+      running++;
+      ctrls[id] = new AbortController();
+      const first = () => {
+        if (owner !== -1) return;
+        owner = id;
+        clearTimeout(timer);
+        ctrls.forEach((c, k) => k !== id && c.abort());
+      };
+      start(ctrls[id].signal, first, (text) => { if (owner === id) onText(text); }).then((v) => {
+        running--;
+        if (!settled && (owner === -1 || owner === id)) finish(resolve, v, id);
+      }, (err) => {
+        running--;
+        if (settled || (owner !== -1 && owner !== id)) return;
+        if (owner === id) { finish(reject, err, id); return; }
+        if (launched < 2 && isTransient(err)) { clearTimeout(timer); launch(); return; }
+        if (running === 0) finish(reject, err);
+      });
+    };
+    launch();
+    if (Number.isFinite(after)) timer = setTimeout(launch, after);
+  });
+}
+
+/** One streamed request: reports the text so far as it arrives. */
+async function streamOnce(m, request, signal, onFirst, onText) {
+  const res = await m.generateContentStream(request, { signal });
+  let text = '';
+  for await (const chunk of res.stream) {
+    let t = '';
+    try { t = chunk.text(); } catch { /* a chunk with no text */ }
+    if (!t) continue;
+    if (!text) onFirst();
+    text += t;
+    onText(text.trim());
+  }
+  const final = await res.response;
+  if (!text) { try { text = final.text(); } catch { /* empty */ } }
+  return { text: text.trim(), source: final.inferenceSource === 'on_device' ? 'on-device' : 'cloud' };
+}
 
 export const projectCount = () => FIREBASE_PROJECTS.length;
 export const projectName = (i = preferred) => FIREBASE_PROJECTS[i]?.name || 'Team';
@@ -144,34 +241,41 @@ ${body}`;
 
 /** @type {import('./contract.js').Engine} */
 export const firebaseEngine = {
-  async summarize(page, { localOnly, debugToken }) {
+  /** Streams the summary: onText(textSoFar) is called as the words arrive. */
+  async summarize(page, { localOnly, debugToken, onText = () => {} }) {
+    // a second request only makes sense in the cloud; on this device it would just compete
+    const onDevice = localOnly || (await deviceAvailability()) === 'available';
     let lastErr = null;
     for (const i of localOnly ? [preferred] : projectOrder()) {
       try {
-        const res = await summaryModel(localOnly, debugToken, i).generateContent(summaryPrompt(page));
+        const m = summaryModel(localOnly, debugToken, i);
+        const request = summaryPrompt(page);
+        const out = await hedgedStream((signal, first, chunk) => streamOnce(m, request, signal, first, chunk), onDevice ? Infinity : 3000, onText);
+        if (!out.text) throw new Error('empty summary');
         preferred = i;
-        const text = res.response.text().trim();
-        if (!text) throw new Error('empty summary');
-        return { summary: text, source: res.response.inferenceSource === 'on_device' ? 'on-device' : 'cloud' };
+        return { summary: out.text, source: out.source };
       } catch (err) {
         lastErr = err;
-        if (/app check|401|403/i.test(err.message)) skipProject(i);
+        if (isAuth(err)) skipProject(i);
       }
     }
     throw lastErr || new Error('no Firebase project answered');
   },
   async scoreHeadlines(texts, { localOnly, debugToken }) {
     // on-device runs the same whichever project; in the cloud, fall through to the next project
+    const onDevice = localOnly || (await deviceAvailability()) === 'available';
     let res = null;
     let lastErr = null;
     for (const i of localOnly ? [preferred] : projectOrder()) {
       try {
-        res = await model(localOnly, debugToken, i).generateContent(prompt(texts));
+        const m = model(localOnly, debugToken, i);
+        const request = prompt(texts);
+        res = await hedged((signal) => m.generateContent(request, { signal }), onDevice ? Infinity : 5000);
         preferred = i;
         break;
       } catch (err) {
         lastErr = err;
-        if (/app check|401|403/i.test(err.message)) skipProject(i);
+        if (isAuth(err)) skipProject(i);
         console.debug(`[Debait] ${projectName(i)} project failed:`, err.message);
       }
     }

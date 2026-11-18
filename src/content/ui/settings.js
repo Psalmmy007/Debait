@@ -18,6 +18,7 @@ const SWITCHES = [
 ];
 
 const LEGEND = [['rage', 'Rage'], ['fear', 'Fear'], ['envy', 'Envy'], ['clean', 'Clean']];
+const BY = { 'on-device': 'Gemini Nano', cloud: 'Gemini', mock: 'Quick summary' };
 
 /**
  * @param layer       shadow-root container for the panel
@@ -25,6 +26,7 @@ const LEGEND = [['rage', 'Rage'], ['fear', 'Fear'], ['envy', 'Envy'], ['clean', 
  * @param onToggle    () => void   (Debait / restore the page)
  * @param orbCenter   () => {x, y}
  * @param onOpenChange (open) => void
+ * @param onSummarize (onText) => Promise<{summary, source}>  (onText gets the words as they arrive)
  */
 export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpenChange, onSize, onSummarize }) {
   let el = null;
@@ -57,41 +59,42 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
     el.setAttribute('aria-label', 'Debait');
 
     setHTML(el, `
-      <div class="p-head">
-        <span class="p-word">Debait</span>
+      <header class="p-head">
+        <div>
+          <h2 class="p-title">Debait</h2>
+          <p class="p-engine" data-src="none"><i></i><span>Checking the AI…</span></p>
+        </div>
         <button class="p-x" data-act="close" aria-label="Close">${ICON.close}</button>
-      </div>
-      <p class="p-engine" data-src="none"><i></i><span>Checking the AI…</span></p>
-      <div class="rule thick"></div>
+      </header>
 
-      <section class="p-sec">
-        <div class="p-h"><h4 class="micro">This page</h4><span>${host}</span></div>
+      <section class="p-card">
+        <h4 class="h">This page<span>${host}</span></h4>
         <div class="p-big"><b data-v="bait">0</b><span><em data-v="baitWord">bait headlines</em><span data-v="pageLine">Looking for headlines</span></span></div>
-        <button class="btn primary p-main" data-act="toggle">Debait this page</button>
+        <button class="btn primary wide" data-act="toggle">Debait this page</button>
       </section>
 
-      <section class="p-sec p-sum">
-        <div class="p-h"><h4 class="micro">In short</h4></div>
-        <p class="p-sum-text" hidden></p>
-        <button class="btn p-main" data-act="summary">Summarize this page</button>
+      <section class="p-card p-sum">
+        <h4 class="h">In short<span data-v="sumBy"></span></h4>
+        <p class="p-sum-text wait">Reading the page…</p>
+        <button class="btn wide" data-act="summary" hidden>Try again</button>
       </section>
 
-      <section class="p-sec">
-        <div class="p-h"><h4 class="micro">Today</h4><span data-v="todayLine">No headlines yet</span></div>
-        <div class="p-today-n"><b><span data-v="todayPct">0</span><small>%</small></b><span>of headlines were bait</span></div>
-        <div class="p-bar">${LEGEND.map(([k]) => `<span data-k="${k}"></span>`).join('')}</div>
-        <div class="p-legend">${LEGEND.map(([k, name]) => `<span><i data-k="${k}"></i>${name} <b data-v="${k}">0</b></span>`).join('')}</div>
+      <section class="p-card">
+        <h4 class="h">Today<span data-v="todayLine">No headlines yet</span></h4>
+        <div class="p-today"><b><span data-v="todayPct">0</span>%</b><span>of headlines were bait</span></div>
+        <div class="bar">${LEGEND.map(([k]) => `<span data-k="${k}"></span>`).join('')}</div>
+        <div class="p-legend">${LEGEND.map(([k, name]) => `<span><i class="sq" data-k="${k}"></i>${name} <b data-v="${k}">0</b></span>`).join('')}</div>
       </section>
 
-      <section class="p-sec p-set">
-        <div class="p-h"><h4 class="micro">Settings</h4></div>
-        <label class="p-row">
+      <h4 class="h p-out">Settings</h4>
+      <div class="group">
+        <label class="row">
           <span>Run on ${host}</span>
           <input type="checkbox" data-site ${settings.disabledSites.includes(host) ? '' : 'checked'} />
           <span class="sw"></span>
         </label>
         ${SWITCHES.map((s) => `
-          <label class="p-row">
+          <label class="row">
             <span>${s.title}${s.hint ? `<small>${s.hint}</small>` : ''}</span>
             <input type="checkbox" data-setting="${s.key}" ${settings[s.key] ? 'checked' : ''} />
             <span class="sw"></span>
@@ -100,9 +103,10 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
           <span>Orb size<small data-v="orbSize">${Math.round((settings.orbSize || 1) * 100)}%</small></span>
           <input type="range" min="0.75" max="1.6" step="0.05" value="${settings.orbSize || 1}" data-size aria-label="Orb size" />
         </label>
-      </section>
-
-      <button class="p-link" data-act="facts">Weekly Mind Facts ${ICON.arrow}</button>
+      </div>
+      <div class="group">
+        <button class="row" data-act="facts">Weekly Mind Facts ${ICON.chev}</button>
+      </div>
       <p class="p-note" hidden></p>`);
 
     layer.appendChild(el);
@@ -127,14 +131,14 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
     refresh();
     loadToday();
     loadEngine();
+    summarize(); // starts right away, so it's usually done by the time you look
 
     if (!reducedMotion()) {
-      el.animate(clipFrames(true), { duration: 560, easing: OUT });
-      const parts = el.querySelectorAll('.p-head, .p-engine, .p-sec, .p-link');
-      parts.forEach((p, i) => {
+      el.animate(clipFrames(true), { duration: 600, easing: OUT });
+      el.querySelectorAll('.p-head, .p-card, .p-out, .group').forEach((p, i) => {
         p.animate(
-          [{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }],
-          { duration: 420, delay: 80 + i * 35, easing: OUT, fill: 'backwards' },
+          [{ opacity: 0, transform: 'translateY(8px) scale(0.98)' }, { opacity: 1, transform: 'none' }],
+          { duration: 460, delay: 70 + i * 40, easing: OUT, fill: 'backwards' },
         );
       });
     }
@@ -184,7 +188,7 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
       if (!res?.ok && el) {
         const note = el.querySelector('.p-note');
         note.hidden = false;
-        note.textContent = 'Click the Debait icon in the toolbar, then "Weekly Mind Facts".';
+        note.textContent = 'Click the Debait icon in the toolbar, then Weekly Mind Facts.';
       }
     }
   }
@@ -215,31 +219,33 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
 
   async function summarize() {
     const sec = el?.querySelector('.p-sum');
-    if (!sec || sec.classList.contains('loading')) return;
+    if (!sec || sec.dataset.state === 'loading') return;
     const out = sec.querySelector('.p-sum-text');
-    const btn = sec.querySelector('[data-act="summary"]');
-    sec.classList.add('loading');
-    out.hidden = false;
-    out.textContent = 'Reading the whole page…';
-    btn.disabled = true;
-    btn.textContent = 'Summarizing…';
+    const retry = sec.querySelector('[data-act="summary"]');
+    const by = sec.querySelector('[data-v="sumBy"]');
+    sec.dataset.state = 'loading';
+    retry.hidden = true;
+    out.className = 'p-sum-text wait';
+    out.textContent = 'Reading the page…';
     try {
-      const { summary, source } = await onSummarize();
+      const { summary, source } = await onSummarize((text) => {
+        if (!el) return;
+        out.className = 'p-sum-text typing';
+        out.textContent = text;
+      });
       if (!el) return;
+      out.className = 'p-sum-text';
       out.textContent = summary;
-      out.classList.add('done');
-      sec.dataset.src = source;
-      btn.hidden = true;
-      const by = document.createElement('span');
-      by.textContent = { 'on-device': 'Gemini Nano', cloud: 'Gemini', mock: 'Quick summary' }[source] || '';
-      sec.querySelector('.p-h').append(by);
-      if (!reducedMotion()) out.animate([{ opacity: 0, transform: 'translateY(4px)' }, { opacity: 1, transform: 'none' }], { duration: 500, easing: OUT });
+      by.textContent = BY[source] || '';
+      sec.dataset.state = 'done';
     } catch (err) {
-      out.textContent = /LOCAL_ONLY/.test(err.message) ? 'Local only is on, but Gemini Nano is not ready on this computer.' : 'Could not summarize this page. Try again in a moment.';
-      btn.disabled = false;
-      btn.textContent = 'Try again';
-    } finally {
-      sec.classList.remove('loading');
+      if (!el) return;
+      out.className = 'p-sum-text wait error';
+      out.textContent = /LOCAL_ONLY/.test(err.message)
+        ? 'Local only is on, but Gemini Nano is not ready on this computer.'
+        : 'Could not summarize this page.';
+      retry.hidden = false;
+      sec.dataset.state = 'error';
     }
   }
 
@@ -255,9 +261,9 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
     const btn = el.querySelector('[data-act="toggle"]');
     const restore = bait === 0 && debaited > 0;
     btn.classList.toggle('primary', !restore);
-    setHTML(btn, restore
+    btn.textContent = restore
       ? 'Restore originals'
-      : bait > 0 ? `Debait ${bait} headline${bait === 1 ? '' : 's'} ${ICON.arrow}` : 'Nothing to debait here');
+      : bait > 0 ? `Debait ${bait} headline${bait === 1 ? '' : 's'}` : 'Nothing to debait here';
     btn.disabled = !restore && bait === 0;
   }
 
@@ -271,7 +277,7 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
       : 'No headlines yet';
     for (const [k] of LEGEND) {
       el.querySelector(`[data-v="${k}"]`).textContent = t[k];
-      const bar = el.querySelector(`.p-bar [data-k="${k}"]`);
+      const bar = el.querySelector(`.bar [data-k="${k}"]`);
       requestAnimationFrame(() => { bar.style.width = `${pct(t[k], t.total)}%`; });
     }
   }
