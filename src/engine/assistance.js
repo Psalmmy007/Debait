@@ -1,6 +1,7 @@
+import { invalidAssistance } from './errors.js';
 import { normalizeRewriteText, rewriteDecision } from './qualityPolicy.js';
 
-const invalid = () => Object.assign(new Error('AI returned unsupported headline assistance. No wording was changed.'), { code: 'debait/invalid-assistance' });
+const invalid = invalidAssistance;
 function quotes(text) {
   const value = normalizeRewriteText(text), spans = [];
   const word = char => !!char && /[\p{L}\p{N}]/u.test(char);
@@ -20,7 +21,7 @@ const protectedWords = text => text.match(/\b(?:no|not|never|without|neither|nor
 const names = text => text.match(/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b|\b[A-Z]{2,4}\b/g) || [];
 const contains = (text, phrase) => normalizeRewriteText(text).includes(normalizeRewriteText(phrase));
 export function normalizeAssistance(raw, text, task, kind) {
-  if (!['cloud', 'on-device'].includes(raw?.source)) throw invalid();
+  if (!['cloud', 'on-device'].includes(raw?.source)) throw invalid('source');
   if (task === 'rewrite') {
     if (!['rage', 'fear', 'envy', 'clean'].includes(kind) || typeof raw.honest_rewrite !== 'string' || !raw.honest_rewrite.trim()) throw invalid();
     const decision = rewriteDecision(text, raw.honest_rewrite, kind);
@@ -33,16 +34,17 @@ export function normalizeAssistance(raw, text, task, kind) {
   const verification = /\b(?:verified|fact[- ]?checked|proven|confirmed)\b/gi;
   const allOutput = [explanation, raw.missing_context, ...raw.definitions.map(d => d?.meaning || '')].join(' ');
   if ([...allOutput.matchAll(verification)].some(m => !text.toLowerCase().includes(m[0].toLowerCase()) &&
-      !/\b(?:not|never|not been|cannot be)\s+(?:independently\s+)?$/i.test(allOutput.slice(Math.max(0, m.index - 40), m.index)))) throw invalid();
-  if (numbers(raw.missing_context).some(n => !numbers(text).includes(n))) throw invalid();
+      !/\b(?:not|never|not been|cannot be)\s+(?:independently\s+)?$/i.test(allOutput.slice(Math.max(0, m.index - 40), m.index)))) throw invalid('verification');
+  if (numbers(raw.missing_context).some(n => !numbers(text).includes(n))) throw invalid('numbers');
   const logicalWords = value => (value.match(/\b(?:no|not|never|without|neither|nor|may|might|could|will|must|causes?|caused|causing|prevents?|prevented|preventing|harming|destroying|permanent|permanently|forever|some|many|most|all|only|serious|severe|fatal|deadly|dangerous|harmful)\b|\b\w+n't\b/gi) || []).map(w => w.toLowerCase()).sort();
-  if (JSON.stringify(logicalWords(text)) !== JSON.stringify(logicalWords(explanation))) throw invalid();
+  if (JSON.stringify(logicalWords(text)) !== JSON.stringify(logicalWords(explanation))) throw invalid('claims');
   const protectedSpans = [...quotes(text), ...numbers(text), ...protectedWords(text), ...names(text)];
-  if (protectedSpans.some(span => !contains(explanation, span)) || numbers(explanation).some(n => !numbers(text).includes(n))) throw invalid();
+  if (protectedSpans.some(span => !contains(explanation, span))) throw invalid('details');
+  if (numbers(explanation).some(n => !numbers(text).includes(n))) throw invalid('numbers');
   for (const definition of raw.definitions) {
     if (typeof definition?.term !== 'string' || !/[\p{L}]/u.test(definition.term) || !text.includes(definition.term) ||
         typeof definition.meaning !== 'string' || !definition.meaning.trim() || definition.meaning.length > 600 ||
-        numbers(definition.meaning).some(n => !numbers(text).includes(n))) throw invalid();
+        numbers(definition.meaning).some(n => !numbers(text).includes(n))) throw invalid('definition');
   }
   return { simple_explanation: explanation, definitions: raw.definitions.map(d => ({ term: d.term, meaning: d.meaning.trim() })),
     missing_context: raw.missing_context.trim(), source: raw.source };

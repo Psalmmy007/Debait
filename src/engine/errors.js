@@ -1,11 +1,33 @@
 import { retryDelayMs } from '../shared/quota.js';
 
+// Fixed, privacy-safe diagnostics. Never include model output, headlines or credentials.
+const ASSISTANCE_FAILURES = {
+  format: 'The AI response did not match the required headline-assistance format.',
+  source: 'The AI response did not have a verified inference source.',
+  verification: 'The AI response claimed verification that the headline does not establish.',
+  numbers: 'The AI response changed or added a figure from the headline.',
+  claims: 'Debait could not establish that the AI response preserved a protected claim, uncertainty or negation.',
+  details: 'Debait could not establish that the AI response preserved a protected quotation, name or detail.',
+  definition: 'The AI response included an invalid definition or a term not copied from the headline.',
+};
+export function assistanceReason(error) {
+  return error?.code === 'debait/invalid-assistance' && typeof error.reason === 'string' && Object.hasOwn(ASSISTANCE_FAILURES, error.reason) ? error.reason : undefined;
+}
+export function assistanceFailure(reason) {
+  const safeReason = Object.hasOwn(ASSISTANCE_FAILURES, reason) ? reason : 'format';
+  return { code: 'debait/invalid-assistance', reason: safeReason, needsAppCheck: false,
+    message: `${ASSISTANCE_FAILURES[safeReason]} Debait did not show it; the original headline is unchanged. You can try a different headline. Reference: ${safeReason}.` };
+}
+export function invalidAssistance(reason) {
+  return Object.assign(new Error(assistanceFailure(reason).message), assistanceFailure(reason));
+}
+
 // Show actionable categories without copying provider payloads, URLs or tokens to the UI/logs.
 export function describeAiError(error) {
   const code = String(error?.code || '');
   const text = `${code} ${error?.message || ''}`;
   const status = error?.customData?.httpErrorCode ?? error?.customData?.status;
-  if (code === 'debait/invalid-assistance') return { code, needsAppCheck: false, message: 'AI could not provide safe headline assistance. The original headline is unchanged. Try again later.' };
+  if (code === 'debait/invalid-assistance') return assistanceFailure(error.reason);
   if (code === 'debait/invalid-classification') return {
     code, needsAppCheck: false,
     message: 'AI returned an unsupported classification or missing headline evidence. No analysis was produced. Please retry.',
@@ -34,6 +56,14 @@ export function describeAiError(error) {
   if (status === 429 || /\b429\b|quota|resource.exhausted/i.test(text)) return {
     code: 'debait/quota', needsAppCheck: false, retryAfterMs: retryDelayMs(error),
     message: 'Gemini usage is temporarily limited. Check the development project quota and retry later.',
+  };
+  if (/timeout|timed?\s*out|deadline.exceeded|aborterror/i.test(text)) return {
+    code: 'debait/timeout', needsAppCheck: false,
+    message: 'The Gemini request timed out. No assistance or analysis was produced. Try again later.',
+  };
+  if (status === 503 || status === 502 || /\b503\b|overloaded/i.test(text)) return {
+    code: 'debait/service', needsAppCheck: false,
+    message: 'Gemini is temporarily unavailable or overloaded. No assistance or analysis was produced. Try again later.',
   };
   if (/fetch|network|offline/i.test(text)) return {
     code: 'debait/network', needsAppCheck: false,

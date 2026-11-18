@@ -2,7 +2,10 @@
 @import '../shared/tokens.css';
 
 /* The toolbar popup: grouped sections, like an Apple settings sheet. */
-body { width: 348px; padding: 16px; font-size: 14px; }
+/* Native action popups auto-size from the document's preferred content size.
+   A viewport-relative maximum can lock that negotiation to a tiny initial viewport. */
+html { width: 380px; min-width: 380px; overflow: hidden; }
+body { width: 100%; max-height: 600px; overflow-y: auto; padding: 16px; font-size: 14px; }
 header { display: flex; align-items: center; justify-content: space-between; padding: 0 2px; }
 .brand { display: flex; align-items: center; gap: 10px; }
 .brand b { font: 700 19px/1 var(--font-display); letter-spacing: -0.02em; }
@@ -99,7 +102,7 @@ header { display: flex; align-items: center; justify-content: space-between; pad
 
 
 /* Variable-length honest statuses must not become oversized action buttons. */
-body { max-width: 100vw; }
+body { max-width: none; }
 header { flex-wrap: wrap; gap: 8px; }
 .chip { max-width: 100%; }
 .status-note { margin: 8px 2px 0; color: var(--label-2); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }

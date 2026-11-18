@@ -1,6 +1,6 @@
 import { normalizeResult } from './contract.js';
 import { assistancePrompt, normalizeAssistance } from './assistance.js';
-import { aiError } from './errors.js';
+import { aiError, invalidAssistance } from './errors.js';
 
 // The same adapter is used by the extension and tested with controlled SDK responses.
 export function createHeadlineEngine({ getAi, getDeviceAi, getGenerativeModel, InferenceMode,
@@ -24,7 +24,9 @@ export function createHeadlineEngine({ getAi, getDeviceAi, getGenerativeModel, I
       if (controller.signal.aborted) throw new Error('Gemini request timed out');
       const source = { on_device: 'on-device', in_cloud: 'cloud' }[response.inferenceSource];
       if (!source || (localOnly && source !== 'on-device')) throw new Error('Invalid inference source');
-      const data = JSON.parse(response.text().trim().replace(/^```(?:json)?\s*|\s*```$/g, ''));
+      let data;
+      try { data = JSON.parse(response.text().trim().replace(/^```(?:json)?\s*|\s*```$/g, '')); }
+      catch (error) { if (task && error instanceof SyntaxError) throw invalidAssistance('format'); throw error; }
       if (task) {
         const result = normalizeAssistance(task === 'rewrite' ? { honest_rewrite: data?.honest_rewrite, source } : { simple_explanation: data?.simple_explanation, definitions: data?.definitions, missing_context: data?.missing_context, source }, texts[0], task, kind);
         lastSource = source;

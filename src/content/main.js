@@ -337,7 +337,7 @@ async function start() {
     rec.assistPending = true;
     try {
       const response = await sendRuntimeMessage({ type: MSG.ASSIST, text: rec.text, task, kind: rec.result.kind });
-      if (!response?.ok) throw Object.assign(new Error(response?.error || 'Assistance unavailable. The original is unchanged.'), { retryAt: response?.retryAt });
+      if (!response?.ok) throw Object.assign(new Error(response?.error || 'Assistance unavailable. The original is unchanged.'), { code: response?.code, reason: response?.reason, retryAt: response?.retryAt });
       if (epoch !== privacyEpoch || records.get(rec.el) !== rec || !rec.el.isConnected ||
           textOf(rec.el) !== (rec.state === 'debaited' ? rec.rewrittenText : rec.text)) throw new Error('The headline or privacy setting changed. Request again.');
       if (settings.localOnly && response.result.source !== 'on-device') throw new Error('LOCAL_ONLY: Cloud assistance cannot be used.');

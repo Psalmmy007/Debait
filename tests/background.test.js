@@ -472,3 +472,14 @@ test('headline assistance preserves server retry guidance and cannot redispatch 
   assert.equal(f.messages.filter(m => m.type === 'debait/headline-assist').length, 1);
   assert.deepEqual(f.data.stats, {});
 });
+
+test('assistance validation reason crosses the worker boundary without retries, statistics or cache writes', async t => {
+  const f = await fixture(t, { assistant: async () => ({ ok: false, code: 'debait/invalid-assistance', reason: 'claims',
+    error: 'The AI response changed a protected claim. Original unchanged. Reference: claims.' }) });
+  const response = await f.send({ type: 'debait/headline-assist', task: 'explain', text: 'Synthetic private headline' });
+  assert.equal(response.ok, false); assert.equal(response.code, 'debait/invalid-assistance'); assert.equal(response.reason, 'claims');
+  assert.equal(f.messages.filter(m => m.type === 'debait/headline-assist').length, 1);
+  assert.equal(f.data.aiRequestBudget.count, 1);
+  assert.deepEqual(f.data.stats, {}); assert.deepEqual(f.data.scoreCache, []);
+  assert.ok(!JSON.stringify(f.data).includes('Synthetic private headline'));
+});

@@ -19,6 +19,7 @@ async function renderToday() {
     if (revision !== todayRevision) return;
     const { sum: today, bait, percentage, complete } = summarizeWeek(days);
     countUp($('#pct'), percentage(bait));
+    $('#pct').nextElementSibling.hidden = percentage(bait) === null;
     $('#sub').textContent = !complete ? 'Category data is incomplete; no reliable percentage is available'
       : today.total ? `of ${today.total} analyzed headline${today.total === 1 ? '' : 's'} today were flagged`
       : 'No headlines analyzed yet today';
@@ -26,7 +27,7 @@ async function renderToday() {
       $(`#bar [data-k='${k}']`).style.width = `${percentage(today[k]) ?? 0}%`;
       $(`#legend [data-k='${k}'] b`).textContent = complete ? today[k] : '—';
     }
-  } catch { if (revision === todayRevision) { $('#pct').textContent = '—'; $('#sub').textContent = 'Reading statistics are temporarily unavailable.'; } }
+  } catch { if (revision === todayRevision) { $('#pct').textContent = '—'; $('#pct').nextElementSibling.hidden = true; $('#sub').textContent = 'Reading statistics are temporarily unavailable.'; } }
 }
 
 async function renderEngine() {

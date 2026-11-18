@@ -53,7 +53,8 @@ const check = (value, message) => { assert.ok(value, message); checks++; };
     check((await popup.locator('[data-ingredient=uncertain-preview]').innerText()).includes('abstention'), 'uncertainty distinct from framing');
     await popup.screenshot({ path: path.join(out, `popup-guide-${theme}.png`), fullPage: true });
     await popup.setViewportSize({width:320,height:650});
-    check(await popup.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'narrow popup contains content');
+    check(await popup.evaluate(() => document.documentElement.getBoundingClientRect().width === 380 && document.body.getBoundingClientRect().width === 380), 'popup retains intrinsic preferred width from a small starting viewport');
+    await popup.setViewportSize({width:380,height:500});
     await popup.evaluate(async()=>{const d=new Date(), key=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); await chrome.storage.local.set({stats:{[key]:{total:0,rage:0,fear:0,envy:0,clean:0,debaited:0,sources:{}}}});});
     await popup.waitForFunction(()=>document.querySelector('#sub').textContent.includes('No headlines'));
     check(await popup.locator('#pct').innerText()==='—', 'empty popup has no invented percentage');
@@ -90,7 +91,7 @@ const check = (value, message) => { assert.ok(value, message); checks++; };
       globalThis.__rec=rec;
       const show=()=>openCard(overlay.cardLayer,rec,{left:480,right:550,bottom:150,top:120,width:70},{
         onDebait:async()=>{rec.state='debaited';return true;},onRestore:async()=>{rec.state='scored';rec.autoApplied=false;return true;},
-        onAssist:async task=>{if(globalThis.__quota)throw new Error('Gemini cooldown. No result produced.');return task==='rewrite'?{honest_rewrite:globalThis.__reject?rec.text:'Council approves new park',source:'cloud'}:{simple_explanation:'The council agreed to create a new park.',definitions:[{term:'Council',meaning:'A group elected or appointed to make local decisions.'}],missing_context:'The headline does not state the location or opening date.',source:'cloud'};}
+        onAssist:async task=>{if(globalThis.__quota)throw new Error('Gemini cooldown. No result produced.');return task==='rewrite'?{honest_rewrite:globalThis.__reject?rec.text:'Council approves new park',source:'cloud'}:{simple_explanation:rec.result.kind==='clean'?"The chef from Queer Eye shares his favourite meals from around the world.":'The council agreed to create a new park.',definitions:rec.result.kind==='clean'?[{term:'chef',meaning:'A professional cook.'}]:[{term:'Council',meaning:'A group elected or appointed to make local decisions.'}],missing_context:rec.result.kind==='clean'?'The headline alone does not list the meals or explain the choices.':'The headline does not state the location or opening date.',source:'cloud'};}
       });
       document.querySelector('#opener').onclick=show;
       const panel=createSettingsPanel(overlay.panelLayer,{getPage:()=>({bait:1,debaited:0,scanned:1,rewritable:1,automatic:true,notice:'Only accepted alternatives are applied.'}),onToggle:async()=>{},orbCenter:()=>({x:960,y:740}),onOpenChange(){}});
@@ -112,7 +113,16 @@ const check = (value, message) => { assert.ok(value, message); checks++; };
     check(await p.locator('debait-root [data-act=restore]').count()===1,'applied rewrite has restoration');
     await p.locator('debait-root [data-act=restore]').click();
     check(await p.evaluate(()=>__rec.state)==='scored','restore handler called');
-    await p.evaluate(()=>{__rec.state='debaited';__rec.autoApplied=true;});
+    await p.evaluate(()=>{__rec.state='scored';globalThis.__rageFixtureText=__rec.text;globalThis.__rageFixtureResult=structuredClone(__rec.result);__rec.text="Queer Eye's chef on his favourite meals from around the world";__rec.result.kind='clean';__rec.result.score=0;__rec.result.triggers=[];});
+    await p.locator('#opener').click();
+    check(await p.locator('debait-root .none-row').evaluate(e=>getComputedStyle(e).display==='block'),'Clean assessment uses full width');
+    check(await p.locator('debait-root [data-act=request-rewrite]').count()===0,'Clean offers explanation without neutral rewrite');
+    await p.locator('debait-root [data-act=explain]').click();
+    await p.waitForSelector('debait-root [data-explanation]:not([hidden])');
+    check((await p.locator('debait-root [data-explanation]').innerText()).includes('Missing context'),'Clean explanation remains separate');
+    await p.screenshot({path:path.join(out,`clean-explain-${theme}.png`),fullPage:true});
+    await p.keyboard.press('Escape');
+    await p.evaluate(()=>{__rec.text=globalThis.__rageFixtureText;__rec.result=structuredClone(globalThis.__rageFixtureResult);__rec.state='debaited';__rec.autoApplied=true;});
     await p.locator('#opener').click();
     check((await p.locator('debait-root .transformation-note').innerText()).includes('Auto-Debait'),'automatic transformation labeled');
     await p.keyboard.press('Escape');await p.evaluate(()=>{__rec.state='scored';__reject=true;});

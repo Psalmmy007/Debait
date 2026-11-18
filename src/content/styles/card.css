@@ -122,3 +122,10 @@
 /* Keep a short trigger readable beside a longer explanation. */
 .ingredients li { display: grid; grid-template-columns: minmax(72px, 0.7fr) minmax(0, 1.3fr); }
 @media (prefers-reduced-motion: reduce) { .card { transform: none !important; } }
+
+/* A Clean assessment is one full-width message, not a two-column trigger row. */
+.ingredients .none-row { display: block; }
+.ingredients .none { display: block; font-size: 14px; line-height: 1.5; }
+.card [data-assistance-status] { font-size: 13px; line-height: 1.5; }
+.card [data-assistance-status]:empty { margin: 0; }
+.card [data-explanation] { font-size: 15px; line-height: 1.55; }

@@ -1,3 +1,4 @@
+import { assistanceReason } from '../engine/errors.js';
 // Service worker: routes messages, keeps the score cache and the daily stats.
 import { normalizeAssistance } from '../engine/assistance.js';
 import { quotaConfig } from '../shared/quotaConfig.js';
@@ -106,7 +107,7 @@ async function toEngine(payload) {
     payload = { ...payload, localOnly: localOnlyActive || settings.localOnly || payload.localOnly };
   }
   const res = await chrome.runtime.sendMessage({ target: 'offscreen', debugToken: token, ...payload });
-  if (!res?.ok) throw Object.assign(new Error(res?.error || 'engine error'), { code: res?.code, retryAfterMs: res?.retryAfterMs });
+  if (!res?.ok) throw Object.assign(new Error(res?.error || 'engine error'), { code: res?.code, reason: assistanceReason(res), retryAfterMs: res?.retryAfterMs });
   return res;
 }
 
@@ -401,7 +402,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: false, error: 'unknown message' });
       }
     } catch (err) {
-      sendResponse({ ok: false, error: String(err?.message || err), code: err.code, retryAt: err.retryAt, autoRetry: err.autoRetry });
+      sendResponse({ ok: false, error: String(err?.message || err), code: err.code, reason: assistanceReason(err), retryAt: err.retryAt, autoRetry: err.autoRetry });
     }
   })();
   return true;
