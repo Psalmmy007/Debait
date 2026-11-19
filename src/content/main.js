@@ -437,6 +437,11 @@ async function start() {
       });
       refreshOrb();
       Promise.all(jobs).then(() => { paint(); refreshOrb(); });
+    } else if ([...records.values()].some((r) => !r.result)) {
+      // clicked while Gemini is still reading the headlines: remember it, and each bait
+      // headline is debaited the moment its result arrives (see applyResult)
+      pageDebaited = true;
+      playRipple(origin);
     }
   }
 

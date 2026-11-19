@@ -144,6 +144,13 @@ function backupStats() {
       if (!deviceId) { deviceId = crypto.randomUUID().slice(0, 8); await chrome.storage.local.set({ deviceId }); }
       const days = Object.keys(stats).sort().slice(-SYNC_DAYS);
       if (!days.length) return;
+      // tidy up: copies from old installs with nothing in the last two weeks are dropped, so
+      // reinstalls never fill Chrome's small sync space (about 100 KB)
+      const all = await chrome.storage.sync.get(null);
+      const cutoff = dayKey(new Date(Date.now() - SYNC_DAYS * 864e5));
+      const stale = Object.entries(all).filter(([k, v]) => k.startsWith(SYNC_PREFIX) && k !== SYNC_PREFIX + deviceId
+        && !Object.keys(v || {}).some((d) => d >= cutoff)).map(([k]) => k);
+      if (stale.length) await chrome.storage.sync.remove(stale);
       await chrome.storage.sync.set({ [SYNC_PREFIX + deviceId]: Object.fromEntries(days.map((k) => [k, syncableDay(stats[k])])) });
     } catch (err) {
       console.debug('[Debait] sync backup skipped:', err.message);

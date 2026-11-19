@@ -104,6 +104,50 @@ function hedgedStream(start, after, onText) {
   });
 }
 
+/**
+ * Tries the Firebase projects in order, but doesn't wait for a slow one: if it hasn't answered
+ * after `stagger` ms (or it fails), the next one starts too. The first answer wins and the others
+ * are cancelled. This matters on a fresh install, where a project that rejects us (App Check)
+ * can take up to 20 s to say so. run(i, signal) => Promise.
+ */
+function raceProjects(order, run, stagger) {
+  return new Promise((resolve, reject) => {
+    const ctrls = [];
+    let next = 0;
+    let running = 0;
+    let settled = false;
+    let lastErr = null;
+    let timer = null;
+    const launch = () => {
+      clearTimeout(timer);
+      if (settled || next >= order.length) return;
+      const i = order[next++];
+      running++;
+      const c = new AbortController();
+      ctrls.push(c);
+      run(i, c.signal).then((v) => {
+        running--;
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        ctrls.forEach((x) => x !== c && x.abort());
+        resolve({ i, v });
+      }, (err) => {
+        running--;
+        if (settled) return;
+        lastErr = err;
+        if (isAuth(err)) skipProject(i);
+        console.debug(`[Debait] ${projectName(i)} project failed:`, err?.message || err);
+        if (next < order.length) launch();
+        else if (running === 0) { settled = true; reject(lastErr); }
+      });
+      if (Number.isFinite(stagger) && next < order.length) timer = setTimeout(launch, stagger);
+    };
+    launch();
+  });
+}
+const both = (a, b) => (AbortSignal.any ? AbortSignal.any([a, b]) : a);
+
 /** One streamed request: reports the text so far as it arrives. */
 async function streamOnce(m, request, signal, onFirst, onText) {
   const res = await m.generateContentStream(request, { signal });
@@ -320,22 +364,13 @@ export const firebaseEngine = {
   async scoreHeadlines(texts, { localOnly, debugToken }) {
     // on-device runs the same whichever project; in the cloud, fall through to the next project
     const onDevice = localOnly || (await deviceAvailability()) === 'available';
-    let res = null;
-    let lastErr = null;
-    for (const i of localOnly ? [preferred] : projectOrder()) {
-      try {
-        const m = model(localOnly, debugToken, i);
-        const request = prompt(texts);
-        res = await hedged((signal) => m.generateContent(request, { signal }), onDevice ? Infinity : 4000);
-        preferred = i;
-        break;
-      } catch (err) {
-        lastErr = err;
-        if (isAuth(err)) skipProject(i);
-        console.debug(`[Debait] ${projectName(i)} project failed:`, err.message);
-      }
-    }
-    if (!res) throw lastErr || new Error('no Firebase project answered');
+    const request = prompt(texts);
+    const won = await raceProjects(localOnly ? [preferred] : projectOrder(), (i, outer) => {
+      const m = model(localOnly, debugToken, i);
+      return hedged((signal) => m.generateContent(request, { signal: both(signal, outer) }), onDevice ? Infinity : 4000);
+    }, onDevice ? Infinity : 2500);
+    preferred = won.i;
+    const res = won.v;
     const source = res.response.inferenceSource === 'on_device' ? 'on-device' : 'cloud';
     const raw = res.response.text().trim().replace(/^```(json)?|```$/g, '');
     const data = JSON.parse(raw);
