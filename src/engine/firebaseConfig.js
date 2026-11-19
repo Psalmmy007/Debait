@@ -35,5 +35,5 @@ export const CLOUD_MODEL = 'gemini-3.5-flash-lite';
 // live voice call models, tried in order (Gemini Developer API via Firebase AI Logic)
 // (checked against the Live API: these accept a session; gemini-live-2.5-flash-preview does not)
 export const LIVE_MODELS = ['gemini-2.5-flash-native-audio-latest', 'gemini-3.1-flash-live-preview', 'gemini-2.5-flash-native-audio-preview-09-2025'];
-// a warm female voice (Chirp 3 HD voice names)
-export const LIVE_VOICE = 'Aoede';
+// a bright, lively female voice (Chirp 3 HD voice names; 'Aoede' is calmer, 'Puck' is an upbeat male voice)
+export const LIVE_VOICE = 'Zephyr';

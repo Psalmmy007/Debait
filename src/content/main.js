@@ -4,6 +4,7 @@ import { getSettings, onSettingsChange } from '../shared/storage.js';
 import { getAdapter, textOf } from './sites/index.js';
 import { injectPageStyles, paintHighlights, swapToRewrite, swapToOriginal } from './ui/page.js';
 import { createOverlay, createOrb, playRipple } from './ui/overlay.js';
+import { chime } from './ui/chime.js';
 import { createTag } from './ui/tag.js';
 import { openCard, closeCard } from './ui/card.js';
 import { createSettingsPanel } from './ui/settings.js';
@@ -90,6 +91,7 @@ async function start() {
       closeCard();
       panel.close();
       const s = await getSettings();
+      chime(s.voice ? 'end' : 'start');
       await setSettings({ voice: !s.voice });
       if (s.voice) onCallState({ state: 'ended' });
     },

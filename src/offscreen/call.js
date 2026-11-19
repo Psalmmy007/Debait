@@ -15,17 +15,19 @@ Use your tools to act on the web page the user is looking at: report on it, deba
 or change a setting. Always call page_report before talking about what is on the page.
 Explain manipulation plainly and kindly. Never claim to fact-check news, and never invent headlines.
 Start the call by saying hi in a few words and offering to check the page.
-Always speak English. Speak clearly at a calm, natural pace, in short sentences, with a brief pause between ideas.
-Let the user finish their sentence before you answer.
+Always speak English. Sound like a friendly, upbeat person on a phone call: warm energy, natural intonation,
+fluent and conversational at a normal speaking pace. Never sound flat, sleepy or robotic, and don't drag words out.
+Let the user finish their sentence before you answer. The user may speak softly: listen closely.
 If you did not clearly hear or understand what the user said, say so briefly and ask them to repeat it. Never guess.
 Ignore background noise, music and your own voice coming back through the speakers.`;
 
-// Speech detection tuned for real rooms: less jumpy about noise (start LOW), and it waits
-// for a real pause before deciding you're done (end LOW + 800 ms), so it stops cutting you off.
+// Speech detection: picks up a normal or soft voice without shouting (start HIGH; the mic's
+// noise suppression keeps the room out), and waits for a real pause before deciding you're
+// done (end LOW + 800 ms), so it doesn't cut you off.
 // The SDK has no option for this, so it's added to the setup message on its way out.
 const REALTIME_INPUT = {
   automaticActivityDetection: {
-    startOfSpeechSensitivity: 'START_SENSITIVITY_LOW',
+    startOfSpeechSensitivity: 'START_SENSITIVITY_HIGH',
     endOfSpeechSensitivity: 'END_SENSITIVITY_LOW',
     prefixPaddingMs: 300,
     silenceDurationMs: 800,

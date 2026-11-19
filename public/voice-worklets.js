@@ -50,8 +50,8 @@ class DebaitPlayer extends AudioWorkletProcessor {
     this.queue = [];       // Float32Array chunks
     this.head = 0;         // read position in queue[0]
     this.buffered = 0;     // samples waiting
-    this.cushion = Math.round(sampleRate * 0.15);   // start speaking once this much is buffered
-    this.maxCushion = Math.round(sampleRate * 0.4);
+    this.cushion = Math.round(sampleRate * 0.22);   // start speaking once this much is buffered (fewer mid-word stalls)
+    this.maxCushion = Math.round(sampleRate * 0.6);
     this.playing = false;
     this.talking = false;
     this.gain = 0;         // for short fades, so gaps never click

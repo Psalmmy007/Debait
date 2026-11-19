@@ -4,7 +4,10 @@
 const MIC_RATE = 16000;
 const SPEAKER_RATE = 24000;
 // while Debait speaks, mic frames quieter than this are treated as its own echo
-const ECHO_GATE = 0.035;
+// (measured after the mic boost below, so a normal voice can still talk over Debait)
+const ECHO_GATE = 0.05;
+// soft voices: lift the mic, with a compressor so loud speech doesn't clip
+const MIC_BOOST = 2;
 
 function toBase64(bytes) {
   let bin = '';
@@ -54,7 +57,15 @@ export async function openAudio({ onMic, onTalking }) {
     }
     onMic(toBase64(new Uint8Array(pcm.buffer)));
   };
-  src.connect(mic);
+  const boost = micCtx.createGain();
+  boost.gain.value = MIC_BOOST;
+  const comp = micCtx.createDynamicsCompressor();
+  comp.threshold.value = -20;
+  comp.knee.value = 10;
+  comp.ratio.value = 6;
+  comp.attack.value = 0.003;
+  comp.release.value = 0.2;
+  src.connect(boost).connect(comp).connect(mic);
 
   const player = new AudioWorkletNode(outCtx, 'debait-player', { outputChannelCount: [1] });
   player.port.onmessage = (e) => { talking = e.data.talking; onTalking?.(talking); };
