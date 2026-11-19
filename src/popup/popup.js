@@ -167,21 +167,24 @@ $('#copyToken').addEventListener('click', async () => {
   });
 })();
 
-(async () => {
+async function renderProblems() {
   const { debaitErrors = [] } = await chrome.storage.local.get('debaitErrors');
   const recent = debaitErrors.filter((e) => Date.now() - Date.parse(e.at) < 30 * 60 * 1000);
-  if (!recent.length) return;
-  $('#problems').hidden = false;
-  $('#problemList').textContent = recent.slice(0, 3).map((e) => `${e.where}: ${e.message.split('\n')[0]}`).join(' · ');
-  $('#copyProblems').addEventListener('click', async () => {
-    await navigator.clipboard.writeText(recent.map((e) => `[${e.at}] ${e.where}\n${e.message}`).join('\n\n'));
-    $('#copyProblems').textContent = 'Copied';
-  });
-})();
+  $('#problems').hidden = recent.length === 0;
+  $('#problemList').textContent = recent.slice(0, 3).map((e) => `${e.where}: ${e.message.split('\\n')[0]}`).join(' · ');
+  return recent;
+}
+$('#copyProblems').addEventListener('click', async () => {
+  const recent = await renderProblems();
+  await navigator.clipboard.writeText(recent.map((e) => `[${e.at}] ${e.where}\\n${e.message}`).join('\\n\\n'));
+  $('#copyProblems').textContent = 'Copied';
+});
+renderProblems().catch(() => {});
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
   if (changes.stats) renderToday();
+  if (changes.debaitErrors) renderProblems().catch(() => {});
   if (changes.settings) { for (const input of document.querySelectorAll('[data-setting]')) input.checked = !!({ ...DEFAULT_SETTINGS, ...changes.settings.newValue })[input.dataset.setting]; renderEngine(); }
 });
 renderToday();
