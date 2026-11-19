@@ -15,9 +15,9 @@
   <p id="engineNote" class="status-note" role="status" aria-live="polite"></p>
 
   <section class="setup" id="setup" hidden>
-    <b>One step to turn on Gemini</b>
-    <p>Development only: copy this private code directly into Firebase Console → App Check → your development web app → Manage debug tokens. Never share it in chat, screenshots or source code. Failed authentication produces an error, never backup results.</p>
-    <div class="token"><code id="token"></code><button id="copyToken">Copy</button></div>
+    <b>Development authentication setup</b>
+    <p>For this unpacked development extension: click Copy, then paste the private token into Firebase Console → App Check → the Debait web app → Manage debug tokens → Add debug token. If your current token is already registered, do not add a duplicate; investigate why Firebase rejected it. Never share the token in chat, screenshots, logs or source code. App Check stays enforced.</p>
+    <div class="token"><code id="token">Private development token (hidden)</code><button id="copyToken">Copy</button></div>
   </section>
 
   <section class="setup" id="problems" hidden>
