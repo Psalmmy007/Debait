@@ -19,13 +19,34 @@ let browser, server; let checks = 0; const reports = [];
   for (const theme of ['light', 'dark']) {
     const context = await browser.newContext({colorScheme:theme,reducedMotion:'reduce',viewport:{width:200,height:600}});
     await context.addInitScript(() => {
-      const store={};const listeners=[];
+      const store={};const listeners=[];globalThis.__tabMessages=[];
+      globalThis.__diagnostics=async value=>{store.debaitErrors=value;listeners.forEach(l=>l({debaitErrors:{newValue:value}},'local'));};
+      Object.defineProperty(navigator,'clipboard',{value:{writeText:async text=>{if(globalThis.__denyCopy)throw new Error('denied');globalThis.__copied=text;}}});
       globalThis.chrome={runtime:{sendMessage:async()=>({ok:true,status:{source:'none',ready:false,message:'Controlled built-layout preview: no inference verified.'}})},
-        storage:{local:{get:async k=>({[k]:store[k]}),set:async o=>{Object.assign(store,o);listeners.forEach(l=>l(Object.fromEntries(Object.entries(o).map(([k,v])=>[k,{newValue:v}])),'local'));}},onChanged:{addListener:f=>listeners.push(f)}},
-        tabs:{query:async()=>[{id:1,url:'https://fictional.example'}],sendMessage:async()=>({ok:false,error:'Controlled cooldown. No inference performed.'})},windows:{getCurrent:async()=>({id:1})},sidePanel:{open:async()=>{globalThis.__openedFacts=true;}}};
+        storage:{local:{get:async k=>{const snapshot=store[k];if(k==='debaitErrors' && globalThis.__holdProblemRead){globalThis.__holdProblemRead=false;return new Promise(resolve=>{globalThis.__releaseProblemRead=()=>resolve({[k]:snapshot});});}return{[k]:snapshot};},set:async o=>{Object.assign(store,o);listeners.forEach(l=>l(Object.fromEntries(Object.entries(o).map(([k,v])=>[k,{newValue:v}])),'local'));}},onChanged:{addListener:f=>listeners.push(f)}},
+        tabs:{query:async()=>[{id:1,url:'https://fictional.example'}],sendMessage:async(_id,msg)=>{globalThis.__tabMessages.push(msg);return{ok:false,error:'Controlled cooldown. No inference performed.'};}},windows:{getCurrent:async()=>({id:1})},sidePanel:{open:async()=>{globalThis.__openedFacts=true;}}};
     });
     const p=await context.newPage();const errors=[];p.on('pageerror',e=>errors.push(e.message));
     await p.goto(origin+'/src/popup/index.html');await p.waitForFunction(()=>document.querySelector('#sub')?.textContent.includes('No headlines'));
+    assert.ok(await p.evaluate(()=>globalThis.__tabMessages.some(m=>m.type==='debait/close-settings-panel')));checks++;
+    assert.equal(await p.locator('#engine span').innerText(),'Not verified');checks++;
+    await p.evaluate(()=>__diagnostics([{at:new Date().toISOString(),where:'voice session',message:'network offline token=PRIVATE_TEST_TOKEN https://private.example'}]));
+    await p.waitForFunction(()=>!document.querySelector('#problems').hidden);
+    assert.ok((await p.locator('#problemList').textContent()).includes('connectivity'));checks++;
+    assert.ok(!(await p.locator('#problemList').textContent()).includes('PRIVATE_TEST_TOKEN'));checks++;
+    await p.locator('#copyProblems').click();
+    assert.ok(!(await p.evaluate(()=>__copied)).includes('PRIVATE_TEST_TOKEN'));checks++;
+    assert.ok((await p.evaluate(()=>__copied)).includes('\n'));checks++;
+    await p.evaluate(()=>{globalThis.__denyCopy=true;});await p.locator('#copyProblems').click();
+    await p.waitForFunction(()=>document.querySelector('#copyProblems').textContent.includes('Could not copy'));checks++;
+    await p.evaluate(()=>__diagnostics({malformed:true}));
+    await p.waitForFunction(()=>document.querySelector('#problems').hidden);checks++;
+    await p.evaluate(()=>{globalThis.__holdProblemRead=true;__diagnostics([]);});
+    await p.waitForFunction(()=>!!globalThis.__releaseProblemRead);
+    await p.evaluate(()=>__diagnostics([{at:new Date().toISOString(),where:'voice session',message:'network offline'}]));
+    await p.waitForFunction(()=>!document.querySelector('#problems').hidden);
+    await p.evaluate(()=>__releaseProblemRead());await p.waitForTimeout(50);
+    assert.equal(await p.locator('#problems').isVisible(),true);checks++;
     const measure=()=>p.evaluate(()=>({viewport:innerWidth,root:document.documentElement.getBoundingClientRect().width,body:document.body.getBoundingClientRect().width,client:document.body.clientWidth,scroll:document.body.scrollWidth,zoom:getComputedStyle(document.body).zoom}));
     const small=await measure();assert.equal(small.root,380);assert.equal(small.body,380);checks+=2;
     await p.setViewportSize({width:380,height:600});

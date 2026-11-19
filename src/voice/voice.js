@@ -20,8 +20,9 @@ async function ask() {
     msg.textContent = 'Microphone permission is granted. The connection is starting; check the orb for the actual call status.';
     btn.hidden = true; setTimeout(() => { if (!closed) window.close(); }, 1600);
   } catch (error) {
+    if (error.name === 'NotAllowedError' && !closed) await chrome.runtime.sendMessage({ type: 'debait/mic-denied' }).catch(() => {});
     msg.textContent = error.name === 'NotAllowedError'
-      ? 'Microphone access was blocked. Allow it using Chrome’s microphone/site controls, then try again.'
+      ? 'Microphone access was blocked. Allow it using Chrome’s microphone/site controls, then start voice again from the popup.'
       : 'The microphone or extension connection is unavailable. Check Chrome and start voice again.';
   } finally { pending = false; btn.disabled = false; }
 }

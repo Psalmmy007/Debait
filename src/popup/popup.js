@@ -1,3 +1,4 @@
+import { recentProblems } from '../shared/problems.js';
 import { summarizeWeek } from '../sidepanel/statistics.js';
 import { createIngredientsGuide } from '../shared/ingredientsView.js';
 import '@fontsource-variable/plus-jakarta-sans';
@@ -10,6 +11,7 @@ const $ = (s) => document.querySelector(s);
 $('#guide').append(createIngredientsGuide());
 let todayRevision = 0;
 let engineRevision = 0;
+let problemsRevision = 0;
 const SRC_LABEL = { 'on-device': 'On-device', cloud: 'Cloud', mock: 'Mock engine', none: 'Not verified' };
 
 async function renderToday() {
@@ -168,16 +170,21 @@ $('#copyToken').addEventListener('click', async () => {
 })();
 
 async function renderProblems() {
+  const revision = ++problemsRevision;
   const { debaitErrors = [] } = await chrome.storage.local.get('debaitErrors');
-  const recent = debaitErrors.filter((e) => Date.now() - Date.parse(e.at) < 30 * 60 * 1000);
-  $('#problems').hidden = recent.length === 0;
-  $('#problemList').textContent = recent.slice(0, 3).map((e) => `${e.where}: ${e.message.split('\n')[0]}`).join(' · ');
+  const recent = recentProblems(debaitErrors);
+  if (revision === problemsRevision) {
+    $('#problems').hidden = recent.length === 0;
+    $('#problemList').textContent = recent.slice(0, 3).map((e) => `${e.where}: ${e.message.split('\n')[0]}`).join(' · ');
+  }
   return recent;
 }
 $('#copyProblems').addEventListener('click', async () => {
-  const recent = await renderProblems();
-  await navigator.clipboard.writeText(recent.map((e) => `[${e.at}] ${e.where}\n${e.message}`).join('\n\n'));
-  $('#copyProblems').textContent = 'Copied';
+  try {
+    const recent = await renderProblems();
+    await navigator.clipboard.writeText(recent.map((e) => `[${e.at}] ${e.where}\n${e.message}`).join('\n\n'));
+    $('#copyProblems').textContent = 'Copied';
+  } catch { $('#copyProblems').textContent = 'Could not copy; select the visible text'; }
 });
 renderProblems().catch(() => {});
 

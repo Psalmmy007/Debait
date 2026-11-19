@@ -54,6 +54,9 @@ let browser;
     assert.equal((await invoke('debait/tool', { name: 'restore_page' })).result.restored, 1);
     assert.equal(await page.locator('#safe').textContent(), safe);
 
+    // A toolbar popup must close the actual page settings, not just send an unused message.
+    await page.locator('debait-root .orb').click({button:'right'});
+    await page.locator('debait-root .panel').waitFor();
     const popup = await context.newPage();
     await popup.exposeFunction('__pageAction', message => invoke(message.type));
     await popup.route('**/pages-preview.js', async route => {
@@ -62,11 +65,23 @@ let browser;
     });
     await popup.goto(`http://127.0.0.1:${port}/pages.html?page=popup`);
     await popup.waitForFunction(() => document.querySelector('#engine')?.dataset.src === 'mock');
+    await page.locator('debait-root .panel').waitFor({state:'detached'});
     await popup.locator('#debaitPage').click();
     await popup.waitForFunction(() => document.querySelector('#pageStatus').textContent.includes('Applied 1'));
     assert.equal(popup.isClosed(), false);
     await popup.close(); await invoke('debait/tool', { name: 'restore_page' });
 
+    await page.evaluate(async root => {
+      const {createSettingsPanel}=await import('/@fs'+root+'/src/content/ui/settings.js');
+      const layer=document.createElement('div');document.body.append(layer);
+      const original=chrome.storage.local.get;let release;
+      chrome.storage.local.get=()=>new Promise(resolve=>{release=resolve;});
+      const panel=createSettingsPanel(layer,{getPage:()=>({}),orbCenter:()=>({x:100,y:100})});
+      const opening=panel.open();await panel.close();chrome.storage.local.get=original;
+      release({settings:{}});await opening;
+      if(layer.childElementCount)throw new Error('Settings reopened after toolbar close during initialization');
+      layer.remove();
+    }, root);
     await page.evaluate(() => { globalThis.__forceDeviceAssist = true; });
     await page.locator('debait-tag button').first().click();
     await page.locator('debait-root [data-act=request-rewrite]').click();
@@ -120,6 +135,6 @@ let browser;
     assert.equal(await disabled.locator('debait-tag').count(), 0);
     assert.equal(await disabled.locator('#safe').textContent(), safe);
     assert.equal(await disabled.evaluate(() => (globalThis.__messages || []).filter(m => m.type === 'debait/score').length), 0);
-    console.log(JSON.stringify({ controlledBrowser: true, manualPage: true, popupResponse: true, individualRequestApplyRestore: true, unsafeRewriteRejected: true, cleanExplanationAndCooldown: true, autoOptInAndManualRestore: true, dynamicRecycledText: true, localOnlyInvalidation: true, nestedLinksPreserved: true, disabledSiteRespected: true, realModelRequests: 0 }));
+    console.log(JSON.stringify({ controlledBrowser: true, popupClosesSettings: true, pendingPanelOpeningCancelled: true, manualPage: true, popupResponse: true, individualRequestApplyRestore: true, unsafeRewriteRejected: true, cleanExplanationAndCooldown: true, autoOptInAndManualRestore: true, dynamicRecycledText: true, localOnlyInvalidation: true, nestedLinksPreserved: true, disabledSiteRespected: true, realModelRequests: 0 }));
   } finally { if (browser) await browser.close(); server.kill(); }
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

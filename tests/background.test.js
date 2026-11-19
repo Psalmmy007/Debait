@@ -497,3 +497,49 @@ test('Local Only prohibits Live slots and a reported server cooldown survives an
   await f.settings({voice:true});
   const denied=await f.sendOffscreen({type:'debait/voice-connect-slot'});assert.equal(denied.code,'debait/quota');assert.equal(denied.autoRetry,false);
 });
+
+test('voice session errors are recorded safely and disable voice without exposing provider text', async t => {
+  const f=await fixture(t,{voice:true});
+  const response=await f.sendOffscreen({type:'debait/call-state',state:'error',message:'network offline https://secret.example/?token=PRIVATE_TEST_TOKEN'});
+  assert.equal(response.ok,true);assert.equal(f.data.settings.voice,false);
+  assert.equal(f.data.debaitErrors[0].where,'voice session');
+  assert.match(f.data.debaitErrors[0].message,/connectivity/);
+  assert.ok(!JSON.stringify([f.data.debaitErrors,f.tabs]).includes('PRIVATE_TEST_TOKEN'));
+});
+test('failed voice setup is logged, disables voice and does not publish credentials', async t => {
+  const f=await fixture(t,{contexts:false,create:async()=>{throw new Error('App Check failed token=PRIVATE_TEST_TOKEN');}});
+  await f.settings({voice:true});await tick();await tick();
+  assert.equal(f.data.settings.voice,false);assert.equal(f.data.debaitErrors[0].where,'voice startup');
+  assert.ok(!JSON.stringify([f.data.debaitErrors,f.tabs]).includes('PRIVATE_TEST_TOKEN'));
+});
+test('microphone denial is logged and clears the voice consent switch',async t=>{
+  const f=await fixture(t,{voice:true});await f.sendPopup({type:'debait/mic-denied'});
+  assert.equal(f.data.settings.voice,false);assert.equal(f.data.debaitErrors[0].where,'voice microphone');
+  assert.match(f.data.debaitErrors[0].message,/permission was denied/);
+});
+test('diagnostic storage failure cannot prevent voice shutdown',async t=>{
+  const f=await fixture(t,{voice:true});const set=chrome.storage.local.set;
+  chrome.storage.local.set=async patch=>{if(patch.debaitErrors)throw new Error('storage failed');return set(patch);};
+  const response=await f.sendOffscreen({type:'debait/call-state',state:'error',message:'network offline'});
+  assert.equal(response.ok,true);assert.equal(f.data.settings.voice,false);
+});
+
+test('saved cloud classifications never verify a new AI session; only fresh SDK inference does',async t=>{
+  const {createHeadlineEngine}=await import('../src/engine/inference.js');
+  const text='The council announced the meeting date';let requests=0;
+  const create=()=>createHeadlineEngine({getAi:async()=>({}),getDeviceAi:()=>({}),
+    getGenerativeModel:()=>({generateContent:async()=>{requests++;return{response:{inferenceSource:'in_cloud',text:()=>JSON.stringify([{kind:'clean',score:0,triggers:[],honest_rewrite:text}])}};}}),
+    InferenceMode:{PREFER_ON_DEVICE:'hybrid'},prompt:()=>'',lang:[],deviceAvailability:async()=> 'unavailable'});
+  let sdk=create();
+  const f=await fixture(t,{cache:[[text,{kind:'clean',score:0,triggers:[],honest_rewrite:text,source:'cloud'}]]});
+  const send=chrome.runtime.sendMessage;
+  chrome.runtime.sendMessage=async msg=>msg.type==='debait/status'?{ok:true,status:await sdk.getStatus({localOnly:msg.localOnly})}:send(msg);
+  const cached=await f.send({type:'debait/score',texts:[text]});
+  assert.equal(cached.cacheHits,1);assert.equal(cached.results[0].source,'cloud');assert.equal(requests,0);
+  let response=await f.sendPopup({type:'debait/status'});
+  assert.equal(response.status.source,'none');assert.equal(response.status.ready,false);
+  assert.match(response.status.message,/saved results/);
+  await sdk.scoreHeadlines([text],{localOnly:false});
+  response=await f.sendPopup({type:'debait/status'});assert.equal(response.status.source,'cloud');assert.equal(requests,1);
+  sdk=create();response=await f.sendPopup({type:'debait/status'});assert.equal(response.status.source,'none');
+});

@@ -38,6 +38,7 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
   let closing = false;
   let restoreFocus = () => {};
   let opening = false;
+  let openRevision = 0;
   let engineRevision = 0;
   let todayRevision = 0;
 
@@ -59,8 +60,10 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
   async function open() {
     if (el || opening) return;
     opening = true;
+    const revision = ++openRevision;
     let settings;
-    try { settings = await getSettings(); } finally { opening = false; }
+    try { settings = await getSettings(); } finally { if (revision === openRevision) opening = false; }
+    if (revision !== openRevision) return;
     el = document.createElement('aside');
     el.className = 'panel';
     el.setAttribute('role', 'dialog');
@@ -168,12 +171,14 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
       onSize?.(value);
     });
     setTimeout(() => {
+      if (!el || closing) return;
       document.addEventListener('pointerdown', onOutside, true);
       document.addEventListener('keydown', onKey, true);
     }, 0);
   }
 
   async function close() {
+    openRevision++; opening = false;
     if (!el || closing) return;
     closing = true;
     engineRevision++; todayRevision++;

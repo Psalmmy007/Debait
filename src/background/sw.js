@@ -1,3 +1,4 @@
+import { createProblemLogger, problemEntry } from '../shared/problems.js';
 import { quotaError } from '../shared/quota.js';
 import { assistanceReason } from '../engine/errors.js';
 // Service worker: routes messages, keeps the score cache and the daily stats.
@@ -16,13 +17,13 @@ import { createDebugTokenStore, readDebugToken, writeDebugToken } from '../engin
 const OFFSCREEN_URL = 'src/offscreen/index.html';
 
 // ---------- problems log (shown in the popup) ----------
-async function logError(where, message) {
-  const { debaitErrors = [] } = await chrome.storage.local.get('debaitErrors');
-  debaitErrors.unshift({ at: new Date().toISOString(), where, message: String(message).slice(0, 600) });
-  await chrome.storage.local.set({ debaitErrors: debaitErrors.slice(0, 15) });
-}
-self.addEventListener('error', (e) => { logError('background', e.message || e.error); });
-self.addEventListener('unhandledrejection', (e) => { logError('background', e.reason?.stack || e.reason); });
+const logError = createProblemLogger({
+  read: async () => (await chrome.storage.local.get('debaitErrors')).debaitErrors,
+  write: debaitErrors => chrome.storage.local.set({ debaitErrors }),
+});
+logError.sanitize().catch(() => {});
+self.addEventListener('error', (e) => { logError('background', e.message || e.error).catch(() => {}); });
+self.addEventListener('unhandledrejection', (e) => { logError('background', e.reason?.stack || e.reason).catch(() => {}); });
 
 // ---------- developer convenience: reload when a new build lands in dist/ ----------
 const UNPACKED = !('update_url' in chrome.runtime.getManifest());
@@ -334,7 +335,7 @@ async function disableVoice() {
   if (settings.voice) await chrome.storage.local.set({ settings: { ...settings, voice: false } });
 }
 function reportVoiceError(error) {
-  const message = String(error?.message || 'Voice could not start.').slice(0,300);
+  const { message } = problemEntry('voice startup', error);
   logError('voice startup', message).catch(() => {});
   toActiveTab({ type: 'debait/call-state', state: 'error', message }).catch(() => {});
   disableVoice().catch(() => {});
@@ -355,7 +356,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   checkBuild();
-  if (msg?.type === 'debait/error') { logError(msg.where, msg.message); sendResponse({ ok: true }); return false; }
+  if (msg?.type === 'debait/error') { logError(msg.where, msg.message).catch(() => {}); sendResponse({ ok: true }); return false; }
 
   (async () => {
     try {
@@ -402,7 +403,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       } else if (msg.type === 'debait/call-state') {
         requireVoiceOffscreen(sender);
         if (msg.state === 'error') {
-          await logError('voice session', String(msg.message || 'Voice session stopped unexpectedly.').slice(0,300));
+          msg = { ...msg, message: problemEntry('voice session', msg.message).message };
+          await logError('voice session', msg.message).catch(() => {});
           await disableVoice();
         }
         toActiveTab({ type: 'debait/call-state', state: msg.state, message: msg.message });
@@ -412,10 +414,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         sendResponse({ ok: true });
       } else if (msg.type === 'debait/mic-granted') {
-        await startCallFlow();
+        try { await startCallFlow(); } catch (error) { reportVoiceError(error); throw error; }
         sendResponse({ ok: true });
       } else if (msg.type === 'debait/mic-denied') {
-        await logError('voice microphone', 'Microphone permission was denied. Check Chrome microphone permissions, then retry.');
+        await logError('voice microphone', 'Microphone permission was denied.').catch(() => {});
         const s = await getSettings();
         await chrome.storage.local.set({ settings: { ...s, voice: false } });
         sendResponse({ ok: true });

@@ -56,8 +56,8 @@ const server=spawn(process.execPath,['node_modules/vite/bin/vite.js','--config',
  const download=await downloadPromise;assert.equal(download.suggestedFilename(),'debait-headline.png');
  const permission=await context.newPage();
  await permission.addInitScript(()=>{
-  globalThis.__permit=false;globalThis.__requests=0;
-  chrome={runtime:{sendMessage:async msg=>msg.type==='debait/voice-allowed'?{ok:true,allowed:globalThis.__permit}:{ok:false}}};
+  globalThis.__permit=false;globalThis.__requests=0;globalThis.__permissionMessages=[];
+  chrome={runtime:{sendMessage:async msg=>{globalThis.__permissionMessages.push(msg.type);return msg.type==='debait/voice-allowed'?{ok:true,allowed:globalThis.__permit}:{ok:false};}}};
   const capture=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
   navigator.mediaDevices.getUserMedia=async options=>{globalThis.__requests++;globalThis.__permissionStream=await capture(options);return globalThis.__permissionStream;};
  });
@@ -67,6 +67,10 @@ const server=spawn(process.execPath,['node_modules/vite/bin/vite.js','--config',
  await permission.evaluate(()=>{globalThis.__permit=true;});await permission.locator('#allow').click();
  await permission.waitForFunction(()=>document.querySelector('#msg').textContent.includes('call could not start'));
  assert.equal(await permission.evaluate(()=>globalThis.__permissionStream.getTracks().every(t=>t.readyState==='ended')),true);
+ await permission.evaluate(()=>{navigator.mediaDevices.getUserMedia=async()=>{throw new DOMException('Permission denied','NotAllowedError');};});
+ await permission.locator('#allow').click();
+ await permission.waitForFunction(()=>document.querySelector('#msg').textContent.includes('Microphone access was blocked'));
+ assert.equal(await permission.evaluate(()=>globalThis.__permissionMessages.includes('debait/mic-denied')),true);
  assert.deepEqual(errors,[]);
- console.log(JSON.stringify({controlled:true,realGeminiRequests:0,syntheticMicrophone:true,realPackagedAudioWorklet:true,strictSelfCspWorklets:true,privacyAbortReleasesMic:true,orbPersonalization:[.75,1,1.6],shareImage:image,shareClipboardDenialDownload:true,shareExcludedForCleanMockUnchanged:true,permissionPagePrivacyAndCleanup:true,nativeExtension:false}));
+ console.log(JSON.stringify({controlled:true,realGeminiRequests:0,syntheticMicrophone:true,realPackagedAudioWorklet:true,strictSelfCspWorklets:true,privacyAbortReleasesMic:true,orbPersonalization:[.75,1,1.6],shareImage:image,shareClipboardDenialDownload:true,shareExcludedForCleanMockUnchanged:true,permissionPagePrivacyAndCleanup:true,microphoneDenialReported:true,nativeExtension:false}));
 }finally{if(browser)await browser.close();server.kill();}})().catch(e=>{console.error(e.stack);process.exitCode=1;});
