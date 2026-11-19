@@ -10,7 +10,7 @@ const $ = (s) => document.querySelector(s);
 $('#guide').append(createIngredientsGuide());
 let todayRevision = 0;
 let engineRevision = 0;
-const SRC_LABEL = { 'on-device': 'On-device', cloud: 'Cloud', mock: 'Mock engine', none: 'Not ready' };
+const SRC_LABEL = { 'on-device': 'On-device', cloud: 'Cloud', mock: 'Mock engine', none: 'Not verified' };
 
 async function renderToday() {
   const revision = ++todayRevision;
@@ -45,7 +45,7 @@ async function renderEngine() {
     $('#turnOn').hidden = !s.canDownloadDevice;
     $('#setup').hidden = !(s.needsAppCheck && res.debugToken);
     $('#token').textContent = '';
-    chip.querySelector('span').textContent = s.source === 'none' ? (s.deviceAvailable ? 'Not verified' : 'Not ready') : SRC_LABEL[s.source] || s.source;
+    chip.querySelector('span').textContent = s.source === 'none' ? 'Not verified' : SRC_LABEL[s.source] || s.source;
     if (s.needsAppCheck && res.debugToken) {
       $('#setup').hidden = false;
       $('#token').textContent = res.debugToken;
@@ -58,7 +58,7 @@ async function renderEngine() {
     $('#turnOn').hidden = true;
     chip.title = error.message;
     chip.dataset.src = 'none';
-    chip.querySelector('span').textContent = 'Not ready';
+    chip.querySelector('span').textContent = 'Not verified';
   }
 }
 
@@ -150,6 +150,9 @@ $('#copyToken').addEventListener('click', async () => {
 // Run on this site
 (async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  // The toolbar popup and the on-page settings panel are alternative surfaces.
+  // Close the page panel when the popup opens instead of stacking both controls.
+  if (tab?.id) chrome.tabs.sendMessage(tab.id, { type: 'debait/close-settings-panel' }).catch(() => {});
   let host = '';
   try { host = new URL(tab.url).hostname.replace(/^www./, ''); } catch { /* chrome:// pages */ }
   if (!host) { $('.site').hidden = true; return; }
