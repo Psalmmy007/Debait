@@ -55,7 +55,7 @@ export function createHeadlineEngine({ getAi, getDeviceAi, getGenerativeModel, I
           : localOnly ? device === 'available' ? 'Gemini Nano is available; inference has not been verified yet.'
             : device === 'unavailable' ? 'LOCAL_ONLY: This computer cannot run Gemini Nano.'
               : 'LOCAL_ONLY: Download Gemini Nano using Turn on Debait.'
-          : 'No successful Gemini analysis yet. Cloud authentication and model access are not verified.',
+          : 'No successful Gemini analysis verified in this AI session. Previously analyzed headlines may still display from saved results. A new live request is needed to verify current access.',
       };
     },
     async initDeviceModel() {
