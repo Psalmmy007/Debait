@@ -171,12 +171,12 @@ async function renderProblems() {
   const { debaitErrors = [] } = await chrome.storage.local.get('debaitErrors');
   const recent = debaitErrors.filter((e) => Date.now() - Date.parse(e.at) < 30 * 60 * 1000);
   $('#problems').hidden = recent.length === 0;
-  $('#problemList').textContent = recent.slice(0, 3).map((e) => `${e.where}: ${e.message.split('\\n')[0]}`).join(' · ');
+  $('#problemList').textContent = recent.slice(0, 3).map((e) => `${e.where}: ${e.message.split('\n')[0]}`).join(' · ');
   return recent;
 }
 $('#copyProblems').addEventListener('click', async () => {
   const recent = await renderProblems();
-  await navigator.clipboard.writeText(recent.map((e) => `[${e.at}] ${e.where}\\n${e.message}`).join('\\n\\n'));
+  await navigator.clipboard.writeText(recent.map((e) => `[${e.at}] ${e.where}\n${e.message}`).join('\n\n'));
   $('#copyProblems').textContent = 'Copied';
 });
 renderProblems().catch(() => {});
