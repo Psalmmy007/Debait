@@ -450,6 +450,11 @@ async function start() {
   });
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg?.type === 'debait/close-settings-panel') {
+      panel.close();
+      sendResponse({ ok: true });
+      return false;
+    }
     if (msg?.type === 'debait/tool') {
       runTool(msg.name, msg.args || {}).then((result) => sendResponse({ result }), (e) => sendResponse({ result: { error: String(e?.message || e) } }));
       return true;
