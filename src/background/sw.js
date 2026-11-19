@@ -100,7 +100,7 @@ async function toEngine(payload) {
 let cache = null; // Map<text, result>
 // Bump when saved results should be thrown away (v2: older results could have a rewrite
 // with the same words as the headline, so debaiting them changed nothing).
-const CACHE_VERSION = 2;
+const CACHE_VERSION = 3; // v3: rewrites are now whole calm headlines
 async function loadCache() {
   if (cache) return cache;
   const { scoreCache = [], cacheVersion } = await chrome.storage.local.get(['scoreCache', 'cacheVersion']);
