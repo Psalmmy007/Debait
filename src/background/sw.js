@@ -334,7 +334,9 @@ async function disableVoice() {
   if (settings.voice) await chrome.storage.local.set({ settings: { ...settings, voice: false } });
 }
 function reportVoiceError(error) {
-  toActiveTab({ type: 'debait/call-state', state: 'error', message: error.message }).catch(() => {});
+  const message = String(error?.message || 'Voice could not start.').slice(0,300);
+  logError('voice startup', message).catch(() => {});
+  toActiveTab({ type: 'debait/call-state', state: 'error', message }).catch(() => {});
   disableVoice().catch(() => {});
 }
 
@@ -399,7 +401,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse(res || { result: { error: 'Debait is not running on this page. Ask the user to refresh it.' } });
       } else if (msg.type === 'debait/call-state') {
         requireVoiceOffscreen(sender);
-        if (msg.state === 'error') await disableVoice();
+        if (msg.state === 'error') {
+          await logError('voice session', String(msg.message || 'Voice session stopped unexpectedly.').slice(0,300));
+          await disableVoice();
+        }
         toActiveTab({ type: 'debait/call-state', state: msg.state, message: msg.message });
         if (msg.state === 'error') {
           const s = await getSettings();
@@ -410,6 +415,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         await startCallFlow();
         sendResponse({ ok: true });
       } else if (msg.type === 'debait/mic-denied') {
+        await logError('voice microphone', 'Microphone permission was denied. Check Chrome microphone permissions, then retry.');
         const s = await getSettings();
         await chrome.storage.local.set({ settings: { ...s, voice: false } });
         sendResponse({ ok: true });
