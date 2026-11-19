@@ -204,6 +204,8 @@ mockEngine.summarize = async function summarize({ title, text, headlines, kind }
     const sentences = (text.match(/[^.!?]+[.!?]+/g) || []).map((x) => x.trim()).filter((x) => x.length > 40);
     return { summary: sentences.slice(0, 3).join(' ') || title, source: 'mock' };
   }
-  const top = headlines.slice(0, 3).map((h) => h.replace(/[.!?]*$/, '.'));
+  // the calm version of each headline, so the summary never repeats the bait
+  const calm = (h) => (CANNED[h.trim().toLowerCase()] || heuristic(h)).honest_rewrite || h;
+  const top = headlines.slice(0, 3).map((h) => calm(h).replace(/[.!?]*$/, '.'));
   return { summary: top.length ? `Top stories on this page: ${top.join(' ')}` : title, source: 'mock' };
 };
