@@ -12,6 +12,7 @@ $('#guide').append(createIngredientsGuide());
 let todayRevision = 0;
 let engineRevision = 0;
 let problemsRevision = 0;
+let privateDevelopmentToken = null;
 const SRC_LABEL = { 'on-device': 'On-device', cloud: 'Cloud', mock: 'Mock engine', none: 'Not verified' };
 
 async function renderToday() {
@@ -45,17 +46,17 @@ async function renderEngine() {
     chip.title = s.message || '';
     $('#engineNote').textContent = s.message || (s.source === 'none' ? 'No inference source has been verified yet.' : 'Source reported by the current AI engine.');
     $('#turnOn').hidden = !s.canDownloadDevice;
-    $('#setup').hidden = !(s.needsAppCheck && res.debugToken);
-    $('#token').textContent = '';
+    // Setup must remain discoverable even when inference has not produced a successful result.
+    // Never display the private token as ordinary popup text or in screenshots.
+    privateDevelopmentToken = typeof res.debugToken === 'string' && res.debugToken.trim() ? res.debugToken : null;
+    $('#setup').hidden = !privateDevelopmentToken;
+    $('#token').textContent = privateDevelopmentToken ? 'Private development token (hidden)' : '';
     chip.querySelector('span').textContent = s.source === 'none' ? 'Not verified' : SRC_LABEL[s.source] || s.source;
-    if (s.needsAppCheck && res.debugToken) {
-      $('#setup').hidden = false;
-      $('#token').textContent = res.debugToken;
-    }
   } catch (error) {
     if (revision !== engineRevision) return;
     $('#engineNote').textContent = error.message;
     $('#setup').hidden = true;
+    privateDevelopmentToken = null;
     $('#token').textContent = '';
     $('#turnOn').hidden = true;
     chip.title = error.message;
@@ -145,8 +146,16 @@ function countUp(el, to) {
 }
 
 $('#copyToken').addEventListener('click', async () => {
-  await navigator.clipboard.writeText($('#token').textContent);
-  $('#copyToken').textContent = 'Copied';
+  if (!privateDevelopmentToken) {
+    $('#copyToken').textContent = 'Unavailable';
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(privateDevelopmentToken);
+    $('#copyToken').textContent = 'Copied privately';
+  } catch {
+    $('#copyToken').textContent = 'Copy blocked';
+  }
 });
 
 // Run on this site
