@@ -10,15 +10,20 @@ export const DEFAULT_SETTINGS = {
   disabledSites: [],  // hosts where Debait stays off
 };
 
+// A page still running an old copy of Debait (after an update) can't reach storage: answer quietly.
 export async function getSettings() {
-  const { settings } = await chrome.storage.local.get('settings');
-  return { ...DEFAULT_SETTINGS, ...(settings || {}) };
+  try {
+    const { settings } = await chrome.storage.local.get('settings');
+    return { ...DEFAULT_SETTINGS, ...(settings || {}) };
+  } catch {
+    return { ...DEFAULT_SETTINGS };
+  }
 }
 
 export async function setSettings(patch) {
   const current = await getSettings();
   const next = { ...current, ...patch };
-  await chrome.storage.local.set({ settings: next });
+  try { await chrome.storage.local.set({ settings: next }); } catch { /* extension reloaded */ }
   return next;
 }
 
@@ -42,7 +47,8 @@ export function emptyDay() {
 
 /** Returns the last `n` days of stats, oldest first: [{date, ...counts}]. */
 export async function getRecentStats(n = 7) {
-  const { stats = {} } = await chrome.storage.local.get('stats');
+  let stats = {};
+  try { ({ stats = {} } = await chrome.storage.local.get('stats')); } catch { /* extension reloaded */ }
   const out = [];
   for (let i = n - 1; i >= 0; i--) {
     const d = new Date();

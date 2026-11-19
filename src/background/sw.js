@@ -98,9 +98,17 @@ async function toEngine(payload) {
 
 // ---------- cache (never score the same headline twice) ----------
 let cache = null; // Map<text, result>
+// Bump when saved results should be thrown away (v2: older results could have a rewrite
+// with the same words as the headline, so debaiting them changed nothing).
+const CACHE_VERSION = 2;
 async function loadCache() {
   if (cache) return cache;
-  const { scoreCache = [] } = await chrome.storage.local.get('scoreCache');
+  const { scoreCache = [], cacheVersion } = await chrome.storage.local.get(['scoreCache', 'cacheVersion']);
+  if (cacheVersion !== CACHE_VERSION) {
+    cache = new Map();
+    await chrome.storage.local.set({ scoreCache: [], cacheVersion: CACHE_VERSION });
+    return cache;
+  }
   cache = new Map(scoreCache);
   return cache;
 }

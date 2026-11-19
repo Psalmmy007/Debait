@@ -211,12 +211,38 @@ export function createOrbRenderer(canvas, size = 56, { dpr: forcedDpr, preserve 
     draw(now);
   }
 
-  canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); lost = true; });
-  canvas.addEventListener('webglcontextrestored', () => { lost = !init(); });
+  // Chrome allows only about 16 WebGL contexts per process, and every tab's orb holds one.
+  // release() hands ours back (hidden tab, or this copy of Debait shutting down); resume() takes it again.
+  const loser = gl.getExtension('WEBGL_lose_context');
+  let releasing = false;
+  let onLostChange = null;
+  canvas.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault();
+    lost = true;
+    if (!releasing) onLostChange?.(true); // Chrome took it: show the CSS orb meanwhile
+  });
+  canvas.addEventListener('webglcontextrestored', () => {
+    lost = !init();
+    releasing = false;
+    onLostChange?.(lost);
+  });
 
   return {
     start() { if (!raf) raf = requestAnimationFrame(frame); },
     stop() { cancelAnimationFrame(raf); raf = 0; },
+    release() {
+      cancelAnimationFrame(raf);
+      raf = 0;
+      if (lost || !loser) return;
+      releasing = true;
+      try { loser.loseContext(); } catch { releasing = false; }
+    },
+    resume() {
+      if (!releasing || !loser) return;
+      try { loser.restoreContext(); } catch { /* not lost yet: it was never released */ }
+    },
+    /** cb(lost) when the context is taken away by Chrome or comes back */
+    onLostChange(cb) { onLostChange = cb; },
     /** Draws a single frame right now (used by the demo lab and for reduced motion). */
     drawOnce() { if (!lost) draw(performance.now()); },
     setMood(name) { Object.assign(tgt, MOODS[name] || MOODS.idle); },

@@ -47,20 +47,29 @@ async function start() {
   document.dispatchEvent(new CustomEvent('debait:takeover'));
   document.querySelectorAll('debait-tag, debait-root').forEach((n) => n.remove());
   let alive = true;
-  const stopHere = () => {
+  let liveTimer = null;
+  const stopHere = (reason) => {
     if (!alive) return;
     alive = false;
     try {
+      clearInterval(liveTimer);
       pageObserver?.disconnect();
       io.disconnect();
       clearTimeout(scanTimer); clearTimeout(retryTimer); clearTimeout(upgradeTimer);
       queue.length = 0;
       orb.destroy?.();
+      if (reason === 'gone') {
+        // Debait was updated or removed and no new copy took over: take our dead UI off the page
+        for (const r of records.values()) r.tag?.remove();
+        overlay.host.remove();
+        if ('highlights' in CSS) { CSS.highlights.delete('debait-bait'); CSS.highlights.delete('debait-hot'); }
+      }
     } catch { /* still starting up: the alive flag is enough */ }
   };
   // this copy is the old one now: step aside quietly
-  document.addEventListener('debait:takeover', stopHere, { once: true });
-  const extensionGone = () => { if (extensionAlive()) return false; stopHere(); return true; };
+  document.addEventListener('debait:takeover', () => stopHere('takeover'), { once: true });
+  const extensionGone = () => { if (extensionAlive()) return false; stopHere('gone'); return true; };
+  liveTimer = setInterval(extensionGone, 4000);
   let pageObserver = null;
   injectPageStyles();
 
@@ -74,9 +83,10 @@ async function start() {
 
   const overlay = createOverlay();
   const orb = createOrb(overlay, {
-    onClick: (origin) => toggleDebaitPage(origin),
-    onDoubleClick: () => { closeCard(); panel.toggle(); },
+    onClick: (origin) => { if (!extensionGone()) toggleDebaitPage(origin); },
+    onDoubleClick: () => { if (extensionGone()) return; closeCard(); panel.toggle(); },
     onTripleClick: async () => {
+      if (extensionGone()) return;
       closeCard();
       panel.close();
       const s = await getSettings();
@@ -233,6 +243,11 @@ async function start() {
       if (el.closest('debait-tag, debait-root')) continue;
       const existing = records.get(el);
       if (existing) {
+        // the site redrew a debaited headline with its own words (React, Preact): put the honest one back
+        if (existing.state === 'debaited' && !existing.animating && textOf(el) === existing.text && existing.result?.honest_rewrite) {
+          el.replaceChildren(document.createTextNode(existing.result.honest_rewrite));
+          continue;
+        }
         // sites like X reuse elements for new posts: rescore if the text changed
         if (existing.animating || existing.state === 'debaited' || textOf(el) === existing.text || textOf(el) === existing.result?.honest_rewrite) continue;
         existing.tag?.remove();
@@ -350,11 +365,20 @@ async function start() {
 
   function applyResult(rec, result) {
     if (!records.has(rec.el) || !result) return;
-    rec.result = result;
     rec.queued = false;
+    if (rec.state === 'debaited') {
+      // a better answer arrived for a headline that's already debaited: show its honest wording
+      rec.result = result;
+      if (result.kind !== 'clean' && textOf(rec.el) !== result.honest_rewrite) rec.el.replaceChildren(document.createTextNode(result.honest_rewrite));
+      rec.tag?.setResult(result);
+      rec.tag?.setDebaited(true, result);
+      return;
+    }
+    rec.result = result;
     rec.state = 'scored';
     rec.tag?.setResult(result);
-    if (settings.autoDebait && result.kind !== 'clean' && result.source !== 'mock') {
+    // "Debait automatically", or this page was debaited: new and redrawn bait headlines follow suit
+    if ((settings.autoDebait || pageDebaited) && result.kind !== 'clean' && result.source !== 'mock') {
       swapToRewrite(rec).then(() => rec.tag?.setDebaited(true, result));
       send({ type: 'debait/debaited', texts: [rec.text] }); // auto-debaited headlines count too
     }
@@ -379,6 +403,7 @@ async function start() {
     return Math.hypot(b.left + b.width / 2 - origin.x, b.top + b.height / 2 - origin.y);
   }
 
+  let pageDebaited = false; // after "Debait this page", until the originals are restored
   function toggleDebaitPage(origin) {
     closeCard();
     orb.pulse();
@@ -387,6 +412,7 @@ async function start() {
     const done = all.filter((r) => r.state === 'debaited');
 
     if (bait.length) {
+      pageDebaited = true;
       // the wave rolls out from the orb; each headline decodes when the wave reaches it
       const { R, duration } = playRipple(origin);
       const jobs = bait.map((rec) => {
@@ -399,6 +425,7 @@ async function start() {
       const real = bait.filter((r) => r.result.source !== 'mock').map((r) => r.text);
       if (real.length) send({ type: 'debait/debaited', texts: real });
     } else if (done.length) {
+      pageDebaited = false;
       // undo: the wave flows back into the orb
       const { R, duration } = playRipple(origin, { undo: true });
       const jobs = done.map((rec) => {

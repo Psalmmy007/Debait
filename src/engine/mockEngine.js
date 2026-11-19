@@ -171,6 +171,10 @@ function heuristic(text) {
     .trim();
   if (!rewrite) rewrite = text;
   rewrite = rewrite.charAt(0).toUpperCase() + rewrite.slice(1);
+  // only call it bait if we can show a calmer wording; otherwise debaiting would change nothing
+  if (rewrite.replace(/[^\p{L}\p{N}]+/gu, ' ').trim() === text.replace(/[^\p{L}\p{N}]+/gu, ' ').trim()) {
+    return { kind: 'clean', score: Math.min(18, raw), triggers: [], honest_rewrite: text };
+  }
 
   return { kind, score: Math.min(97, 30 + raw), triggers, honest_rewrite: rewrite };
 }

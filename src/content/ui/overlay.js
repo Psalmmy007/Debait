@@ -61,8 +61,10 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
   const gl = createOrbRenderer(canvas, Math.round(ORB * ORB_MAX));
   let k = 1; // orb scale
   const S = () => ORB * k;
+  let destroyed = false;
   if (gl) {
     wrap.classList.add('has-gl');
+    gl.onLostChange((lost) => wrap.classList.toggle('has-gl', !lost));
     gl.start();
   }
 
@@ -128,11 +130,12 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
   wrap.addEventListener('pointerenter', () => gl?.setBoost(2.2));
   wrap.addEventListener('pointerleave', () => gl?.setBoost(1));
 
-  // Save battery: stop drawing when the tab is hidden.
+  // Hidden tab: stop drawing and hand the graphics context back to Chrome (it only allows ~16,
+  // and every open tab has an orb). It comes back the moment you return to the tab.
   document.addEventListener('visibilitychange', () => {
-    if (!gl) return;
-    if (document.hidden || wrap.hidden) gl.stop();
-    else gl.start();
+    if (!gl || destroyed) return;
+    if (document.hidden || wrap.hidden) gl.release();
+    else { gl.resume(); gl.start(); }
   });
 
   const cancelJs = () => orb.getAnimations().forEach((a) => { if (!('animationName' in a)) a.cancel(); });
@@ -241,7 +244,7 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
   const HINT = '<em><kbd>2×</kbd> settings <kbd>3×</kbd> talk to Debait</em>';
   let lastCount = -1;
   return {
-    destroy() { gl?.stop?.(); },
+    destroy() { destroyed = true; gl?.release?.(); },
     center,
     /** 0.75 – 1.6 times the normal size; labels next to it keep their size */
     setSize(next) {

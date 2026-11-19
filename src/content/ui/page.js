@@ -131,6 +131,11 @@ export async function swapToRewrite(rec, { delay = 0 } = {}) {
   rec.animating = true;
   await decode(rec.el, from, rec.result.honest_rewrite, delay);
   rec.animating = false;
+  // some sites redraw their headlines while we animate (React, Preact): make sure ours stuck
+  const now = rec.el.textContent.replace(/\s+/g, ' ').trim();
+  if (rec.el.isConnected && now !== rec.result.honest_rewrite.trim()) {
+    rec.el.replaceChildren(document.createTextNode(rec.result.honest_rewrite));
+  }
 }
 
 export async function swapToOriginal(rec, { delay = 0 } = {}) {
