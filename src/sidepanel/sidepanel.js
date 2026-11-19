@@ -1,5 +1,5 @@
 import '@fontsource-variable/inter/opsz.css';
-import { getRecentStats, emptyDay } from '../shared/storage.js';
+import { getRecentStats, dayKey, emptyDay } from '../shared/storage.js';
 import { ICON } from '../content/ui/icons.js';
 
 const $ = (s) => document.querySelector(s);
@@ -10,9 +10,12 @@ const LABEL_H = 25; // day letters under the bars
 
 for (const el of document.querySelectorAll('[data-icon]')) el.innerHTML = ICON[el.dataset.icon];
 
-// Only real numbers: every count here comes from headlines Gemini actually checked while you browsed.
+let showingSample = false;
+
+// Real numbers by default: every count comes from headlines Gemini actually checked while you browsed.
 async function render() {
-  const days = await getRecentStats(7);
+  const days = showingSample ? sampleWeek() : await getRecentStats(7);
+  document.body.classList.toggle('sample', showingSample);
   const sum = { ...emptyDay() };
   for (const d of days) {
     for (const k of ['total', 'debaited', ...KINDS]) sum[k] += d[k];
@@ -23,7 +26,7 @@ async function render() {
 
   const fmt = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   $('#period').textContent = `${fmt(at(days[0].date))} – ${fmt(at(days[6].date))}`;
-  document.body.classList.toggle('empty', sum.total === 0);
+  document.body.classList.toggle('empty', !showingSample && sum.total === 0);
   $('#baitPct').textContent = pct(bait);
   $('#checkedLine').textContent = `${sum.total.toLocaleString()} headline${sum.total === 1 ? '' : 's'} checked`;
   $('#total').textContent = sum.total.toLocaleString();
@@ -83,5 +86,29 @@ async function render() {
         : `<b>Suggestion</b>Most of your bait this week played on ${kindName[topKind]}. Try “Debait automatically” for a calmer week.`;
 }
 
-chrome.storage.onChanged.addListener((c, area) => { if (area === 'local' && c.stats) render(); });
+// A made-up week for previews and the demo video. It is only drawn on screen and never saved,
+// so it can't mix with your real numbers (and the page says so while it's shown).
+function sampleWeek() {
+  const out = [];
+  const shape = [0.46, 0.41, 0.52, 0.33, 0.24, 0.38, 0.44];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const total = [212, 188, 247, 176, 151, 203, 229][6 - i];
+    const bait = Math.round(total * shape[6 - i]);
+    const rage = Math.round(bait * 0.48), fear = Math.round(bait * 0.32), envy = bait - rage - fear;
+    out.push({
+      date: dayKey(d), total, rage, fear, envy, clean: total - bait, debaited: Math.round(bait * 0.6),
+      sources: { 'x.com': Math.round(bait * 0.45), 'youtube.com': Math.round(bait * 0.3), 'dailyoutrage.news': Math.round(bait * 0.15), 'bbc.com': Math.round(bait * 0.1) },
+    });
+  }
+  return out;
+}
+$('#seed').addEventListener('click', () => {
+  showingSample = !showingSample;
+  $('#seed').textContent = showingSample ? 'Back to my real week' : 'Show a sample week';
+  render();
+});
+
+chrome.storage.onChanged.addListener((c, area) => { if (c.stats || (area === 'sync' && Object.keys(c).some((k) => k.startsWith('mf:')))) render(); });
 render();

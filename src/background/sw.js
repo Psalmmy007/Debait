@@ -1,6 +1,6 @@
 // Service worker: routes messages, keeps the score cache and the daily stats.
 import { MSG } from '../engine/contract.js';
-import { getSettings, dayKey, emptyDay } from '../shared/storage.js';
+import { getSettings, dayKey, emptyDay, SYNC_PREFIX, SYNC_DAYS, syncableDay } from '../shared/storage.js';
 
 const OFFSCREEN_URL = 'src/offscreen/index.html';
 
@@ -132,6 +132,25 @@ statsQueue = statsQueue.then(async () => {
   const { statsVersion } = await chrome.storage.local.get('statsVersion');
   if (statsVersion !== 2) await chrome.storage.local.set({ stats: {}, statsVersion: 2 });
 });
+
+// Copy the last two weeks of totals to Chrome sync (see shared/storage.js). Batched, because
+// Chrome allows only a limited number of sync writes per minute.
+let syncTimer = null;
+function backupStats() {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(async () => {
+    try {
+      let { deviceId, stats = {} } = await chrome.storage.local.get(['deviceId', 'stats']);
+      if (!deviceId) { deviceId = crypto.randomUUID().slice(0, 8); await chrome.storage.local.set({ deviceId }); }
+      const days = Object.keys(stats).sort().slice(-SYNC_DAYS);
+      if (!days.length) return;
+      await chrome.storage.sync.set({ [SYNC_PREFIX + deviceId]: Object.fromEntries(days.map((k) => [k, syncableDay(stats[k])])) });
+    } catch (err) {
+      console.debug('[Debait] sync backup skipped:', err.message);
+    }
+  }, 15000);
+}
+chrome.storage.onChanged.addListener((c, area) => { if (area === 'local' && c.stats) backupStats(); });
 
 function recordStats(results, host, texts) {
   statsQueue = statsQueue.then(async () => {
