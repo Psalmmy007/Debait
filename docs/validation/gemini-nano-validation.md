@@ -154,7 +154,7 @@ No large batches were run on purpose.
 
 8. **Minor:** the score cache in `src/background/sw.js:206-222` ignores which model produced a result, so cloud results show under Local only (labelled "cloud").
 
-None of these fixes were applied. They need the owner of `repair/priority2-firebase-auth` to agree, since 1–3 touch the Firebase engine.
+**Fixes 1–3 are applied on this branch (`test/gemini-nano-validation`).** See "Fixes 1–3: what changed and how they were tested" below. Issues 4–8 are not fixed. Merging needs the owner of `repair/priority2-firebase-auth` to agree, since the fixes touch the Firebase engine.
 
 ## H. Evidence
 
@@ -170,3 +170,40 @@ None of these fixes were applied. They need the owner of `repair/priority2-fireb
 - Debait's **Local only setting was left ON** in that Chrome profile, because Chrome exited before it could be switched back. **Turn it off in Debait's settings.**
 - Cloud and "model unavailable" tests used a throwaway headless Edge profile (`%TEMP%\dbt\nanoval.mjs`).
 - `.claude/launch.json` was edited temporarily for the local test page and reverted afterwards.
+
+## Fixes 1–3: what changed and how they were tested
+
+Changed files: `src/engine/firebaseEngine.js`, `src/engine/index.js`, plus message text only in `src/content/main.js` and `src/content/ui/settings.js`. Nothing visual changed.
+
+1. **Hybrid falls back to the cloud when Nano is slow.**
+   - Hybrid no longer uses `PREFER_ON_DEVICE`.
+   - When Nano is `available`, Debait asks it first (`ONLY_ON_DEVICE`) with a **10 s budget**.
+   - If Nano misses the budget or fails, the request is cancelled and sent to the cloud (`ONLY_IN_CLOUD`, same project race and duplicate-on-slow logic as before).
+   - Nano is then skipped for 10 minutes, so later requests go straight to the cloud.
+   - The status chip now says "Gemini in the cloud: Gemini Nano is too slow on this computer" during that time instead of claiming Nano.
+2. **Timed-out requests are really cancelled, and Nano runs one request at a time.**
+   - `withTimeout` in `index.js` now aborts an `AbortController` instead of only stopping waiting.
+   - The SDK doesn't forward `signal` to Chrome on device (`ChromeAdapterImpl.generateContent` calls `session.prompt(contents, promptOptions)`), so the signal is put in `onDeviceParams.promptOptions`. That goes straight to Chrome's `prompt()` / `promptStreaming()`.
+   - A small lock lets only one Nano request run at a time. Parallel batches wait their turn instead of competing inside Chrome.
+3. **Local only allows for slow hardware.**
+   - Each Nano request gets **150 s** once its turn starts, inside an overall **4 min** limit (was 30 s). That stays under the 5-minute limit on extension service-worker events.
+   - Failures are reported as `LOCAL_ONLY_SLOW` / `LOCAL_ONLY_FAILED`. The orb shows "Local only is on, and Gemini Nano did not finish on this computer. Retrying in a minute, or turn off Local only to use Gemini in the cloud."
+   - The old "not downloaded yet" message is kept only for a Nano that isn't available.
+   - Summaries follow the same rules: Nano must start writing within its budget, and once it starts it may finish.
+
+**Test method:**
+- Headless Edge, a throwaway profile, the rebuilt `dist/`, and the same five headlines (`%TEMP%\dbt\nanofake.mjs`).
+- Chrome's `LanguageModel` was replaced in Debait's engine page with a stand-in. It answers in valid Debait JSON after a set delay unless cancelled, and it counts prompts, overlap and cancellations.
+- The engine page's network was logged with CDP.
+- This tests Debait's timing, cancellation and routing. It does **not** test real Gemini Nano. Re-test in Chrome on real hardware before relying on it.
+
+| Scenario | Result |
+|---|---|
+| Hybrid, Nano takes 60 s | Nano tried once, **cancelled after 10 s** (aborted 1, finished 0). Cloud answered all 5 correctly (rage, fear, envy, clean, clean), each labelled "Gemini · cloud", about 16 s after the headlines appeared. Never more than 1 Nano request at a time. Network: App Check plus 2 `firebasevertexai` requests (the duplicate-on-slow). |
+| Local only, Nano takes 40 s (would have failed under the old 30 s limit) | All 5 shown as "Gemini Nano · on device" at 44.7 s. 1 prompt, 0 cancelled. **Network: no `firebasevertexai` request at all**, only 2 App Check token requests (Firebase start-up, no headline text). |
+| Local only, Nano never answers | Tags hid at 154 s. The stuck request was **cancelled** at its 150 s budget (aborted 1, never more than 1 at a time), so nothing keeps the CPU busy in the background. Orb: "Local only is on, and Gemini Nano did not finish on this computer. Retrying in a minute, or turn off Local only to use Gemini in the cloud." No guessed results. **Network: no `firebasevertexai` request**, only 3 App Check token requests. |
+
+**Still to do:**
+- Re-test on real Gemini Nano in Chrome. It needs `dist/` rebuilt from this branch and Debait reloaded on `chrome://extensions`.
+- On this laptop, real Nano took 71–245 s per single headline. A Local only batch of up to 8 headlines will often exceed 150 s and fail honestly instead of waiting forever.
+- Hybrid will now switch to the cloud after 10 s.

@@ -314,7 +314,9 @@ async function start() {
       console.debug('[Debait] scoring failed:', err.message); // the orb tells the user; not an extension error
       // keep the records (no rescan loop), hide the waiting pills, tell the user why, retry in a minute
       batch.forEach((rec) => { rec.queued = false; rec.failed = true; rec.tag?.setVisible(false); });
-      notice = /LOCAL_ONLY/.test(err.message)
+      notice = /LOCAL_ONLY_(SLOW|FAILED)/.test(err.message)
+        ? 'Local only is on, and Gemini Nano did not finish on this computer. Retrying in a minute, or turn off Local only to use Gemini in the cloud.'
+        : /LOCAL_ONLY/.test(err.message)
         ? 'Local only is on, but Gemini Nano is not downloaded yet. Open the Debait popup and click Turn on Debait, or turn off Local only.'
         : 'Debait could not reach its AI. Retrying in a minute.';
       clearTimeout(retryTimer);

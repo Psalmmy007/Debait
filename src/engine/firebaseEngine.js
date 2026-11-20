@@ -146,7 +146,59 @@ function raceProjects(order, run, stagger) {
     launch();
   });
 }
-const both = (a, b) => (AbortSignal.any ? AbortSignal.any([a, b]) : a);
+/** One signal that aborts when any of the given ones does (undefined ones are skipped). */
+const anySignal = (...signals) => {
+  const list = signals.filter(Boolean);
+  return list.length < 2 ? list[0] : AbortSignal.any ? AbortSignal.any(list) : list[0];
+};
+
+// ---------- Gemini Nano pacing ----------
+// On slower computers that Chrome still rates eligible, Nano can take minutes per request. So:
+// - one Nano request at a time (parallel ones only queue up inside Chrome and slow each other down)
+// - every Nano request gets a time budget and is really cancelled when it runs out (the SDK
+//   doesn't forward abort signals on device, so the signal goes in Chrome's own prompt options)
+// - in hybrid mode, Nano that misses its budget is skipped for a while and the cloud answers
+const LOCAL_BUDGET = 150 * 1000; // Local only: per request, counted from when its turn starts
+const DEVICE_BUDGET = 10 * 1000; // hybrid: after this, cancel Nano and ask the cloud instead
+const SLOW_FOR = 10 * 60 * 1000; // hybrid: how long to skip a Nano that was too slow
+let deviceSlowUntil = 0;
+const deviceSlow = () => Date.now() < deviceSlowUntil;
+const markDeviceSlow = (err) => {
+  deviceSlowUntil = Date.now() + SLOW_FOR;
+  console.debug('[Debait] Gemini Nano too slow or failed here; using the cloud for now:', err?.message || err);
+};
+let deviceLock = Promise.resolve();
+async function deviceTurn(signal, run) {
+  const prev = deviceLock;
+  let release;
+  deviceLock = new Promise((r) => { release = r; });
+  try {
+    await prev;
+    signal?.throwIfAborted();
+    return await run();
+  } finally {
+    release();
+  }
+}
+/**
+ * Runs run(signal, started) on Nano with a time budget; a timeout rejects with `slowError`.
+ * A streamed answer calls started() on its first words, which lifts the budget.
+ */
+function onDevice(signal, budget, slowError, run) {
+  return deviceTurn(signal, async () => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(slowError), budget);
+    try {
+      return await run(anySignal(signal, ctrl.signal), () => clearTimeout(timer));
+    } catch (err) {
+      throw ctrl.signal.aborted && !signal?.aborted ? slowError : err;
+    } finally {
+      clearTimeout(timer);
+    }
+  });
+}
+const localSlow = () => new Error('LOCAL_ONLY_SLOW: Gemini Nano did not finish in time on this computer');
+const hybridSlow = () => new Error('Gemini Nano did not answer in time');
 
 /** One streamed request: reports the text so far as it arrives. */
 async function streamOnce(m, request, signal, onFirst, onText) {
@@ -229,16 +281,20 @@ const deviceSchema = {
   required: ['results'],
 };
 
-function model(localOnly, debugToken, i) {
+const ON_DEVICE = InferenceMode.ONLY_ON_DEVICE;
+const IN_CLOUD = InferenceMode.ONLY_IN_CLOUD;
+
+/** mode: ON_DEVICE or IN_CLOUD. signal: cancels an on-device prompt (Chrome's own option). */
+function model(mode, debugToken, i, signal) {
   return getGenerativeModel(getAi(debugToken, i), {
-    mode: localOnly ? InferenceMode.ONLY_ON_DEVICE : InferenceMode.PREFER_ON_DEVICE,
+    mode,
     inCloudParams: {
       model: CLOUD_MODEL,
       generationConfig: { responseMimeType: 'application/json', responseSchema: cloudSchema, temperature: 0.2, maxOutputTokens: 2048 },
     },
     onDeviceParams: {
       createOptions: { expectedInputs: LANG, expectedOutputs: LANG },
-      promptOptions: { responseConstraint: deviceSchema },
+      promptOptions: { responseConstraint: deviceSchema, signal },
     },
   });
 }
@@ -278,11 +334,11 @@ const rewriteDeviceSchema = { type: 'object', properties: { rewrites: { type: 'a
 const words = (s) => String(s || '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 export const sameWords = (a, b) => words(a) === words(b);
 
-function rewriteModel(localOnly, debugToken, i) {
+function rewriteModel(mode, debugToken, i, signal) {
   return getGenerativeModel(getAi(debugToken, i), {
-    mode: localOnly ? InferenceMode.ONLY_ON_DEVICE : InferenceMode.PREFER_ON_DEVICE,
+    mode,
     inCloudParams: { model: CLOUD_MODEL, generationConfig: { responseMimeType: 'application/json', responseSchema: rewriteCloudSchema, temperature: 0.4, maxOutputTokens: 1024 } },
-    onDeviceParams: { createOptions: { expectedInputs: LANG, expectedOutputs: LANG }, promptOptions: { responseConstraint: rewriteDeviceSchema } },
+    onDeviceParams: { createOptions: { expectedInputs: LANG, expectedOutputs: LANG }, promptOptions: { responseConstraint: rewriteDeviceSchema, signal } },
   });
 }
 
@@ -300,15 +356,16 @@ HEADLINES:
 ${items.map((x, i) => `${i + 1}. ${x.text}${x.triggers.length ? ` (loaded words: ${x.triggers.map((t) => t.word).join(', ')})` : ''}`).join('\n')}`;
 }
 
-async function fixUnchangedRewrites(out, texts, { localOnly, debugToken, onDevice }) {
+async function fixUnchangedRewrites(out, texts, { mode, localOnly, debugToken, signal }) {
   const bad = out
     .map((r, i) => (r.kind && r.kind !== 'clean' && sameWords(r.honest_rewrite, texts[i]) ? i : -1))
     .filter((i) => i >= 0);
   if (!bad.length) return;
   try {
-    const m = rewriteModel(localOnly, debugToken, preferred);
     const request = rewritePrompt(bad.map((i) => ({ text: texts[i], triggers: Array.isArray(out[i].triggers) ? out[i].triggers : [] })));
-    const res = await hedged((signal) => m.generateContent(request, { signal }), onDevice ? Infinity : 4000);
+    const res = mode === ON_DEVICE
+      ? await onDevice(signal, localOnly ? LOCAL_BUDGET : DEVICE_BUDGET, hybridSlow(), (s) => rewriteModel(ON_DEVICE, debugToken, preferred, s).generateContent(request, { signal: s }))
+      : await hedged((s) => rewriteModel(IN_CLOUD, debugToken, preferred).generateContent(request, { signal: anySignal(s, signal) }), 4000);
     const data = JSON.parse(res.response.text().trim().replace(/^```(json)?|```$/g, ''));
     bad.forEach((idx, k) => {
       const r = data?.rewrites?.[k];
@@ -319,12 +376,17 @@ async function fixUnchangedRewrites(out, texts, { localOnly, debugToken, onDevic
   }
 }
 
-function summaryModel(localOnly, debugToken, i) {
+function summaryModel(mode, debugToken, i, signal) {
   return getGenerativeModel(getAi(debugToken, i), {
-    mode: localOnly ? InferenceMode.ONLY_ON_DEVICE : InferenceMode.PREFER_ON_DEVICE,
+    mode,
     inCloudParams: { model: CLOUD_MODEL, generationConfig: { temperature: 0.2, maxOutputTokens: 300 } },
-    onDeviceParams: { createOptions: { expectedInputs: LANG, expectedOutputs: LANG } },
+    onDeviceParams: { createOptions: { expectedInputs: LANG, expectedOutputs: LANG }, promptOptions: { signal } },
   });
+}
+
+/** Nano is worth trying: Local only, or hybrid with Nano ready and not recently too slow. */
+async function useDevice(localOnly) {
+  return localOnly || (!deviceSlow() && (await deviceAvailability()) === 'available');
 }
 
 function summaryPrompt({ title, text, headlines, kind }) {
@@ -342,47 +404,75 @@ ${body}`;
 /** @type {import('./contract.js').Engine} */
 export const firebaseEngine = {
   /** Streams the summary: onText(textSoFar) is called as the words arrive. */
-  async summarize(page, { localOnly, debugToken, onText = () => {} }) {
-    // a second request only makes sense in the cloud; on this device it would just compete
-    const onDevice = localOnly || (await deviceAvailability()) === 'available';
-    let lastErr = null;
-    for (const i of localOnly ? [preferred] : projectOrder()) {
+  async summarize(page, { localOnly, debugToken, signal, onText = () => {} }) {
+    const request = summaryPrompt(page);
+    if (await useDevice(localOnly)) {
+      // Nano gets a budget to start writing; once it writes, it may finish
       try {
-        const m = summaryModel(localOnly, debugToken, i);
-        const request = summaryPrompt(page);
-        const out = await hedgedStream((signal, first, chunk) => streamOnce(m, request, signal, first, chunk), onDevice ? Infinity : 3000, onText);
+        const out = await onDevice(signal, localOnly ? LOCAL_BUDGET : DEVICE_BUDGET, localOnly ? localSlow() : hybridSlow(),
+          (s, started) => streamOnce(summaryModel(ON_DEVICE, debugToken, preferred, s), request, s, started, onText));
+        if (!out.text) throw new Error('empty summary');
+        return { summary: out.text, source: out.source };
+      } catch (err) {
+        if (localOnly || signal?.aborted) throw err;
+        markDeviceSlow(err);
+      }
+    }
+    let lastErr = null;
+    for (const i of projectOrder()) {
+      try {
+        const m = summaryModel(IN_CLOUD, debugToken, i);
+        const out = await hedgedStream((s, first, chunk) => streamOnce(m, request, anySignal(s, signal), first, chunk), 3000, onText);
         if (!out.text) throw new Error('empty summary');
         preferred = i;
         return { summary: out.text, source: out.source };
       } catch (err) {
         lastErr = err;
+        if (signal?.aborted) throw err;
         if (isAuth(err)) skipProject(i);
       }
     }
     throw lastErr || new Error('no Firebase project answered');
   },
-  async scoreHeadlines(texts, { localOnly, debugToken }) {
-    // on-device runs the same whichever project; in the cloud, fall through to the next project
-    const onDevice = localOnly || (await deviceAvailability()) === 'available';
+  async scoreHeadlines(texts, { localOnly, debugToken, signal }) {
     const request = prompt(texts);
-    const won = await raceProjects(localOnly ? [preferred] : projectOrder(), (i, outer) => {
-      const m = model(localOnly, debugToken, i);
-      return hedged((signal) => m.generateContent(request, { signal: both(signal, outer) }), onDevice ? Infinity : 4000);
-    }, onDevice ? Infinity : 2500);
-    preferred = won.i;
-    const res = won.v;
+    let res = null;
+    let mode = IN_CLOUD;
+    if (await useDevice(localOnly)) {
+      try {
+        res = await onDevice(signal, localOnly ? LOCAL_BUDGET : DEVICE_BUDGET, localOnly ? localSlow() : hybridSlow(), (s) => {
+          // hybrid: another request may have found Nano too slow while this one waited its turn
+          if (!localOnly && deviceSlow()) throw new Error('skip');
+          return model(ON_DEVICE, debugToken, preferred, s).generateContent(request, { signal: s });
+        });
+        mode = ON_DEVICE;
+      } catch (err) {
+        if (localOnly || signal?.aborted) throw err;
+        if (err.message !== 'skip') markDeviceSlow(err);
+      }
+    }
+    if (!res) {
+      // cloud: fall through to the next project; a slow request is sent once more
+      const won = await raceProjects(projectOrder(), (i, outer) => {
+        const m = model(IN_CLOUD, debugToken, i);
+        return hedged((s) => m.generateContent(request, { signal: anySignal(s, outer, signal) }), 4000);
+      }, 2500);
+      preferred = won.i;
+      res = won.v;
+    }
     const source = res.response.inferenceSource === 'on_device' ? 'on-device' : 'cloud';
     const raw = res.response.text().trim().replace(/^```(json)?|```$/g, '');
     const data = JSON.parse(raw);
     const list = Array.isArray(data) ? data : data.results;
     if (!Array.isArray(list)) throw new Error('AI returned no results');
     const out = texts.map((_, i) => ({ ...(list[i] || { kind: 'clean', score: 0, triggers: [] }), source }));
-    await fixUnchangedRewrites(out, texts, { localOnly, debugToken, onDevice });
+    await fixUnchangedRewrites(out, texts, { mode, localOnly, debugToken, signal });
     return out;
   },
 
   async getStatus({ localOnly }) {
     const device = await deviceAvailability();
+    if (device === 'available' && !localOnly && deviceSlow()) return { ready: true, source: 'cloud', localOnly, message: `Gemini in the cloud: Gemini Nano is too slow on this computer (${projectName()} project)` };
     if (device === 'available') return { ready: true, source: 'on-device', localOnly, message: 'Gemini Nano, on this device' };
     if (localOnly) return { ready: false, source: 'none', localOnly, message: device === 'unavailable' ? 'This computer cannot run Gemini Nano' : 'Gemini Nano needs to download: click Turn on Debait' };
     return { ready: true, source: 'cloud', localOnly, message: `Gemini in the cloud (${CLOUD_MODEL}, ${projectName()} project)` };

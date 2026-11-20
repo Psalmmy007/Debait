@@ -241,7 +241,9 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
     } catch (err) {
       if (!el) return;
       out.className = 'p-sum-text wait error';
-      out.textContent = /LOCAL_ONLY/.test(err.message)
+      out.textContent = /LOCAL_ONLY_(SLOW|FAILED)/.test(err.message)
+        ? 'Local only is on, and Gemini Nano did not finish on this computer.'
+        : /LOCAL_ONLY/.test(err.message)
         ? 'Local only is on, but Gemini Nano is not ready on this computer.'
         : 'Could not summarize this page.';
       retry.hidden = false;
