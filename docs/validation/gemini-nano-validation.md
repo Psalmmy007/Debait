@@ -204,6 +204,34 @@ Changed files: `src/engine/firebaseEngine.js`, `src/engine/index.js`, plus messa
 | Local only, Nano never answers | Tags hid at 154 s. The stuck request was **cancelled** at its 150 s budget (aborted 1, never more than 1 at a time), so nothing keeps the CPU busy in the background. Orb: "Local only is on, and Gemini Nano did not finish on this computer. Retrying in a minute, or turn off Local only to use Gemini in the cloud." No guessed results. **Network: no `firebasevertexai` request**, only 3 App Check token requests. |
 
 **Still to do:**
-- Re-test on real Gemini Nano in Chrome. It needs `dist/` rebuilt from this branch and Debait reloaded on `chrome://extensions`.
+- Re-test the hybrid path (Local only off) and multi-headline Local only batches on real Gemini Nano in Chrome. The single-headline Local only test is done (see below).
 - On this laptop, real Nano took 71–245 s per single headline. A Local only batch of up to 8 headlines will often exceed 150 s and fail honestly instead of waiting forever.
 - Hybrid will now switch to the cloud after 10 s.
+
+## Real Gemini Nano in Chrome, one headline, Local only (21 Nov 2026)
+
+**Setup:**
+- Chrome 150 on the laptop from section A.
+- `dist/` rebuilt from `test/gemini-nano-validation` (a139efc), and Debait reloaded on `chrome://extensions`.
+- Local only was confirmed **on** in Debait's settings panel. `LanguageModel.availability()` on the page returned `available`.
+
+**Test page:**
+- In this Chrome, Debait's content script did not load on `example.com`, `example.org` or `127.0.0.1`: no `data-debait-*` marks appeared. The cause was not found.
+- It did load on bbc.com. So a bbc.com 404 page was emptied and given one BBC-style card: `<h2 data-testid="card-headline">City council approves a new transport budget.</h2>`.
+- Visiting the BBC front page beforehand queued real Nano work and held the CPU at 100%. The test started only after the load had stayed under 50% for 15 s.
+
+**Result:**
+
+| | |
+|---|---|
+| Headline | "City council approves a new transport budget." |
+| Verdict | **Clean**, score **0**: "No manipulative words. It sticks to the facts." |
+| Source label | **Gemini Nano · on device**, on both the tag and the card. Not a Quick estimate. |
+| Time | **About 88 s** from the headline appearing to the result. It was checked every 2 s and read 87.7 s. |
+| Outcome | **Completed.** No timeout, no error, no pause notice. The orb read "1 headlines, all clean". |
+
+![Real Nano result, Local only](local-only-real-nano-clean-result.jpg)
+
+**Limits of this test:**
+- Only one headline, one run, warm.
+- The engine page's network was **not** logged in this run. The "no cloud request under Local only" evidence comes from the stand-in runs above.
