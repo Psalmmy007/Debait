@@ -108,7 +108,7 @@ test('cloud and device adapters reject unsupported evidence with an honest error
         text: () => JSON.stringify({ results: [{ ...valid(), triggers: [] }] }),
       } }) }),
       InferenceMode: { PREFER_ON_DEVICE: 'hybrid', ONLY_ON_DEVICE: 'local' },
-      prompt: headlinePrompt, lang: [], deviceAvailability: async () => 'available',
+      prompt: headlinePrompt, lang: [], deviceAvailability: async () => localOnly ? 'available' : 'unavailable',
     });
     const engine = createEngine({ firebaseEngine: sdk, mockEngine: { scoreHeadlines() { mocks++; } } });
     await assert.rejects(engine.scoreHeadlines([headline], { localOnly }), error => {

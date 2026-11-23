@@ -1,3 +1,4 @@
+import { VOICE_ENABLED } from '../shared/release.js';
 import { orbFeedback } from '../shared/uiState.js';
 import { canRewriteRecord, hasMeaningfulRewrite } from '../engine/qualityPolicy.js';
 import { isQuotaError, planAnalysisRetry } from '../shared/quota.js';
@@ -62,6 +63,7 @@ async function start() {
     onClick: (origin) => toggleDebaitPage(origin).then(() => panel.open()).catch(report),
     onDoubleClick: () => { closeCard(); panel.toggle(); },
     onTripleClick: async () => {
+      if (!VOICE_ENABLED) return;
       closeCard();
       panel.close();
       const s = await getSettings();
@@ -134,7 +136,7 @@ async function start() {
     else orb.setVoice({ mode: 'idle' });
   }
   // a call may already be running when this page loads
-  if (settings.voice) sendRuntimeMessage({ target: 'offscreen', type: 'debait/call-status' }).then((r) => r?.inCall && onCallState({ state: 'live' })).catch(() => {});
+  if (VOICE_ENABLED && settings.voice) sendRuntimeMessage({ target: 'offscreen', type: 'debait/call-status' }).then((r) => r?.inCall && onCallState({ state: 'live' })).catch(() => {});
 
   // ---------- helpers ----------
   const paint = (hotRecord) => paintHighlights(records.values(), { enabled: settings.showTags, hotRecord });
@@ -162,6 +164,7 @@ async function start() {
     const feedback = orbFeedback({
       results: [...records.values()].filter(r => r.state !== 'debaited' && (!settings.localOnly || r.result?.source === 'on-device')).map(r => r.result),
       busy: inflight > 0,
+      localOnly: settings.localOnly,
       error: [...records.values()].some(r => r.failed),
       unavailable: contextLost,
     });
@@ -233,7 +236,7 @@ async function start() {
     if (flushing || contextLost || settings.disabledSites.includes(host) || Date.now() < pauseUntil) return;
     flushing = true;
     while (queue.length) {
-      const batch = [...new Set(queue.splice(0, BATCH))].filter(r => records.get(r.el) === r && r.el.isConnected && !r.result);
+      const batch = [...new Set(queue.splice(0, settings.localOnly ? 1 : BATCH))].filter(r => records.get(r.el) === r && r.el.isConnected && !r.result);
       if (!batch.length) continue;
       inflight++;
       refreshOrb();

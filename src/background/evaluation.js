@@ -21,6 +21,10 @@ export function evaluationError(error) {
     'debait/network': 'Firebase could not be reached. No result was recorded.',
     'debait/inference': 'Gemini could not complete the request. Check authentication and model availability; Local Only never uses cloud inference.',
     'debait/device-config': 'Chrome could not load the device model configuration. Check the existing Gemini Nano setup; no cloud fallback is permitted in Local Only.',
+    'debait/local-timeout': 'Gemini Nano exceeded its local processing budget. No cloud inference was used.',
+    'debait/cancelled': 'Analysis was cancelled. No result was recorded.',
+    'debait/device-busy': 'Gemini Nano is busy with an existing local request. Try again later.',
+    'debait/device-unavailable': 'Gemini Nano is unavailable or needs a user-initiated download. Local Only did not use cloud inference.',
     'debait/model': 'The configured Gemini model is unavailable.',
   };
   const code = Object.hasOwn(messages, error?.code) ? error.code : 'debait/evaluation-failed';

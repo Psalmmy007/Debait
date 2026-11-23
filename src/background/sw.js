@@ -1,3 +1,4 @@
+import { VOICE_ENABLED } from '../shared/release.js';
 import { createProblemLogger, problemEntry } from '../shared/problems.js';
 import { quotaError } from '../shared/quota.js';
 import { assistanceReason } from '../engine/errors.js';
@@ -57,10 +58,12 @@ let privacyRevision = 0;
 let localOnlyActive = false;
 
 async function voiceAllowed() {
+  if (!VOICE_ENABLED) return false;
   const settings = await getSettings();
   return !localOnlyActive && !settings.localOnly && settings.voice;
 }
 async function requireVoiceAllowed() {
+  if (!VOICE_ENABLED) throw new Error('Voice is unavailable in this release candidate.');
   if (!await voiceAllowed()) throw new Error('LOCAL_ONLY: Cloud voice is disabled. Turn off Local Only before starting voice.');
 }
 
@@ -316,7 +319,13 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local' || !changes.settings) return;
   const before = changes.settings.oldValue;
   const after = changes.settings.newValue;
-  if (before?.localOnly !== after?.localOnly) privacyRevision++;
+  if (before?.localOnly !== after?.localOnly) {
+    privacyRevision++;
+    // No page content or credentials in cancellation messages. Do not create a document.
+    chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] }).then(contexts => {
+      if (contexts.length) return chrome.runtime.sendMessage({ target: 'offscreen', type: 'debait/cancel-inference' });
+    }).catch(() => {});
+  }
   localOnlyActive = !!after?.localOnly;
   if (localOnlyActive) {
     // Stop live and pending sessions even if the voice switch was already false.
@@ -324,6 +333,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     if (after.voice) disableVoice().catch(reportVoiceError);
     return;
   }
+  if (!VOICE_ENABLED) { if (after?.voice) disableVoice().catch(reportVoiceError); return; }
   const was = changes.settings.oldValue?.voice;
   const now = changes.settings.newValue?.voice;
   if (now && !was) startCallFlow().catch(reportVoiceError);
@@ -436,3 +446,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   })();
   return true;
 });
+
+if (!VOICE_ENABLED) getSettings().then(async settings => {
+  if (settings.voice) await endCallFlow(true); // retire a legacy opt-in/context before clearing it
+  await disableVoice();
+}).catch(() => {});

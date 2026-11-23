@@ -23,7 +23,7 @@ export default defineConfig(({ mode }) => {
     emptyOutDir: true,
     rollupOptions: {
       // The offscreen page isn't in the manifest, so list it here.
-      input: { offscreen: 'src/offscreen/index.html', voice: 'src/voice/index.html', ...(mode === 'development' ? { evaluation: 'dev/evaluation/index.html' } : {}) },
+      input: { offscreen: 'src/offscreen/index.html', ...(mode === 'development' ? { evaluation: 'dev/evaluation/index.html' } : {}) },
     },
   },
   };

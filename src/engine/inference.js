@@ -1,28 +1,54 @@
+import { bounded, checkSignal, createDeviceQueue, deviceTimeout, HYBRID_BUDGETS } from './hybrid.js';
 import { normalizeResult } from './contract.js';
 import { assistancePrompt, normalizeAssistance } from './assistance.js';
 import { aiError, invalidAssistance } from './errors.js';
 
 // The same adapter is used by the extension and tested with controlled SDK responses.
 export function createHeadlineEngine({ getAi, getDeviceAi, getGenerativeModel, InferenceMode,
-  cloudModel, cloudSchema, deviceSchema, lang, prompt, deviceAvailability, createDevice, sdkVersion = 'unknown', assistantCloudSchemas = {}, assistantDeviceSchemas = {} }) {
-  let lastSource = null;
-  async function perform(texts, { localOnly, debugToken, evaluation = false }, task, kind) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 25000);
+  cloudModel, cloudSchema, deviceSchema, lang, prompt, deviceAvailability, createDevice, sdkVersion = 'unknown', assistantCloudSchemas = {}, assistantDeviceSchemas = {}, budgets = HYBRID_BUDGETS, now = Date.now }) {
+  let lastSource = null, deviceSlowUntil = 0;
+  const deviceQueue = createDeviceQueue();
+  async function perform(texts, { localOnly, debugToken, evaluation = false, signal }, task, kind) {
     try {
-      const ai = localOnly ? getDeviceAi() : await getAi(debugToken);
-      if (controller.signal.aborted) throw new Error('Gemini request timed out before inference');
-      const model = getGenerativeModel(ai, {
-        mode: localOnly ? InferenceMode.ONLY_ON_DEVICE : InferenceMode.PREFER_ON_DEVICE,
-        inCloudParams: { model: cloudModel, generationConfig: { responseMimeType: 'application/json',
-          responseSchema: task ? assistantCloudSchemas[task] : cloudSchema, temperature: 0.2, maxOutputTokens: 2048 } },
-        onDeviceParams: { createOptions: { expectedInputs: lang, expectedOutputs: lang },
-          promptOptions: { responseConstraint: task ? assistantDeviceSchemas[task] : deviceSchema } },
-      });
       const input = task ? assistancePrompt(texts[0], task, kind) : prompt(texts);
-      const { response } = await model.generateContent(input, { signal: controller.signal, timeout: 25000 });
-      if (controller.signal.aborted) throw new Error('Gemini request timed out');
+      const run = (onDevice, parent) => bounded(async requestSignal => {
+        const invoke = async () => {
+          checkSignal(requestSignal);
+          const ai = onDevice ? getDeviceAi() : await getAi(debugToken);
+          checkSignal(requestSignal);
+          const model = getGenerativeModel(ai, {
+            mode: onDevice ? InferenceMode.ONLY_ON_DEVICE : InferenceMode.ONLY_IN_CLOUD,
+            inCloudParams: { model: cloudModel, generationConfig: { responseMimeType: 'application/json',
+              responseSchema: task ? assistantCloudSchemas[task] : cloudSchema, temperature: 0.2, maxOutputTokens: 2048 } },
+            onDeviceParams: { createOptions: { expectedInputs: lang, expectedOutputs: lang, signal: requestSignal },
+              promptOptions: { responseConstraint: task ? assistantDeviceSchemas[task] : deviceSchema, signal: requestSignal } },
+          });
+          const result = await model.generateContent(input, { signal: requestSignal, timeout: onDevice ? (localOnly ? budgets.localOnly : budgets.device) : budgets.cloud });
+          checkSignal(requestSignal); return result;
+        };
+        return onDevice ? deviceQueue(invoke, requestSignal) : invoke();
+      }, { signal: parent, timeoutMs: onDevice ? (localOnly ? budgets.localOnly : budgets.device) : budgets.cloud,
+        ...(onDevice ? { timeoutError: deviceTimeout } : {}) });
+      checkSignal(signal);
+      const available = await bounded(() => deviceAvailability ? deviceAvailability() : 'unavailable', { signal, timeoutMs: 2000 }).catch(error => {
+        checkSignal(signal); if (localOnly) throw error; return 'unavailable';
+      });
+      checkSignal(signal);
+      let generated, expected;
+      if (localOnly || (available === 'available' && now() >= deviceSlowUntil)) {
+        if (available !== 'available') throw Object.assign(new Error('LOCAL_ONLY: Gemini Nano is unavailable or needs a user-initiated download. No cloud inference was used.'), { name: 'DebaitAiError', code: 'debait/device-unavailable' });
+        try { generated = await run(true, signal); expected = 'on-device'; }
+        catch (error) {
+          checkSignal(signal);
+          if (localOnly) throw error;
+          deviceSlowUntil = now() + budgets.slowCooldown;
+        }
+      }
+      checkSignal(signal);
+      if (!generated) { generated = await run(false, signal); expected = 'cloud'; }
+      const { response } = generated;
       const source = { on_device: 'on-device', in_cloud: 'cloud' }[response.inferenceSource];
+      if (source !== expected) throw new Error('Invalid inference source for the selected execution mode');
       if (!source || (localOnly && source !== 'on-device')) throw new Error('Invalid inference source');
       let data;
       try { data = JSON.parse(response.text().trim().replace(/^```(?:json)?\s*|\s*```$/g, '')); }
@@ -39,7 +65,7 @@ export function createHeadlineEngine({ getAi, getDeviceAi, getGenerativeModel, I
       if (evaluation) results.evaluationMetadata = { configuredModel: cloudModel || 'unknown', sdkVersion };
       return results;
     } catch (error) { lastSource = null; throw aiError(error); }
-    finally { clearTimeout(timer); }
+
   }
   return {
     scoreHeadlines: (texts, options) => perform(texts, options),

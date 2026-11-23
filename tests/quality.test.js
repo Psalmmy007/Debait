@@ -69,7 +69,7 @@ test('SDK-backed adapter uses the production prompt and applies the BBC safeguar
   const engine = createHeadlineEngine({
     getAi: async () => ({}), getDeviceAi: () => { throw new Error('not device'); },
     getGenerativeModel: (_ai, parameters) => {
-      assert.equal(parameters.mode, 'hybrid');
+      assert.equal(parameters.mode, 'cloud');
       return { generateContent: async text => {
         captured = text;
         return { response: { inferenceSource: 'in_cloud', text: () => JSON.stringify({ results: [
@@ -78,7 +78,7 @@ test('SDK-backed adapter uses the production prompt and applies the BBC safeguar
         ] }) } };
       } };
     },
-    InferenceMode: { PREFER_ON_DEVICE: 'hybrid' }, lang: [], prompt: headlinePrompt,
+    InferenceMode: { ONLY_IN_CLOUD: 'cloud' }, lang: [], prompt: headlinePrompt,
   });
   const results = await engine.scoreHeadlines([bbcBody, bbcChildbirth], { localOnly: false });
   assert.equal(captured, headlinePrompt([bbcBody, bbcChildbirth]));

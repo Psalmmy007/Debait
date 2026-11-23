@@ -4,8 +4,8 @@ import { createHeadlineEngine } from '../src/engine/inference.js';
 import { createEngine } from '../src/engine/runtime.js';
 
 const item = { kind: 'clean', score: 0, triggers: [], honest_rewrite: 'A factual headline' };
-const modes = { ONLY_ON_DEVICE: 'only_on_device', PREFER_ON_DEVICE: 'prefer_on_device' };
-function fixture({ source = 'in_cloud', data = { results: [item] }, error, availability = 'available' } = {}) {
+const modes = { ONLY_ON_DEVICE: 'only_on_device', ONLY_IN_CLOUD: 'only_in_cloud' };
+function fixture({ source = 'in_cloud', data = { results: [item] }, error, availability = source === 'on_device' ? 'available' : 'unavailable' } = {}) {
   const calls = { auth: 0, device: 0, generate: 0 };
   let parameters, requestOptions;
   const engine = createHeadlineEngine({
@@ -26,12 +26,12 @@ function fixture({ source = 'in_cloud', data = { results: [item] }, error, avail
   return { engine, calls, parameters: () => parameters, requestOptions: () => requestOptions };
 }
 
-test('normal operation authenticates before Firebase generateContent and uses hybrid mode', async () => {
+test('unavailable Nano authenticates once before explicit Firebase cloud inference', async () => {
   const f = fixture();
   const results = await f.engine.scoreHeadlines(['headline'], { localOnly: false });
   assert.equal(f.calls.auth, 1); assert.equal(f.calls.generate, 1); assert.equal(f.calls.device, 0);
   assert.equal(f.parameters().ai, 'authenticated-sdk-client');
-  assert.equal(f.parameters().mode, modes.PREFER_ON_DEVICE);
+  assert.equal(f.parameters().mode, modes.ONLY_IN_CLOUD);
   assert.equal(f.parameters().inCloudParams.model, 'test-model');
   assert.equal(results[0].source, 'cloud');
 });
@@ -59,12 +59,12 @@ for (const scenario of [{ source: undefined }, { source: 'guessed_cloud' }, { da
 }
 
 test('an unexpected cloud source in Local Only is an error, never relabeled on-device', async () => {
-  const f = fixture();
+  const f = fixture({ availability: 'available' });
   await assert.rejects(f.engine.scoreHeadlines(['headline'], { localOnly: true }));
 });
 
 test('Nano availability is not reported as successful inference', async () => {
-  const f = fixture(); const status = await f.engine.getStatus({ localOnly: true });
+  const f = fixture({ availability: 'available' }); const status = await f.engine.getStatus({ localOnly: true });
   assert.equal(status.source, 'none'); assert.equal(status.ready, false);
   assert.equal(status.deviceAvailable, true); assert.match(status.message, /not been verified/);
 });
@@ -111,11 +111,14 @@ test('cloud requests receive SDK-supported timeout and AbortSignal controls', as
 test('late authentication after the deadline cannot submit a new cloud inference request', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   let resolve, calls = 0;
-  const engine = createHeadlineEngine({ getAi: () => new Promise(r => { resolve = r; }),
+  const engine = createHeadlineEngine({ prompt: () => '', getAi: () => new Promise(r => { resolve = r; }),
     getGenerativeModel: () => { calls++; throw new Error('must not submit'); } });
   const operation = engine.scoreHeadlines(['headline'], { localOnly: false });
+  for (let i = 0; i < 100 && !resolve; i++) await Promise.resolve();
+  assert.equal(typeof resolve, 'function');
+  const rejected = assert.rejects(operation);
   t.mock.timers.tick(25000); resolve({});
-  await assert.rejects(operation); assert.equal(calls, 0);
+  await rejected; assert.equal(calls, 0);
 });
 
 test('rewrite provenance is computed internally, not trusted from generated JSON', async () => {

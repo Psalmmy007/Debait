@@ -5,12 +5,11 @@
 The original Vite web prototype (`src/firebase.js`, `src/main.js`) is unchanged. Its
 reCAPTCHA Enterprise setup does not authenticate the extension automatically.
 The extension continues using Firebase AI Logic, not a direct Gemini API client.
-Its hybrid mode is `PREFER_ON_DEVICE`; Local Only is `ONLY_ON_DEVICE` and uses a
-separate Firebase app without requesting cloud App Check credentials.
+The release branch explicitly tries `ONLY_ON_DEVICE` then bounded `ONLY_IN_CLOUD` when permitted; Local Only uses only `ONLY_ON_DEVICE` with a separate Firebase app and no cloud App Check exchange. See [release verification](release/HYBRID_VERIFICATION.md).
 
 Normal operation has no automatic mock fallback. Authentication is checked with
 Firebase App Check `getToken()` before handing the cloud AI client to inference
-or voice. Failed authentication does not start a cloud inference request. Token
+or experimental voice on its source branches (voice is disabled in the release candidate). Failed authentication does not start a cloud inference request. Token
 refresh is demand-driven: the SDK caches valid tokens; each cloud operation calls
 `getToken()` again, with no idle background refresher.
 

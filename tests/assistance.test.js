@@ -35,6 +35,7 @@ test('the SDK-backed assistance path uses explicit schemas and metadata, not a s
   const text = 'The bank announces a policy';
   const engine = createHeadlineEngine({ getAi: async () => { auth++; return {}; }, getDeviceAi: () => ({}),
     InferenceMode: { ONLY_ON_DEVICE: 'local', PREFER_ON_DEVICE: 'hybrid' }, cloudModel: 'test-model', lang: [],
+    deviceAvailability: async () => 'available',
     assistantCloudSchemas: { explain: { controlled: 'cloud-schema' } }, assistantDeviceSchemas: { explain: { controlled: 'device-schema' } },
     getGenerativeModel: (_ai, c) => { config = c; return { generateContent: async () => ({ response: { inferenceSource: 'on_device', text: () => JSON.stringify(answer(text)) } }) }; } });
   const result = await engine.assistHeadline(text, { localOnly: true, task: 'explain' });

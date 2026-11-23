@@ -41,3 +41,20 @@ test('offscreen transports evaluation provenance separately from the normalized 
   const normal = await send({ target: 'offscreen', type: 'debait/score', texts: ['Headline'] });
   assert.equal(Object.hasOwn(normal, 'evaluationMetadata'), false);
 });
+
+test('release offscreen rejects voice startup and only trusted extension background contexts can cancel inference',async()=>{
+ const {readFile}=await import('node:fs/promises');const url=new URL('../src/offscreen/offscreen.js',import.meta.url);
+ let cancelled=0,listener;
+ globalThis.__cancelReleaseTest=()=>{cancelled++;};
+ const source=(await readFile(url,'utf8')).replace("import { engine } from '../engine/index.js';", 'const engine={cancelAll:()=>globalThis.__cancelReleaseTest()};')
+  .replace(/from '(\.[^']+)'/g,(_,p)=>`from '${new URL(p,url).href}'`);
+ globalThis.chrome={runtime:{id:'controlled-extension',onMessage:{addListener(fn){listener=fn;}}}};
+ await import(`data:text/javascript,${encodeURIComponent(source)}#release-cancellation`);
+ const send=(msg,sender={})=>new Promise(resolve=>listener({target:'offscreen',...msg},sender,resolve));
+ assert.equal((await send({type:'debait/call-start'})).ok,false);
+ assert.equal((await send({type:'debait/cancel-inference'},{id:'other'})).ok,false);
+ assert.equal((await send({type:'debait/cancel-inference'},{id:chrome.runtime.id,tab:{id:1}})).ok,false);
+ assert.equal(cancelled,0);
+ assert.equal((await send({type:'debait/cancel-inference'},{id:chrome.runtime.id})).ok,true);assert.equal(cancelled,1);
+ delete globalThis.__cancelReleaseTest;
+});

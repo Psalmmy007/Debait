@@ -7,7 +7,7 @@ const tick = () => new Promise(r => setImmediate(r));
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { resolve, promise }; };
 const result = (source, text = 'headline') => ({ kind: 'fear', score: 50, triggers: [{ word: text, why: 'Controlled evidence fixture; not a classification accuracy claim' }], honest_rewrite: 'Calmer headline', source });
 let serial = 0;
-async function fixture(t, { localOnly = false, voice = false, cache = [], engine, assistant, contexts = true, create, statsVersion = 2, stats = {}, demo = false, debug = false, scoreCacheVersion = QUALITY_POLICY_VERSION } = {}) {
+async function fixture(t, { localOnly = false, voice = false, cache = [], engine, assistant, contexts = true, create, statsVersion = 2, stats = {}, demo = false, debug = false, scoreCacheVersion = QUALITY_POLICY_VERSION, voiceEnabled = true } = {}) {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const data = { settings: { localOnly, voice }, scoreCache: cache, scoreCacheVersion, appCheckDebugToken: 'test-only', statsVersion, stats };
   let router, onSettings;
@@ -69,13 +69,13 @@ async function fixture(t, { localOnly = false, voice = false, cache = [], engine
       return request;
     } };
   }
-  if (demo || debug) {
+  if (demo || debug || voiceEnabled) {
     // Simulate Vite's explicit demo constant while exercising the real worker/recorder.
     const url = new URL('../src/background/sw.js', import.meta.url);
     let source = await readFile(url, 'utf8');
     const modeImport = "import { DEMO_MODE } from '../engine/mode.js';";
     assert.ok(source.includes(modeImport));
-    source = source.replace(modeImport, `const DEMO_MODE = ${demo};`)
+    source = source.replace("import { VOICE_ENABLED } from '../shared/release.js';", `const VOICE_ENABLED = ${voiceEnabled};`).replace(modeImport, `const DEMO_MODE = ${demo};`)
       .replaceAll('import.meta.env', debug ? JSON.stringify({ MODE: 'development', VITE_DEBAIT_APP_CHECK: 'debug' }) : 'undefined')
       .replace(/from '(\.[^']+)'/g, (_, path) => `from '${new URL(path, url).href}'`);
     await import(`data:text/javascript,${encodeURIComponent(source)}#test=${serial++}`);
@@ -542,4 +542,17 @@ test('saved cloud classifications never verify a new AI session; only fresh SDK 
   await sdk.scoreHeadlines([text],{localOnly:false});
   response=await f.sendPopup({type:'debait/status'});assert.equal(response.status.source,'cloud');assert.equal(requests,1);
   sdk=create();response=await f.sendPopup({type:'debait/status'});assert.equal(response.status.source,'none');
+});
+
+test('release candidate blocks every voice entry point and clears legacy voice opt-in',async t=>{
+ const f=await fixture(t,{voice:true,voiceEnabled:false});
+ for(const type of ['debait/mic-granted','debait/voice-connect-slot'])assert.equal((await f.sendOffscreen({type})).ok,false);
+ assert.equal((await f.sendPopup({type:'debait/voice-allowed'})).allowed,false);
+ assert.equal(f.data.settings.voice,false);assert.ok(!f.messages.some(m=>m.type==='debait/call-start'));assert.equal(f.closed(),1);
+ await f.settings({voice:true});await tick();assert.equal(f.data.settings.voice,false);
+});
+test('privacy changes request cancellation of active inference without sending page data',async t=>{
+ const f=await fixture(t,{voiceEnabled:false});await f.settings({localOnly:true});await tick();
+ const cancellation=f.messages.find(m=>m.type==='debait/cancel-inference');
+ assert.deepEqual(cancellation,{target:'offscreen',type:'debait/cancel-inference'});
 });
