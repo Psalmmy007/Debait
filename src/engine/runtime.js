@@ -37,8 +37,7 @@ export function createEngine({ firebaseEngine, mockEngine, demo = false, timeout
         if (opts.evaluation) normalized.evaluationMetadata = results.evaluationMetadata;
         return normalized;
       } catch (error) {
-        lastError = error;
-        failureLocalOnly = opts.localOnly;
+        if (error.code !== 'debait/cancelled') { lastError = error; failureLocalOnly = opts.localOnly; }
         throw error;
       }
     },
@@ -55,7 +54,7 @@ export function createEngine({ firebaseEngine, mockEngine, demo = false, timeout
         const checked = normalizeAssistance(result, text, opts.task, opts.kind);
         lastError = null;
         return checked;
-      } catch (error) { lastError = error; failureLocalOnly = opts.localOnly; throw error; }
+      } catch (error) { if (error.code !== 'debait/cancelled') { lastError = error; failureLocalOnly = opts.localOnly; } throw error; }
     },
     async getStatus(opts) {
       if (demo && !opts.localOnly) return mockEngine.getStatus(opts);

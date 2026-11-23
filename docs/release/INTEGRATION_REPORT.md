@@ -1,5 +1,7 @@
 # Release-candidate integration report
 
+Current review corrections and validation: [REVIEW_FIXES.md](REVIEW_FIXES.md).
+
 Date: 23 November 2026 (Africa/Lagos). Status: **PARTIAL — not approved for public release**.
 
 ## Foundation and integration plan
@@ -33,7 +35,7 @@ Original project only; no Firebase Console changes, credentials or App Check wea
 
 SDK evidence: Firebase 13.3.0 / @firebase/ai 3.1.0 browser source sends REST App Check headers, but current Live WebSocket construction uses a key query parameter without equivalent token forwarding. Partner voice explicitly chooses a project without AI Logic enforcement and patches WebSocket sends. Neither is imported. No secure authenticated spoken exchange was available to verify; voice is excluded rather than bypassing enforcement.
 
-## Validation ledger
+## Initial integration validation ledger (before review corrections)
 
 - `npm ci --cache /tmp/debait-release-npm-cache`: passed, 181 packages; no dependency/configuration change. Writable cache is necessary in this environment.
 - Base suite: 390 passed, 0 failed. Final suite: **404 passed, 0 failed**.
@@ -54,8 +56,8 @@ GitHub API/GraphQL requests returned Forbidden; `gh` authentication checks repor
 
 ## Remaining limits
 
-Real release-branch Nano, cloud fallback, network privacy and supported-hardware latency must be retested. The partner's one warm 88-second result is historical evidence, not this build's validation. If Chrome ignores cancellation, its busy local slot stays occupied until completion; further local prompts cannot pile up, but a reload may be needed. Firebase's public model API does not expose the private Chrome session for explicit destruction. Per-tab abandonment and Evaluation Lab cancellation discard results; an already-dispatched request may finish within its bounded deadline rather than immediately stop. Local Only changes cancel all work and close the old offscreen context. Shared project-wide quotas still need server-side infrastructure for production-wide coordination.
+Real release-branch Nano, cloud fallback, network privacy and supported-hardware latency must be retested. The partner's one warm 88-second result is historical evidence, not this build's validation. If Chrome ignores cancellation, its busy local slot stays occupied until completion; further local prompts cannot pile up, but a reload may be needed. Firebase's public model API does not expose the private Chrome session for explicit destruction. Per-tab abandonment outside Evaluation Lab remains bounded. Evaluation cancellation now revokes only its request through acknowledged worker/offscreen routing; already-dispatched SDK work may still finish if abort is ignored, but cannot start new fallback after confirmed revocation. Local Only changes cancel all work and close the old offscreen context. Shared project-wide quotas still need server-side infrastructure for production-wide coordination.
 
-### Open the prepared draft manually
+### Existing draft PR #4
 
-[Compare release against the integration foundation](https://github.com/Psalmmy007/Debait/compare/integration/chisom-features...release/hackathon-final-integration?expand=1). Choose **Create draft pull request**, keep base `integration/chisom-features` and compare `release/hackathon-final-integration`, and copy the text from `PR_DESCRIPTION.md`. Do not merge it. Implementation commit: `f64773c`; subsequent report-only commits do not change the implementation.
+[PR #4](https://github.com/Psalmmy007/Debait/pull/4) exists and its Git ref was verified before these corrections. Pushing this same release branch updates it; do not create another PR or merge it. Earlier API creation attempts were blocked by GitHub API access. Initial implementation commit: `f64773c`; current focused corrections and their exact changed-file list are recorded in `REVIEW_FIXES.md` and Git history.

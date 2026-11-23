@@ -120,3 +120,28 @@ test('cancelling before the worker begins a session cannot submit a batch later'
   assert.ok(messages.includes('debait/evaluation-cancel'));
   assert.ok(run.rows.every(row => row.status === 'cancelled'));
 });
+
+test('failed cancellation acknowledgement never claims that remote work stopped',async()=>{
+ const messages=[];const pending=deferred();
+ const run=createRun([{id:'cancel',text:'Synthetic headline'}],{send:async msg=>{
+  if(msg.type==='debait/evaluation-begin')return{ok:true,runId:'controlled-run'};
+  if(msg.type==='debait/evaluation-score')return pending.promise;
+  return{ok:false,code:'debait/evaluation-cancel-pending'};
+ },changed:(_rows,message)=>{if(message)messages.push(message);}});
+ const work=run.start();await new Promise(r=>setImmediate(r));run.cancel();await new Promise(r=>setImmediate(r));
+ assert.ok(messages.some(m=>m.includes('could not be confirmed')));
+ pending.resolve({ok:false});await work;assert.ok(run.rows.every(r=>r.status==='cancelled'));
+});
+
+test('a run stays busy until its cancellation acknowledgement settles',async()=>{
+ const inference=deferred(),ack=deferred();
+ const run=createRun([{id:'wait',text:'Synthetic headline'}],{send:async msg=>{
+  if(msg.type==='debait/evaluation-begin')return{ok:true,runId:'wait-run'};
+  if(msg.type==='debait/evaluation-score')return inference.promise;
+  if(msg.type==='debait/evaluation-cancel')return ack.promise;
+  return{ok:true};
+ }});
+ const work=run.start();await new Promise(r=>setImmediate(r));run.cancel();inference.resolve({ok:false});
+ await new Promise(r=>setImmediate(r));assert.equal(run.running,true);
+ ack.resolve({ok:true});await work;assert.equal(run.running,false);
+});

@@ -58,3 +58,29 @@ test('release offscreen rejects voice startup and only trusted extension backgro
  assert.equal((await send({type:'debait/cancel-inference'},{id:chrome.runtime.id})).ok,true);assert.equal(cancelled,1);
  delete globalThis.__cancelReleaseTest;
 });
+
+test('actual offscreen routing acknowledges scoped abort without cancelling another request',async()=>{
+ const {readFile}=await import('node:fs/promises');const url=new URL('../src/offscreen/offscreen.js',import.meta.url);
+ let listener,globalCancels=0;const operations=new Map();
+ globalThis.__scopedEngine={cancelAll(){globalCancels++;},scoreHeadlines(texts,opts){
+  return new Promise((resolve,reject)=>{
+   operations.set(texts[0],{resolve,signal:opts.signal});
+   opts.signal.addEventListener('abort',()=>reject(Object.assign(new Error('Cancelled'),{code:'debait/cancelled'})),{once:true});
+  });
+ }};
+ const source=(await readFile(url,'utf8')).replace("import { engine } from '../engine/index.js';", 'const engine=globalThis.__scopedEngine;')
+  .replace(/from '(\.[^']+)'/g,(_,p)=>`from '${new URL(p,url).href}'`);
+ globalThis.chrome={runtime:{id:'controlled-extension',onMessage:{addListener(fn){listener=fn;}}}};
+ await import(`data:text/javascript,${encodeURIComponent(source)}#actual-scoped-routing`);
+ const send=(message,sender={id:chrome.runtime.id})=>new Promise(resolve=>listener({target:'offscreen',...message},sender,resolve));
+ const one=send({type:'debait/score',requestId:'one',texts:['One']});
+ const two=send({type:'debait/score',requestId:'two',texts:['Two']});
+ assert.equal((await send({type:'debait/cancel-inference',requestId:'one'})).ok,true);
+ assert.equal(operations.get('One').signal.aborted,true);assert.equal(operations.get('Two').signal.aborted,false);
+ assert.equal((await one).code,'debait/cancelled');assert.equal(globalCancels,0);
+ operations.get('Two').resolve([{kind:'clean',score:0,triggers:[],honest_rewrite:'Two',source:'on-device'}]);assert.equal((await two).ok,true);
+ await send({type:'debait/cancel-inference',requestId:'late'});
+ assert.equal((await send({type:'debait/score',requestId:'late',texts:['Late']})).ok,false);assert.equal(operations.has('Late'),false);
+ assert.equal((await send({type:'debait/cancel-inference',requestId:'two'},{id:chrome.runtime.id,tab:{id:4}})).ok,false);
+ delete globalThis.__scopedEngine;
+});

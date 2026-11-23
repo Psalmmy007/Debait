@@ -1,5 +1,5 @@
 // Routing/lifecycle only: no classification policy, credentials or generated results.
-export const HYBRID_BUDGETS = { device: 10000, localOnly: 150000, cloud: 25000, overall: 45000, localOverall: 240000, slowCooldown: 600000 };
+export const HYBRID_BUDGETS = { device: 10000, deviceQueue: 10000, localQueue: 90000, localOnly: 150000, cloud: 25000, overall: 45000, localOverall: 240000, slowCooldown: 600000 };
 export const cancelledInference = () => Object.assign(new Error('Analysis was cancelled. No new result was produced.'), { name: 'DebaitAiError', code: 'debait/cancelled' });
 export const deviceTimeout = () => Object.assign(new Error('LOCAL_ONLY: Gemini Nano did not finish within its local processing budget. No cloud inference was used.'), { name: 'DebaitAiError', code: 'debait/local-timeout' });
 export function checkSignal(signal) { if (signal?.aborted) throw cancelledInference(); }
@@ -14,22 +14,32 @@ export async function bounded(operation, { signal, timeoutMs, timeoutError = () 
   try { checkSignal(signal); return await Promise.race([Promise.resolve().then(() => { checkSignal(controller.signal); return operation(controller.signal); }), stopped]); }
   finally { clearTimeout(timer); signal?.removeEventListener('abort', abort); controller.abort(); }
 }
-// A cancelled SDK call retains its slot until the underlying promise actually settles.
-// If Chrome ignores cancellation, do not accumulate another local prompt behind it.
+// Acquiring a slot and running a prompt have separate deadlines. A lease is
+// released by physical SDK settlement, never merely by an outer timeout.
 export function createDeviceQueue(maxWaiting = 4) {
   let busy = false; const waiting = [];
+  const queueError = () => Object.assign(new Error('Gemini Nano is busy. The bounded wait for a local processing slot ended.'), { name: 'DebaitAiError', code: 'debait/device-busy' });
   const advance = () => { busy = false; const next = waiting.shift(); if (next) next(); };
-  return async (operation, signal) => {
+  const lease = () => { let released = false; return () => { if (!released) { released = true; advance(); } }; };
+  const acquire = async (signal, timeoutMs = HYBRID_BUDGETS.localQueue) => {
     checkSignal(signal);
-    if (busy) {
-      if (waiting.length >= maxWaiting) throw Object.assign(new Error('Gemini Nano is busy. Wait for existing local analysis to finish.'), { name: 'DebaitAiError', code: 'debait/device-busy' });
-      await new Promise((resolve, reject) => {
-        const start = () => { signal?.removeEventListener('abort', abort); busy = true; resolve(); };
-        const abort = () => { const i = waiting.indexOf(start); if (i >= 0) waiting.splice(i, 1); reject(cancelledInference()); };
-        waiting.push(start); signal?.addEventListener('abort', abort, { once: true }); if (signal?.aborted) abort();
-      });
-    } else busy = true;
-    try { checkSignal(signal); return await operation(); }
-    finally { advance(); }
+    if (!busy) { busy = true; return lease(); }
+    if (waiting.length >= maxWaiting) throw queueError();
+    return new Promise((resolve, reject) => {
+      let timer;
+      const cleanup = () => { clearTimeout(timer); signal?.removeEventListener('abort', abort); };
+      const remove = error => { const i = waiting.indexOf(start); if (i >= 0) waiting.splice(i, 1); cleanup(); reject(error); };
+      const abort = () => remove(cancelledInference());
+      const start = () => { cleanup(); busy = true; resolve(lease()); };
+      waiting.push(start);
+      timer = setTimeout(() => remove(queueError()), timeoutMs);
+      signal?.addEventListener('abort', abort, { once: true }); if (signal?.aborted) abort();
+    });
   };
+  const run = async (operation, signal) => {
+    const release = await acquire(signal);
+    try { checkSignal(signal); return await operation(); } finally { release(); }
+  };
+  run.acquire = acquire;
+  return run;
 }

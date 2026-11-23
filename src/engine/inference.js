@@ -11,24 +11,32 @@ export function createHeadlineEngine({ getAi, getDeviceAi, getGenerativeModel, I
   async function perform(texts, { localOnly, debugToken, evaluation = false, signal }, task, kind) {
     try {
       const input = task ? assistancePrompt(texts[0], task, kind) : prompt(texts);
-      const run = (onDevice, parent) => bounded(async requestSignal => {
-        const invoke = async () => {
-          checkSignal(requestSignal);
-          const ai = onDevice ? getDeviceAi() : await getAi(debugToken);
-          checkSignal(requestSignal);
-          const model = getGenerativeModel(ai, {
-            mode: onDevice ? InferenceMode.ONLY_ON_DEVICE : InferenceMode.ONLY_IN_CLOUD,
-            inCloudParams: { model: cloudModel, generationConfig: { responseMimeType: 'application/json',
-              responseSchema: task ? assistantCloudSchemas[task] : cloudSchema, temperature: 0.2, maxOutputTokens: 2048 } },
-            onDeviceParams: { createOptions: { expectedInputs: lang, expectedOutputs: lang, signal: requestSignal },
-              promptOptions: { responseConstraint: task ? assistantDeviceSchemas[task] : deviceSchema, signal: requestSignal } },
-          });
-          const result = await model.generateContent(input, { signal: requestSignal, timeout: onDevice ? (localOnly ? budgets.localOnly : budgets.device) : budgets.cloud });
-          checkSignal(requestSignal); return result;
-        };
-        return onDevice ? deviceQueue(invoke, requestSignal) : invoke();
-      }, { signal: parent, timeoutMs: onDevice ? (localOnly ? budgets.localOnly : budgets.device) : budgets.cloud,
-        ...(onDevice ? { timeoutError: deviceTimeout } : {}) });
+      const invoke = async (onDevice, requestSignal) => {
+        checkSignal(requestSignal);
+        const ai = onDevice ? getDeviceAi() : await getAi(debugToken);
+        checkSignal(requestSignal);
+        const model = getGenerativeModel(ai, {
+          mode: onDevice ? InferenceMode.ONLY_ON_DEVICE : InferenceMode.ONLY_IN_CLOUD,
+          inCloudParams: { model: cloudModel, generationConfig: { responseMimeType: 'application/json',
+            responseSchema: task ? assistantCloudSchemas[task] : cloudSchema, temperature: 0.2, maxOutputTokens: 2048 } },
+          onDeviceParams: { createOptions: { expectedInputs: lang, expectedOutputs: lang, signal: requestSignal },
+            promptOptions: { responseConstraint: task ? assistantDeviceSchemas[task] : deviceSchema, signal: requestSignal } },
+        });
+        const result = await model.generateContent(input, { signal: requestSignal, timeout: onDevice ? (localOnly ? budgets.localOnly : budgets.device) : budgets.cloud });
+        checkSignal(requestSignal); return result;
+      };
+      const run = async (onDevice, parent) => {
+        if (!onDevice) return bounded(s => invoke(false, s), { signal: parent, timeoutMs: budgets.cloud });
+        const release = await deviceQueue.acquire(parent, localOnly ? (budgets.localQueue ?? HYBRID_BUDGETS.localQueue) : (budgets.deviceQueue ?? HYBRID_BUDGETS.deviceQueue));
+        let physical;
+        try {
+          return await bounded(s => {
+            physical = invoke(true, s);
+            physical.then(release, release); // ignored abort must not permit another prompt
+            return physical;
+          }, { signal: parent, timeoutMs: localOnly ? budgets.localOnly : budgets.device, timeoutError: deviceTimeout });
+        } finally { if (!physical) release(); }
+      };
       checkSignal(signal);
       const available = await bounded(() => deviceAvailability ? deviceAvailability() : 'unavailable', { signal, timeoutMs: 2000 }).catch(error => {
         checkSignal(signal); if (localOnly) throw error; return 'unavailable';
@@ -41,7 +49,7 @@ export function createHeadlineEngine({ getAi, getDeviceAi, getGenerativeModel, I
         catch (error) {
           checkSignal(signal);
           if (localOnly) throw error;
-          deviceSlowUntil = now() + budgets.slowCooldown;
+          if (error.code !== 'debait/device-busy') deviceSlowUntil = now() + budgets.slowCooldown;
         }
       }
       checkSignal(signal);
@@ -64,7 +72,7 @@ export function createHeadlineEngine({ getAi, getDeviceAi, getGenerativeModel, I
       lastSource = source;
       if (evaluation) results.evaluationMetadata = { configuredModel: cloudModel || 'unknown', sdkVersion };
       return results;
-    } catch (error) { lastSource = null; throw aiError(error); }
+    } catch (error) { if (error.code !== 'debait/cancelled') lastSource = null; throw aiError(error); }
 
   }
   return {

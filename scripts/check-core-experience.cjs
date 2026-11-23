@@ -36,7 +36,8 @@ let browser;
             return {ok:true,result:normalizeAssistance(raw,msg.text,msg.task,msg.kind)};
           }
         `);
-        body = body.replace('const raw = await mockEngine.scoreHeadlines(msg.texts, {});', `await new Promise(resolve=>setTimeout(resolve,100));
+        body = body.replace('const raw = await mockEngine.scoreHeadlines(msg.texts, {});', `if(globalThis.__holdScoring)await new Promise(resolve=>{globalThis.__releaseScoring=()=>{globalThis.__holdScoring=false;resolve();};});
+          await new Promise(resolve=>setTimeout(resolve,100));
           const raw=msg.texts.map(t=>({kind:t===${JSON.stringify(complex)}?'clean':t.startsWith(${JSON.stringify(prefix)})?'rage':'fear',score:50,triggers:t===${JSON.stringify(complex)}?[]:[{word:t,why:'Controlled fixture evidence, not a model evaluation'}],honest_rewrite:t.startsWith(${JSON.stringify(prefix)})?t.slice(${prefix.length}):t.replace('harming','affecting'),source:store.settings?.localOnly?'on-device':'cloud'}));`);
         return route.fulfill({ response, body });
       }
@@ -128,6 +129,16 @@ let browser;
     await page.evaluate(() => chrome.storage.local.set({ settings: { autoDebait: true, localOnly: true } }));
     await page.waitForFunction(() => document.querySelector('#dynamic').textContent === 'Officials you should HATE again');
     assert.equal(errors.length, 0, errors.join('\n'));
+    const localPage = await context.newPage();
+    localPage.on('pageerror',error=>errors.push(error.message));
+    await localPage.addInitScript(()=>{globalThis.__holdScoring=true;localStorage.setItem('debait-preview',JSON.stringify({settings:{localOnly:true,autoDebait:false}}));});
+    await localPage.goto(`http://127.0.0.1:${port}/?preview`);
+    await localPage.waitForFunction(()=>!!globalThis.__releaseScoring);
+    assert.ok((await localPage.locator('debait-root .orb-tip').textContent()).includes('Local Only: checking or processing headlines'));
+    assert.ok((await localPage.locator('debait-root .orb-tip').textContent()).includes('minutes'));
+    await localPage.evaluate(()=>__releaseScoring());
+    await localPage.waitForFunction(()=>document.querySelectorAll('debait-tag').length===3 && !document.querySelector('debait-root').shadowRoot.querySelector('.orb-wrap[data-state="busy"]'));
+    assert.equal(errors.length,0,errors.join('\n'));
     const disabled = await context.newPage();
     await disabled.addInitScript(() => localStorage.setItem('debait-preview', JSON.stringify({ settings: { autoDebait: true, disabledSites: ['127.0.0.1'] } })));
     await disabled.goto(`http://127.0.0.1:${port}/?preview`);
@@ -135,6 +146,6 @@ let browser;
     assert.equal(await disabled.locator('debait-tag').count(), 0);
     assert.equal(await disabled.locator('#safe').textContent(), safe);
     assert.equal(await disabled.evaluate(() => (globalThis.__messages || []).filter(m => m.type === 'debait/score').length), 0);
-    console.log(JSON.stringify({ controlledBrowser: true, popupClosesSettings: true, pendingPanelOpeningCancelled: true, manualPage: true, popupResponse: true, individualRequestApplyRestore: true, unsafeRewriteRejected: true, cleanExplanationAndCooldown: true, autoOptInAndManualRestore: true, dynamicRecycledText: true, localOnlyInvalidation: true, nestedLinksPreserved: true, disabledSiteRespected: true, realModelRequests: 0 }));
+    console.log(JSON.stringify({ controlledBrowser: true, popupClosesSettings: true, pendingPanelOpeningCancelled: true, manualPage: true, popupResponse: true, individualRequestApplyRestore: true, unsafeRewriteRejected: true, cleanExplanationAndCooldown: true, autoOptInAndManualRestore: true, dynamicRecycledText: true, localOnlyInvalidation: true, completeContentLocalOnlyWaitingMessage: true, nestedLinksPreserved: true, disabledSiteRespected: true, realModelRequests: 0 }));
   } finally { if (browser) await browser.close(); server.kill(); }
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

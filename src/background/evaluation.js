@@ -7,6 +7,7 @@ export function evaluationError(error) {
     'debait/evaluation-forbidden': 'Evaluation is only available from the unpacked development extension page.',
     'debait/evaluation-busy': 'Another evaluation batch is still finishing. Please wait before starting again.',
     'debait/evaluation-interrupted': 'The extension or evaluation session changed. Start a new run; unfinished rows were not analyzed.',
+    'debait/evaluation-cancel-pending': 'Cancellation could not be confirmed. Results are discarded; reload the extension before retrying if it remains unresponsive.',
     'debait/evaluation-cancelled': 'Evaluation cancelled. No result was recorded for this batch.',
     'debait/evaluation-privacy': 'Privacy settings changed. Start a new run using the current Local Only setting.',
     'debait/evaluation-input': 'Use 1–8 nonempty headlines of at most 320 characters.',
@@ -34,12 +35,13 @@ export function evaluationError(error) {
 
 // No datasets, results, credentials or browser history are written here. Only the
 // existing shared quota gate persists its normal scalar scheduling state.
-export function createEvaluationService({ authorize, settings, revision, gate, infer, metadata, uuid = () => crypto.randomUUID() }) {
+export function createEvaluationService({ authorize, settings, revision, gate, infer, cancelInference = async () => { throw fail('debait/evaluation-cancel-pending'); }, requestId = () => crypto.randomUUID(), metadata, uuid = () => crypto.randomUUID() }) {
   let session;
   const check = async current => {
+    const policy = await settings();
     if (current !== session) throw fail('debait/evaluation-interrupted');
     if (current.cancelled) throw fail('debait/evaluation-cancelled');
-    if (revision() !== current.revision || (await settings()).localOnly !== current.localOnly) throw fail('debait/evaluation-privacy');
+    if (revision() !== current.revision || policy.localOnly !== current.localOnly) throw fail('debait/evaluation-privacy');
   };
   return {
     async handle(msg, sender) {
@@ -49,7 +51,7 @@ export function createEvaluationService({ authorize, settings, revision, gate, i
         if (session?.busy) throw fail('debait/evaluation-busy');
         const policy = await settings();
         if (session?.busy) throw fail('debait/evaluation-busy');
-        session = { id: uuid(), owner, cancelled: false, busy: false, localOnly: policy.localOnly, revision: revision() };
+        session = { id: uuid(), owner, cancelled: false, busy: false, controller: new AbortController(), localOnly: policy.localOnly, revision: revision() };
         return { ok: true, runId: session.id, localOnly: session.localOnly,
           startedAt: new Date().toISOString(), ...metadata };
       }
@@ -57,6 +59,10 @@ export function createEvaluationService({ authorize, settings, revision, gate, i
       if (!current || current.id !== msg.runId || current.owner !== owner) throw fail('debait/evaluation-interrupted');
       if (msg.type === 'debait/evaluation-cancel' || msg.type === 'debait/evaluation-end') {
         current.cancelled = true;
+        const id = current.activeRequestId;
+        current.cancelConfirmation ||= Promise.resolve().then(() => id ? cancelInference(id) : undefined);
+        current.controller.abort();
+        await current.cancelConfirmation;
         return { ok: true, pendingRequest: current.busy };
       }
       if (msg.type !== 'debait/evaluation-score') throw fail('debait/evaluation-input');
@@ -69,7 +75,9 @@ export function createEvaluationService({ authorize, settings, revision, gate, i
         const execute = async () => {
           // Check again immediately before dispatch, after any asynchronous scheduling.
           await check(current);
-          const response = await infer({ texts: msg.texts, localOnly: current.localOnly });
+          if (current.cancelled) throw fail('debait/evaluation-cancelled');
+          current.activeRequestId = requestId();
+          const response = await infer({ texts: msg.texts, localOnly: current.localOnly, requestId: current.activeRequestId, signal: current.controller.signal });
           await check(current);
           if (!Array.isArray(response.results) || response.results.length !== msg.texts.length) throw fail('debait/evaluation-failed');
           const results = response.results.map((r, i) => normalizeResult(r, msg.texts[i]));
@@ -85,7 +93,7 @@ export function createEvaluationService({ authorize, settings, revision, gate, i
           return { ok: true, results, evaluationMetadata: { ...safe, resolvedModelVersion: 'unknown' } };
         };
         return current.localOnly ? await execute() : await gate.run(execute);
-      } finally { current.busy = false; }
+      } finally { current.busy = false; current.activeRequestId = null; }
     },
   };
 }

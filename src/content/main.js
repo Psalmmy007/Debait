@@ -164,11 +164,10 @@ async function start() {
     const feedback = orbFeedback({
       results: [...records.values()].filter(r => r.state !== 'debaited' && (!settings.localOnly || r.result?.source === 'on-device')).map(r => r.result),
       busy: inflight > 0,
-      localOnly: settings.localOnly,
       error: [...records.values()].some(r => r.failed),
       unavailable: contextLost,
     });
-    orb.update({ state, bait, debaited, scanned, notice, feedback });
+    orb.update({ state, bait, debaited, scanned, notice, feedback, localOnly: settings.localOnly });
     panel.refresh();
   }
 

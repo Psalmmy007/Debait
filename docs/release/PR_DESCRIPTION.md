@@ -10,8 +10,12 @@ The repaired foundation could stall on available but slow Nano, its outer timeou
 
 ## Validation and limitations
 
-404 deterministic tests passed, 0 failed; core browser, 100 UI, 48 layout, controlled audio/privacy checks and development/production/web/demo builds passed. Installed Firebase browser SDK exercised with a stand-in Chrome model; zero real Gemini requests. Native extension loading is policy-blocked here.
+423 deterministic tests passed, 0 failed; core browser, 100 UI, 48 layout, controlled audio/privacy checks and development/production/web/demo builds passed. Installed Firebase browser SDK exercised with a stand-in Chrome model; zero real Gemini requests. Native extension loading is policy-blocked here.
 
 Production cloud auth still needs a trusted issuer. Partner's historical 88-second Nano run is not release-build validation. Official rules fetch and GitHub API access are blocked. See docs/release for exact evidence and pending hardware/network tests. No eligibility, real voice, model accuracy or public-production readiness claim.
 
 Review as a **draft** against integration/chisom-features. Do not merge automatically. No main or teammate branches were modified.
+
+## Independent-review corrections
+
+Request-specific, acknowledged worker/offscreen cancellation now blocks new cloud fallback after cancellation, including preparation/queue/authentication races, without aborting unrelated browsing. Queue wait and active Nano budgets are separate; physical settlement still owns the slot. The Local Only waiting message is wired through the actual content script, and background tests default to the voice-disabled release. See REVIEW_FIXES.md for scoped guarantees, exact tests, file list and unchanged production issuer/hardware blockers. No merge or new pull request is requested.

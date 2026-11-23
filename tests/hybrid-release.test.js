@@ -4,7 +4,7 @@ import { createHeadlineEngine } from '../src/engine/inference.js';
 import { createEngine } from '../src/engine/runtime.js';
 import { createDeviceQueue } from '../src/engine/hybrid.js';
 const tick = () => new Promise(resolve=>setImmediate(resolve));
-const budgets={device:20,localOnly:70,cloud:100,slowCooldown:1000};
+const budgets={deviceQueue:20,localQueue:70,device:20,localOnly:70,cloud:100,slowCooldown:1000};
 const answer=source=>({response:{inferenceSource:source,text:()=>JSON.stringify({results:[{kind:'clean',score:0,triggers:[],honest_rewrite:'City council approves a budget'}]})}});
 function fixture({available='available',local,cloud=async()=>answer('in_cloud')}={}){
  const calls={auth:0,device:0,cloud:0,abort:0};let signal;
@@ -72,4 +72,20 @@ test('runtime cancellation reaches active SDK work and cannot turn a late answer
 test('an on-device response is never accepted from an explicit cloud route or vice versa',async()=>{
  const local=fixture({local:async()=>answer('in_cloud')});await assert.rejects(local.sdk.scoreHeadlines(['headline'],{localOnly:false}));assert.equal(local.calls.cloud,0);
  const cloud=fixture({available:'unavailable',cloud:async()=>answer('on_device')});await assert.rejects(cloud.sdk.scoreHeadlines(['headline'],{localOnly:false}));
+});
+
+test('two valid Local Only prompts each receive their full active budget after acquiring the slot',async()=>{
+ let active=0,maxActive=0;const local=async signal=>new Promise((resolve,reject)=>{
+  active++;maxActive=Math.max(maxActive,active);
+  const timer=setTimeout(()=>{active--;resolve(answer('on_device'));},45);
+  signal.addEventListener('abort',()=>{clearTimeout(timer);reject(new DOMException('Aborted','AbortError'));},{once:true});
+ });
+ const f=fixture({local});
+ const results=await Promise.all(['First synthetic headline','Second synthetic headline'].map(t=>f.sdk.scoreHeadlines([t],{localOnly:true})));
+ assert.ok(results.every(r=>r[0].source==='on-device'));assert.equal(maxActive,1);assert.equal(f.calls.cloud,0);
+});
+test('overall runtime deadline still cancels a prompt even with a longer active Nano budget',async()=>{
+ const f=fixture();const runtime=createEngine({firebaseEngine:f.sdk,mockEngine:{},timeoutMs:15});
+ await assert.rejects(runtime.scoreHeadlines(['Synthetic headline'],{localOnly:true}),e=>e.code==='debait/timeout');
+ assert.ok(f.signal().aborted);assert.equal(f.calls.cloud,0);
 });

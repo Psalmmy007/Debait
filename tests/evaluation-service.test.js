@@ -8,6 +8,7 @@ const answer = (source = 'cloud') => ({ results: [{ kind: 'clean', score: 0, tri
 function fixture({ infer = async () => answer() } = {}) {
   let localOnly = false, revision = 0, calls = 0, gates = 0;
   const service = createEvaluationService({ authorize: async () => {}, settings: async () => ({ localOnly }), revision: () => revision,
+    cancelInference: async () => {}, // Controlled in-process acknowledgement; no Chrome transport in this fixture.
     gate: { run: operation => { gates++; return operation(); } }, infer: opts => { calls++; return infer(opts); }, metadata: { gitSha: 'test-sha', policyVersion: 'test-policy' }, uuid: () => 'run-A' });
   return { service, counts: () => ({ calls, gates }), privacy(value) { localOnly = value; revision++; },
     begin: () => service.handle({ type: 'debait/evaluation-begin' }, sender),
@@ -55,4 +56,12 @@ test('worker restart or different document cannot resume a run', async () => {
 test('unknown errors cannot leak dataset or provider text into exports', () => {
   const result = evaluationError({ code: 'secret-code', message: 'private headline token', retryAt: 100, autoRetry: true });
   assert.ok(!JSON.stringify(result).includes('private')); assert.ok(!JSON.stringify(result).includes('secret-code'));
+});
+
+test('missing cancellation transport cannot falsely confirm an active request stopped',async()=>{
+ const pending=deferred();const service=createEvaluationService({authorize:async()=>{},settings:async()=>({localOnly:false}),revision:()=>0,gate:{run:op=>op()},infer:()=>pending.promise,metadata:{},uuid:()=> 'missing-transport'});
+ await service.handle({type:'debait/evaluation-begin'},sender);
+ const work=assert.rejects(service.handle({type:'debait/evaluation-score',runId:'missing-transport',texts:['Headline']},sender));await new Promise(r=>setImmediate(r));
+ await assert.rejects(service.handle({type:'debait/evaluation-cancel',runId:'missing-transport'},sender),e=>e.code==='debait/evaluation-cancel-pending');
+ pending.resolve(answer());await work;
 });

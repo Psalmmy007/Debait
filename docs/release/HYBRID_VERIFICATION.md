@@ -8,11 +8,11 @@ Content script → MV3 worker (privacy/cache/statistics/shared local quota gate)
 
 - Available Nano is attempted with `InferenceMode.ONLY_ON_DEVICE`, without calling cloud `getAi` or exchanging App Check credentials.
 - Hybrid local budget: 10 seconds. A slow/failed Nano is cancelled; at most one `ONLY_IN_CLOUD` request then runs with the original project's App Check authentication. Slow Nano is skipped for 10 minutes for hybrid requests. No simultaneous cloud hedges, project races or heuristic substitute.
-- Local Only local-attempt budget: 150 seconds including local queue waiting, with a 240-second overall runtime deadline. No cloud route is reachable. Device absence/download needs and timeout produce errors, never a fabricated Clean result. Content scanning sends one local headline per batch.
+- Local Only queue waiting is bounded to 90 seconds separately from its 150-second active local-attempt budget, with the existing 240-second overall runtime deadline. No cloud route is reachable. Device absence/download needs and timeout produce errors, never a fabricated Clean result. Content scanning sends one local headline per batch.
 - Cloud budget: 25 seconds including authentication; hybrid runtime deadline: 45 seconds. Budgets are explicit constants in `src/engine/hybrid.js`, not claimed model performance guarantees. Availability probes are bounded separately.
 - One active local operation, at most four queued. Signals reach SDK request options AND `onDeviceParams.createOptions` / `promptOptions`. The Firebase browser adapter forwards the latter to Chrome; relying on request options alone was insufficient.
-- A timed-out/cancelled local operation keeps its slot until the underlying promise settles. If an implementation ignores abort, new local prompts cannot accumulate behind it. There is no access to private SDK sessions or unsupported cancellation hook. Multiple tabs may exhaust a local attempt budget while waiting; use one test tab on slow hardware.
-- Runtime deadlines abort signals; Local Only changes request cancellation and preserve the existing hard closure of the offscreen context. Late responses are discarded by signal/worker privacy revision checks. Already transmitted data cannot be recalled.
+- A timed-out/cancelled local operation keeps its slot until the underlying promise settles. If an implementation ignores abort, new local prompts cannot accumulate behind it. There is no access to private SDK sessions or unsupported cancellation hook. Active processing time starts after the slot is acquired. The overall runtime deadline still limits the total wait plus processing time across tabs.
+- Evaluation cancellation revokes a unique request ID through the worker/offscreen transport and acknowledges that revocation, including reordered messages. It does not cancel unrelated browsing. Runtime deadlines abort signals; Local Only changes request cancellation and preserve the existing hard closure of the offscreen context. Late responses are discarded by signal/worker privacy revision checks. Already transmitted data cannot be recalled.
 
 ## Source attribution and quality
 
@@ -27,7 +27,7 @@ Existing schemas, exact headline evidence validation, Clean invariance and seman
 | A: available local model | Device-only response accepted; no cloud authentication; installed browser SDK adapter tested | PENDING on eligible Chrome hardware |
 | B: unavailable/failed/slow local | Exactly one permitted cloud request; slow prompt aborted; slow-device cooldown | PENDING genuine authenticated fallback |
 | C: Local Only failures | No cloud invocation/authentication; source mismatch rejected; worker privacy tests pass | PENDING native network capture |
-| D: abandoned/cancelled work | Active/queued signals, runtime cancellation, bounded queue and late-result rejection pass | PENDING native resource/CPU observation; tab/evaluation cancellation can wait for the bounded dispatched operation |
+| D: abandoned/cancelled work | Active/queued signals, runtime cancellation, bounded queue and late-result rejection pass | PENDING native resource/CPU observation; evaluation cancellation is request-scoped and acknowledged; already-dispatched SDK work may finish if physical abort is ignored |
 | E: source labels | Metadata/route checks; availability/cache never imply fresh success | PENDING source evidence from actual responses |
 | F: headline integrity | Existing quotation, names, numbers, negation, attribution, causal/severity/permanence and no-count rejection tests pass | Human classification/rewrite review still needed |
 | G: extension UI | Controlled core/browser/UI/layout suites pass | Native extension loading blocked in this environment |
