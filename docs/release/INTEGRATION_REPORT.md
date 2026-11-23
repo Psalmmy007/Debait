@@ -50,8 +50,12 @@ SDK evidence: Firebase 13.3.0 / @firebase/ai 3.1.0 browser source sends REST App
 
 Official Devpost and Chrome/Firebase documentation fetches returned proxy CONNECT 403, including a retried public rules fetch. Current official rules and hardware documentation could not be verified. Source SDK behavior is inspected locally; historical partner hardware requirements are not advertised as newly verified official requirements.
 
-GitHub API/GraphQL requests returned Forbidden; `gh` authentication checks reported unusable API access. The branch can be pushed through the repository Git transport, but PR creation may require an authorized Codespaces/GitHub session. `PR_DESCRIPTION.md` is the prepared review body. Target base: `integration/chisom-features`, to review the selective delta; no merge is authorized.
+GitHub API/GraphQL requests returned Forbidden; `gh` authentication checks reported unusable API access. The release branch was pushed successfully through Git. A draft `gh pr create` attempt failed with `Post https://api.github.com/graphql: Forbidden`; no PR was created. Creating the draft requires an authorized GitHub/Codespaces session. `PR_DESCRIPTION.md` is the prepared review body. Target base: `integration/chisom-features`, to review the selective delta; no merge is authorized.
 
 ## Remaining limits
 
 Real release-branch Nano, cloud fallback, network privacy and supported-hardware latency must be retested. The partner's one warm 88-second result is historical evidence, not this build's validation. If Chrome ignores cancellation, its busy local slot stays occupied until completion; further local prompts cannot pile up, but a reload may be needed. Firebase's public model API does not expose the private Chrome session for explicit destruction. Per-tab abandonment and Evaluation Lab cancellation discard results; an already-dispatched request may finish within its bounded deadline rather than immediately stop. Local Only changes cancel all work and close the old offscreen context. Shared project-wide quotas still need server-side infrastructure for production-wide coordination.
+
+### Open the prepared draft manually
+
+[Compare release against the integration foundation](https://github.com/Psalmmy007/Debait/compare/integration/chisom-features...release/hackathon-final-integration?expand=1). Choose **Create draft pull request**, keep base `integration/chisom-features` and compare `release/hackathon-final-integration`, and copy the text from `PR_DESCRIPTION.md`. Do not merge it. Implementation commit: `f64773c`; subsequent report-only commits do not change the implementation.
