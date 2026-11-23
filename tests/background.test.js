@@ -7,7 +7,7 @@ const tick = () => new Promise(r => setImmediate(r));
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { resolve, promise }; };
 const result = (source, text = 'headline') => ({ kind: 'fear', score: 50, triggers: [{ word: text, why: 'Controlled evidence fixture; not a classification accuracy claim' }], honest_rewrite: 'Calmer headline', source });
 let serial = 0;
-async function fixture(t, { localOnly = false, voice = false, cache = [], engine, assistant, contexts = true, create, statsVersion = 2, stats = {}, demo = false, debug = false, scoreCacheVersion = QUALITY_POLICY_VERSION } = {}) {
+async function fixture(t, { localOnly = false, voice = false, cache = [], engine, assistant, contexts = true, create, statsVersion = 2, stats = {}, demo = false, debug = false, scoreCacheVersion = QUALITY_POLICY_VERSION, voiceEnabled = false } = {}) {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const data = { settings: { localOnly, voice }, scoreCache: cache, scoreCacheVersion, appCheckDebugToken: 'test-only', statsVersion, stats };
   let router, onSettings;
@@ -69,13 +69,13 @@ async function fixture(t, { localOnly = false, voice = false, cache = [], engine
       return request;
     } };
   }
-  if (demo || debug) {
+  if (demo || debug || voiceEnabled) {
     // Simulate Vite's explicit demo constant while exercising the real worker/recorder.
     const url = new URL('../src/background/sw.js', import.meta.url);
     let source = await readFile(url, 'utf8');
     const modeImport = "import { DEMO_MODE } from '../engine/mode.js';";
     assert.ok(source.includes(modeImport));
-    source = source.replace(modeImport, `const DEMO_MODE = ${demo};`)
+    source = source.replace("import { VOICE_ENABLED } from '../shared/release.js';", `const VOICE_ENABLED = ${voiceEnabled};`).replace(modeImport, `const DEMO_MODE = ${demo};`)
       .replaceAll('import.meta.env', debug ? JSON.stringify({ MODE: 'development', VITE_DEBAIT_APP_CHECK: 'debug' }) : 'undefined')
       .replace(/from '(\.[^']+)'/g, (_, path) => `from '${new URL(path, url).href}'`);
     await import(`data:text/javascript,${encodeURIComponent(source)}#test=${serial++}`);
@@ -146,7 +146,7 @@ test('Local Only rejects a cloud response even if the engine violates the reques
 });
 
 test('microphone permission callback cannot start cloud voice under Local Only', async t => {
-  const f = await fixture(t, { localOnly: true, voice: true });
+  const f = await fixture(t, { voiceEnabled: true, localOnly: true, voice: true });
   const res = await f.send({ type: 'debait/mic-granted' });
   assert.equal(res.ok, false); assert.match(res.error, /LOCAL_ONLY/);
   assert.ok(!f.messages.some(m => m.type === 'debait/call-start'));
@@ -154,35 +154,35 @@ test('microphone permission callback cannot start cloud voice under Local Only',
   assert.equal(policy.allowed, false);
 });
 
-test('normal voice still starts when explicitly enabled and cloud is allowed', async t => {
-  const f = await fixture(t, { voice: true });
+test('explicit experimental voice fixture still starts when enabled and cloud is allowed', async t => {
+  const f = await fixture(t, { voiceEnabled: true, voice: true });
   assert.equal((await f.send({ type: 'debait/mic-granted' })).ok, true);
   assert.ok(f.messages.some(m => m.type === 'debait/call-start'));
 });
 
 test('enabling voice while Local Only is on stops the context and resets voice', async t => {
-  const f = await fixture(t, { localOnly: true });
+  const f = await fixture(t, { voiceEnabled: true, localOnly: true });
   await f.settings({ voice: true }); await tick();
   assert.ok(!f.messages.some(m => m.type === 'debait/call-start'));
   assert.equal(f.data.settings.voice, false); assert.equal(f.closed(), 1);
 });
 
 test('enabling Local Only stops voice, destroys its context and disables the switch', async t => {
-  const f = await fixture(t, { voice: true });
+  const f = await fixture(t, { voiceEnabled: true, voice: true });
   await f.settings({ localOnly: true }); await tick();
   assert.ok(f.messages.some(m => m.type === 'debait/call-end'));
   assert.equal(f.closed(), 1); assert.equal(f.data.settings.voice, false);
 });
 
 test('Local Only stops sessions even when the voice flag is already false', async t => {
-  const f = await fixture(t);
+  const f = await fixture(t, { voiceEnabled: true });
   await f.settings({ localOnly: true }); await tick();
   assert.equal(f.closed(), 1);
 });
 
 test('pending offscreen creation cannot start voice after Local Only is enabled', async t => {
   const creation = deferred();
-  const f = await fixture(t, { voice: true, contexts: false, create: () => creation.promise });
+  const f = await fixture(t, { voiceEnabled: true, voice: true, contexts: false, create: () => creation.promise });
   const request = f.send({ type: 'debait/mic-granted' }); await tick();
   await f.settings({ localOnly: true });
   creation.resolve();
@@ -192,7 +192,7 @@ test('pending offscreen creation cannot start voice after Local Only is enabled'
 });
 
 test('voice tools cannot retrieve page content with Local Only enabled', async t => {
-  const f = await fixture(t, { localOnly: true, voice: true });
+  const f = await fixture(t, { voiceEnabled: true, localOnly: true, voice: true });
   const res = await f.send({ type: 'debait/tool', name: 'page_report' });
   assert.equal(res.ok, false); assert.equal(f.tabs.length, 0);
 });
@@ -485,13 +485,13 @@ test('assistance validation reason crosses the worker boundary without retries, 
 });
 
 test('Live connection slots require an authorized offscreen sender and reserve the existing shared quota',async t=>{
-  const f=await fixture(t,{voice:true});
+  const f=await fixture(t, { voiceEnabled: true,voice:true});
   assert.equal((await f.send({type:'debait/voice-connect-slot'})).ok,false);
   assert.equal((await f.sendOffscreen({type:'debait/voice-connect-slot'})).ok,true);assert.equal(f.data.aiRequestBudget.count,1);
   assert.equal((await f.sendOffscreen({type:'debait/voice-connect-slot'})).code,'debait/quota-pacing');
 });
 test('Local Only prohibits Live slots and a reported server cooldown survives another start',async t=>{
-  const f=await fixture(t,{voice:true,localOnly:true});
+  const f=await fixture(t, { voiceEnabled: true,voice:true,localOnly:true});
   assert.equal((await f.sendOffscreen({type:'debait/voice-connect-slot'})).ok,false);
   await f.settings({localOnly:false,voice:false});await f.sendOffscreen({type:'debait/voice-rate-limited',retryAfterMs:65000});
   await f.settings({voice:true});
@@ -499,7 +499,7 @@ test('Local Only prohibits Live slots and a reported server cooldown survives an
 });
 
 test('voice session errors are recorded safely and disable voice without exposing provider text', async t => {
-  const f=await fixture(t,{voice:true});
+  const f=await fixture(t, { voiceEnabled: true,voice:true});
   const response=await f.sendOffscreen({type:'debait/call-state',state:'error',message:'network offline https://secret.example/?token=PRIVATE_TEST_TOKEN'});
   assert.equal(response.ok,true);assert.equal(f.data.settings.voice,false);
   assert.equal(f.data.debaitErrors[0].where,'voice session');
@@ -507,18 +507,18 @@ test('voice session errors are recorded safely and disable voice without exposin
   assert.ok(!JSON.stringify([f.data.debaitErrors,f.tabs]).includes('PRIVATE_TEST_TOKEN'));
 });
 test('failed voice setup is logged, disables voice and does not publish credentials', async t => {
-  const f=await fixture(t,{contexts:false,create:async()=>{throw new Error('App Check failed token=PRIVATE_TEST_TOKEN');}});
+  const f=await fixture(t, { voiceEnabled: true,contexts:false,create:async()=>{throw new Error('App Check failed token=PRIVATE_TEST_TOKEN');}});
   await f.settings({voice:true});await tick();await tick();
   assert.equal(f.data.settings.voice,false);assert.equal(f.data.debaitErrors[0].where,'voice startup');
   assert.ok(!JSON.stringify([f.data.debaitErrors,f.tabs]).includes('PRIVATE_TEST_TOKEN'));
 });
 test('microphone denial is logged and clears the voice consent switch',async t=>{
-  const f=await fixture(t,{voice:true});await f.sendPopup({type:'debait/mic-denied'});
+  const f=await fixture(t, { voiceEnabled: true,voice:true});await f.sendPopup({type:'debait/mic-denied'});
   assert.equal(f.data.settings.voice,false);assert.equal(f.data.debaitErrors[0].where,'voice microphone');
   assert.match(f.data.debaitErrors[0].message,/permission was denied/);
 });
 test('diagnostic storage failure cannot prevent voice shutdown',async t=>{
-  const f=await fixture(t,{voice:true});const set=chrome.storage.local.set;
+  const f=await fixture(t, { voiceEnabled: true,voice:true});const set=chrome.storage.local.set;
   chrome.storage.local.set=async patch=>{if(patch.debaitErrors)throw new Error('storage failed');return set(patch);};
   const response=await f.sendOffscreen({type:'debait/call-state',state:'error',message:'network offline'});
   assert.equal(response.ok,true);assert.equal(f.data.settings.voice,false);
@@ -542,4 +542,32 @@ test('saved cloud classifications never verify a new AI session; only fresh SDK 
   await sdk.scoreHeadlines([text],{localOnly:false});
   response=await f.sendPopup({type:'debait/status'});assert.equal(response.status.source,'cloud');assert.equal(requests,1);
   sdk=create();response=await f.sendPopup({type:'debait/status'});assert.equal(response.status.source,'none');
+});
+
+test('release candidate blocks every voice entry point and clears legacy voice opt-in',async t=>{
+ const f=await fixture(t,{voice:true,voiceEnabled:false});
+ for(const type of ['debait/mic-granted','debait/voice-connect-slot'])assert.equal((await f.sendOffscreen({type})).ok,false);
+ assert.equal((await f.sendPopup({type:'debait/voice-allowed'})).allowed,false);
+ assert.equal(f.data.settings.voice,false);assert.ok(!f.messages.some(m=>m.type==='debait/call-start'));assert.equal(f.closed(),1);
+ await f.settings({voice:true});await tick();assert.equal(f.data.settings.voice,false);
+});
+test('privacy changes request cancellation of active inference without sending page data',async t=>{
+ const f=await fixture(t,{voiceEnabled:false});await f.settings({localOnly:true});await tick();
+ const cancellation=f.messages.find(m=>m.type==='debait/cancel-inference');
+ assert.deepEqual(cancellation,{target:'offscreen',type:'debait/cancel-inference'});
+});
+
+test('actual development worker sends a scoped ID-only cancellation and never serializes AbortSignal',async t=>{
+ const pending=deferred();const f=await fixture(t,{debug:true,engine:()=>pending.promise});
+ const begin=await f.sendEvaluation({type:'debait/evaluation-begin'});
+ const work=f.sendEvaluation({type:'debait/evaluation-score',runId:begin.runId,texts:['Synthetic evaluation headline']});
+ await tick();await tick();
+ const request=f.messages.find(m=>m.type==='debait/score'&&m.evaluation);
+ assert.equal(typeof request.requestId,'string');assert.equal(Object.hasOwn(request,'signal'),false);
+ const stopped=await f.sendEvaluation({type:'debait/evaluation-cancel',runId:begin.runId});
+ assert.equal(stopped.ok,true);assert.equal((await work).ok,false);
+ const cancellation=f.messages.find(m=>m.type==='debait/cancel-inference'&&m.requestId);
+ assert.deepEqual(cancellation,{target:'offscreen',type:'debait/cancel-inference',requestId:request.requestId});
+ pending.resolve({ok:true,results:[{kind:'clean',score:0,triggers:[],honest_rewrite:'Synthetic evaluation headline',source:'cloud'}]});await tick();
+ assert.deepEqual(f.data.stats,{});assert.deepEqual(f.data.scoreCache,[]);
 });

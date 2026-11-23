@@ -18,7 +18,7 @@ export function createRun(dataset, { send, changed = () => {}, wait = pause, now
     if (references.size > 1) group.forEach(row => { row.referenceConflict = true; });
   }
   const abort = new AbortController();
-  let runId, running = false, cancelled = false;
+  let runId, running = false, cancelled = false, cancellation;
   let metadata = { run_id: '', run_timestamp: new Date(now()).toISOString(), git_sha: 'unknown',
     policy_version: 'unknown', git_dirty: 'unknown', local_only: 'unknown' };
   const notify = message => changed(rows, message);
@@ -26,12 +26,19 @@ export function createRun(dataset, { send, changed = () => {}, wait = pause, now
     for (const row of rows) if (['pending', 'active'].includes(row.status)) Object.assign(row, { status, errorCode: code });
   };
   const apply = (group, patch) => group.forEach(row => Object.assign(row, patch));
+  function confirmCancellation() {
+    return cancellation ||= send({ type: 'debait/evaluation-cancel', runId }).then(reply => {
+      notify(reply?.ok ? 'Cancelled. No new inference will start for this request. A request already sent may still finish and use quota; its answer will be discarded.'
+        : 'Cancellation could not be confirmed. Results are discarded; reload the extension before retrying if it remains unresponsive.');
+    }).catch(() => notify('Cancellation could not be confirmed. Results are discarded; check the extension before retrying.'));
+  }
   return {
     rows, get running() { return running; }, get metadata() { return metadata; },
     cancel() {
       cancelled = true; abort.abort(); stopPending('cancelled', 'debait/evaluation-cancelled');
-      if (runId) send({ type: 'debait/evaluation-cancel', runId }).catch(() => {});
-      notify('Cancelled. A request already sent to Gemini may still finish and use quota; its answer will be discarded.');
+      notify('Stopping evaluation. Results are discarded while cancellation is confirmed…');
+      if (runId) void confirmCancellation();
+      else notify('Evaluation cancelled before any headline batch was sent.');
     },
     async start() {
       if (running || runId || cancelled) throw new Error('Start a new evaluation run to analyze again.');
@@ -42,7 +49,7 @@ export function createRun(dataset, { send, changed = () => {}, wait = pause, now
         runId = begin.runId;
         metadata = { run_id: runId, run_timestamp: begin.startedAt, git_sha: begin.gitSha,
           policy_version: begin.policyVersion, git_dirty: begin.gitDirty ?? 'unknown', local_only: begin.localOnly };
-        if (cancelled) { await send({ type: 'debait/evaluation-cancel', runId }); return; }
+        if (cancelled) { await confirmCancellation(); return; }
         const unique = [...new Set(rows.map(r => r.text))];
         for (let offset = 0; offset < unique.length && !cancelled; offset += 4) {
           const texts = unique.slice(offset, offset + 4);
@@ -90,8 +97,9 @@ export function createRun(dataset, { send, changed = () => {}, wait = pause, now
         stopPending('interrupted', 'debait/evaluation-interrupted');
         if (!cancelled) notify('Run interrupted or extension unavailable. Download partial results, refresh this page, and start a new run.');
       } finally {
-        running = false;
+        if (cancelled && runId) await confirmCancellation();
         if (runId) await send({ type: 'debait/evaluation-end', runId }).catch(() => {});
+        running = false;
         changed(rows);
       }
     },

@@ -1,3 +1,4 @@
+import { VOICE_ENABLED } from '../../shared/release.js';
 import guideCss from '../../shared/guide.css?inline';
 // The floating layer: one Shadow DOM root holding the orb, the card and the settings panel,
 // plus a second host for the page-wide wave (it needs its own blend mode to invert the page).
@@ -237,7 +238,7 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
     return { x: pos.x + diameter() / 2, y: pos.y + diameter() / 2 };
   }
 
-  const HINT = '<em><kbd>2×</kbd> settings &nbsp; <kbd>3×</kbd> talk to Debait</em>';
+  const HINT = VOICE_ENABLED ? '<em><kbd>2×</kbd> settings &nbsp; <kbd>3×</kbd> talk to Debait</em>' : '<em><kbd>2×</kbd> settings</em>';
   let lastCount = -1;
   return {
     center,
@@ -255,7 +256,7 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
       else gl.stop();
     },
     /** state: idle | busy | bait | calm */
-    update({ state, bait, debaited, scanned, notice, feedback }) {
+    update({ state, bait, debaited, scanned, localOnly = false, notice, feedback }) {
       wrap.dataset.state = state;
       const statusOnly = feedback && ['busy', 'error', 'unavailable', 'disabled'].includes(feedback.state);
       wrap.dataset.feedback = feedback?.state || state;
@@ -287,7 +288,7 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
       } else if (bait > 0) {
         setHTML(tip, `Debait this page<small>${bait} flagged of ${scanned} headlines · ${feedback?.label || 'Mixed presentation'}</small>${HINT}`);
       } else if (state === 'busy') {
-        setHTML(tip, `Reading headlines…${HINT}`);
+        setHTML(tip, `${localOnly ? 'Local Only: checking or processing headlines… Slow devices may take minutes.' : 'Reading headlines…'}${HINT}`);
       } else {
         setHTML(tip, `Debait<small>${scanned ? `${scanned} headlines, all clean` : 'Looking for headlines'}</small>${HINT}`);
       }

@@ -9,7 +9,7 @@ export default defineManifest({
   manifest_version: 3,
   name: 'Debait',
   version: pkg.version,
-  description: 'Nutrition facts for your feed. Tags bait headlines and rewrites them calmly, on-device.',
+  description: 'Nutrition facts for your feed. Explains headline framing and offers safe neutral wording with hybrid AI.',
   icons: { 16: 'icons/icon-16.png', 32: 'icons/icon-32.png', 48: 'icons/icon-48.png', 128: 'icons/icon-128.png' },
   action: {
     default_title: 'Debait',

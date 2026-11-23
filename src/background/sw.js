@@ -1,3 +1,6 @@
+import { createInferenceTransport } from './inferenceTransport.js';
+import { checkSignal } from '../engine/hybrid.js';
+import { VOICE_ENABLED } from '../shared/release.js';
 import { createProblemLogger, problemEntry } from '../shared/problems.js';
 import { quotaError } from '../shared/quota.js';
 import { assistanceReason } from '../engine/errors.js';
@@ -57,10 +60,12 @@ let privacyRevision = 0;
 let localOnlyActive = false;
 
 async function voiceAllowed() {
+  if (!VOICE_ENABLED) return false;
   const settings = await getSettings();
   return !localOnlyActive && !settings.localOnly && settings.voice;
 }
 async function requireVoiceAllowed() {
+  if (!VOICE_ENABLED) throw new Error('Voice is unavailable in this release candidate.');
   if (!await voiceAllowed()) throw new Error('LOCAL_ONLY: Cloud voice is disabled. Turn off Local Only before starting voice.');
 }
 
@@ -101,14 +106,21 @@ async function debugToken() {
   return developmentToken();
 }
 
-async function toEngine(payload) {
-  await ensureOffscreen();
-  const token = await debugToken();
-  if (payload.type === MSG.SCORE || payload.type === MSG.ASSIST) {
-    const settings = await getSettings();
-    payload = { ...payload, localOnly: localOnlyActive || settings.localOnly || payload.localOnly };
-  }
-  const res = await chrome.runtime.sendMessage({ target: 'offscreen', debugToken: token, ...payload });
+const inferenceTransport = createInferenceTransport({
+  prepare: async (payload, signal) => {
+    await ensureOffscreen(); checkSignal(signal);
+    const token = await debugToken(); checkSignal(signal);
+    if (payload.type === MSG.SCORE || payload.type === MSG.ASSIST) {
+      const settings = await getSettings(); checkSignal(signal);
+      payload = { ...payload, localOnly: localOnlyActive || settings.localOnly || payload.localOnly };
+    }
+    return { debugToken: token, ...payload };
+  },
+  send: message => chrome.runtime.sendMessage(message),
+  contexts: () => chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] }),
+});
+async function toEngine(payload, signal) {
+  const res = await inferenceTransport.infer(payload, signal);
   if (!res?.ok) throw Object.assign(new Error(res?.error || 'engine error'), { code: res?.code, reason: assistanceReason(res), retryAfterMs: res?.retryAfterMs });
   return res;
 }
@@ -266,7 +278,8 @@ const evaluation = import.meta.env?.MODE === 'development' ? createEvaluationSer
     }
   },
   settings: getSettings, revision: () => privacyRevision, gate: requestGate,
-  infer: options => toEngine({ type: MSG.SCORE, ...options, evaluation: true }),
+  infer: ({ signal, ...options }) => toEngine({ type: MSG.SCORE, ...options, evaluation: true }, signal),
+  cancelInference: requestId => inferenceTransport.cancel(requestId),
   metadata: { policyVersion: QUALITY_POLICY_VERSION,
     gitSha: typeof __DEBAIT_BUILD_SHA__ === 'string' ? __DEBAIT_BUILD_SHA__ : 'unknown',
     gitDirty: typeof __DEBAIT_BUILD_DIRTY__ === 'boolean' ? __DEBAIT_BUILD_DIRTY__ : true },
@@ -316,7 +329,13 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local' || !changes.settings) return;
   const before = changes.settings.oldValue;
   const after = changes.settings.newValue;
-  if (before?.localOnly !== after?.localOnly) privacyRevision++;
+  if (before?.localOnly !== after?.localOnly) {
+    privacyRevision++;
+    // No page content or credentials in cancellation messages. Do not create a document.
+    chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] }).then(contexts => {
+      if (contexts.length) return chrome.runtime.sendMessage({ target: 'offscreen', type: 'debait/cancel-inference' });
+    }).catch(() => {});
+  }
   localOnlyActive = !!after?.localOnly;
   if (localOnlyActive) {
     // Stop live and pending sessions even if the voice switch was already false.
@@ -324,6 +343,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     if (after.voice) disableVoice().catch(reportVoiceError);
     return;
   }
+  if (!VOICE_ENABLED) { if (after?.voice) disableVoice().catch(reportVoiceError); return; }
   const was = changes.settings.oldValue?.voice;
   const now = changes.settings.newValue?.voice;
   if (now && !was) startCallFlow().catch(reportVoiceError);
@@ -436,3 +456,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   })();
   return true;
 });
+
+if (!VOICE_ENABLED) getSettings().then(async settings => {
+  if (settings.voice) await endCallFlow(true); // retire a legacy opt-in/context before clearing it
+  await disableVoice();
+}).catch(() => {});

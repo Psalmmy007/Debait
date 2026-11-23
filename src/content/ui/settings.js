@@ -1,3 +1,4 @@
+import { VOICE_ENABLED } from '../../shared/release.js';
 import { focusPopover } from './focus.js';
 import { createIngredientsGuide } from '../../shared/ingredientsView.js';
 import { summarizeWeek } from '../../sidepanel/statistics.js';
@@ -12,7 +13,7 @@ import { setHTML } from './html.js';
 const OUT = 'cubic-bezier(0.16, 1, 0.3, 1)';
 
 const SWITCHES = [
-  { key: 'voice', title: 'Talk to Debait', hint: 'A live voice call with Gemini. Ask anything about this page.' },
+  ...(VOICE_ENABLED ? [{ key: 'voice', title: 'Talk to Debait', hint: 'A live voice call with Gemini. Ask anything about this page.' }] : []),
   { key: 'showTags', title: 'Show tags', hint: 'Labels and highlights on headlines' },
   { key: 'autoDebait', title: 'Debait automatically', hint: 'Apply only safe alternatives on enabled sites' },
   { key: 'localOnly', title: 'Local only', hint: 'Never send headlines to the cloud' },

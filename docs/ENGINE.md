@@ -24,9 +24,7 @@ Missing or malformed responses are errors, never manufactured Clean classificati
 Source comes from the SDK response metadata. A rewrite is not a fact-check.
 
 Local Only selects `InferenceMode.ONLY_ON_DEVICE`; if Nano is unavailable, it fails.
-Normal Firebase inference uses `PREFER_ON_DEVICE` after App Check has authenticated
-cloud access. This preflight can fail even when Nano is available; selecting Local
-Only uses the device-only path without a cloud credential exchange.
+Release inference explicitly tries `ONLY_ON_DEVICE` when Nano is available, with a 10-second hybrid budget, then uses at most one `ONLY_IN_CLOUD` request when permitted. App Check is checked only for the cloud route. Local Only gets a 150-second local-attempt budget and a 240-second outer runtime deadline; it never exchanges cloud credentials. Abort signals reach Chrome create/prompt options and a bounded local queue prevents request accumulation. See [release hybrid verification](release/HYBRID_VERIFICATION.md) for evidence and limitations.
 
 ## Priority 1 failure and privacy checks
 
