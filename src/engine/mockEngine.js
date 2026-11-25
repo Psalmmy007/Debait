@@ -1,5 +1,6 @@
 // Mock engine: fakes the AI so the UI can be built and demoed without Firebase.
 // Same contract as the real engine (see contract.js). Swap it out in engine/index.js.
+import { NO_SUMMARY_TEXT, hasEnoughSummaryText } from './contract.js';
 
 // Hand-written results for the demo feed, so the demo always looks great.
 const CANNED = {
@@ -199,7 +200,9 @@ export const mockEngine = {
 };
 
 /** Offline backup: the first sentences of the article, or the page's top headlines. */
-mockEngine.summarize = async function summarize({ title, text, headlines, kind }) {
+mockEngine.summarize = async function summarize(page) {
+  if (!hasEnoughSummaryText(page)) return { summary: NO_SUMMARY_TEXT, source: 'none' };
+  const { title, text, headlines, kind } = page;
   if (kind === 'article') {
     const sentences = (text.match(/[^.!?]+[.!?]+/g) || []).map((x) => x.trim()).filter((x) => x.length > 40);
     return { summary: sentences.slice(0, 3).join(' ') || title, source: 'mock' };

@@ -120,7 +120,7 @@ function decode(el, from, to, delay) {
 }
 
 export async function swapToRewrite(rec, { delay = 0 } = {}) {
-  if (rec.state !== 'scored') return;
+  if (rec.state !== 'scored' || !rec.result || rec.result.kind === 'clean' || !rec.result.honest_rewrite?.trim()) return;
   rec.original = [...rec.el.childNodes].map((n) => n.cloneNode(true));
   rec.state = 'debaited';
   const from = rec.el.textContent.replace(/\s+/g, ' ').trim();

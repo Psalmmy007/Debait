@@ -1,5 +1,5 @@
 // Debait content script: finds headlines, gets them scored, and runs the on-page UI.
-import { MSG } from '../engine/contract.js';
+import { MSG, NO_SUMMARY_TEXT, hasEnoughSummaryText } from '../engine/contract.js';
 import { getSettings, onSettingsChange } from '../shared/storage.js';
 import { getAdapter, textOf } from './sites/index.js';
 import { injectPageStyles, paintHighlights, swapToRewrite, swapToOriginal } from './ui/page.js';
@@ -54,6 +54,7 @@ async function start() {
     alive = false;
     try {
       clearInterval(liveTimer);
+      removeEventListener('online', onOnline);
       pageObserver?.disconnect();
       io.disconnect();
       clearTimeout(scanTimer); clearTimeout(retryTimer); clearTimeout(upgradeTimer);
@@ -127,19 +128,43 @@ async function start() {
       .filter((t) => t.length > 60);
     const text = paras.join('\n').slice(0, 7000);
     const headlines = [...records.values()].map((r) => r.text).slice(0, 40);
-    const article = (paras.length >= 4 && text.length > 900) || headlines.length < 3;
-    return { kind: article ? 'article' : 'feed', title: document.title, text, headlines };
+    const hasArticle = (paras.length >= 3 && text.length >= 450) || text.length >= 600;
+    return { kind: hasArticle ? 'article' : 'feed', title: document.title, text: hasArticle ? text : '', headlines };
   }
 
   let lastSummary = null;
+  let summaryInflight = null; // { url, promise } — dedupes if the panel closes and reopens mid-summary
+  let summarySoFar = '';
   let onSummaryText = null; // the panel, while a summary is being written
   async function summarizePage(onText) {
-    if (lastSummary?.url === location.href) return lastSummary;
+    const url = location.href;
+    if (lastSummary?.url === url) return lastSummary;
+    if (summaryInflight?.url === url) {
+      onSummaryText = onText || null;
+      if (summarySoFar && onText) onText(summarySoFar);
+      return summaryInflight.promise;
+    }
+    const page = pageForSummary();
+    if (!hasEnoughSummaryText(page)) {
+      // Do not cache: dynamic feeds (X, YouTube) may finish loading headlines moments later
+      return { url, summary: NO_SUMMARY_TEXT, source: 'none' };
+    }
+    summarySoFar = '';
     onSummaryText = onText || null;
-    const res = await send({ type: MSG.SUMMARY, page: pageForSummary(), stream: !!onText }).finally(() => { onSummaryText = null; });
-    if (!res?.ok) throw new Error(res?.error || 'no response');
-    lastSummary = { url: location.href, summary: res.summary, source: res.source };
-    return lastSummary;
+    const promise = send({ type: MSG.SUMMARY, page, stream: true })
+      .then((res) => {
+        if (!res?.ok) throw new Error(res?.error || 'no response');
+        const out = { url, summary: res.summary, source: res.source };
+        if (res.source !== 'none') lastSummary = out;
+        return out;
+      })
+      .finally(() => {
+        if (summaryInflight?.promise === promise) summaryInflight = null;
+        summarySoFar = '';
+        onSummaryText = null;
+      });
+    summaryInflight = { url, promise };
+    return promise;
   }
 
   async function runTool(name, args) {
@@ -305,6 +330,7 @@ async function start() {
     try {
       const res = await send({ type: MSG.SCORE, texts: batch.map((r) => r.text) });
       if (!res?.ok) throw new Error(res?.error || 'no response');
+      notice = '';
       stats.hits += res.cacheHits;
       stats.scored += batch.length;
       batch.forEach((rec, i) => applyResult(rec, res.results[i]));
@@ -349,15 +375,21 @@ async function start() {
     }, upgradeDelay);
   }
 
+  // Local only or offline: Gemini Nano handles one prompt at a time and large batches can exceed
+  // its time budget on slower machines. Score visible headlines one-by-one so results land smoothly.
+  const isNanoOnly = () => settings.localOnly || (typeof navigator !== 'undefined' && navigator.onLine === false);
+
   async function flush() {
     if (flushing) return;
     flushing = true;
-    // up to PARALLEL batches at once (each is one Gemini call), visible headlines first
+    // up to PARALLEL batches at once online (1 at a time on Nano), visible headlines first
     const running = new Set();
     while (queue.length || running.size) {
-      while (queue.length && running.size < PARALLEL) {
+      const maxParallel = isNanoOnly() ? 1 : PARALLEL;
+      const batchSize = isNanoOnly() ? 1 : BATCH;
+      while (queue.length && running.size < maxParallel) {
         queue.sort((x, y) => byDistance(x) - byDistance(y));
-        const job = scoreBatch(queue.splice(0, BATCH)).finally(() => running.delete(job));
+        const job = scoreBatch(queue.splice(0, batchSize)).finally(() => running.delete(job));
         running.add(job);
       }
       await Promise.race(running);
@@ -468,8 +500,30 @@ async function start() {
     }
   });
 
+  // When connectivity returns after offline browsing, upgrade placeholder/failed headlines immediately.
+  function onOnline() {
+    if (!alive) return;
+    clearTimeout(retryTimer);
+    clearTimeout(upgradeTimer);
+    upgradeTimer = null;
+    upgradeDelay = 21000;
+    notice = '';
+    let n = 0;
+    for (const r of records.values()) {
+      if ((r.failed && !r.result) || (r.state === 'scored' && r.result?.source === 'mock')) {
+        r.failed = false;
+        r.upgrades = 0;
+        r.tag?.setVisible(settings.showTags);
+        if (!r.queued) { r.queued = true; queue.push(r); n++; }
+      }
+    }
+    if (n) flushSoon();
+  }
+  addEventListener('online', onOnline);
+
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg?.type === 'debait/summary-chunk') {
+      summarySoFar = msg.text;
       onSummaryText?.(msg.text);
       return false;
     }

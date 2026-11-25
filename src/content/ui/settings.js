@@ -234,7 +234,7 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
         out.textContent = text;
       });
       if (!el) return;
-      out.className = 'p-sum-text';
+      out.className = source === 'none' ? 'p-sum-text wait' : 'p-sum-text';
       out.textContent = summary;
       by.textContent = BY[source] || '';
       sec.dataset.state = 'done';

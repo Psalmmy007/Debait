@@ -34,6 +34,7 @@
 export const KINDS = ['rage', 'fear', 'envy', 'clean'];
 // Minimum manipulation score (0-100) required to classify a headline as bait.
 export const BAIT_THRESHOLD = 60;
+export const NO_SUMMARY_TEXT = 'Not enough text on this page to summarize.';
 
 // Message types used between content script, service worker and offscreen page.
 export const MSG = {
@@ -47,6 +48,18 @@ const normSpace = (s) => String(s || '').replace(/\s+/g, ' ').trim();
 /** Same words, ignoring punctuation, quote marks and spacing (capital letters still count). */
 const words = (s) => String(s || '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 export const sameWords = (a, b) => words(a) === words(b);
+
+/** True only when there is enough real article text or feed headlines to summarize. */
+export function hasEnoughSummaryText(page) {
+  if (!page) return false;
+  if (page.kind === 'article') return normSpace(page.text).length >= 300;
+  return Array.isArray(page.headlines)
+    && page.headlines.filter((h) => normSpace(h).length >= 12).length >= 3;
+}
+
+const REFUSAL_RE = /^(i'?m sorry|i am sorry|sorry[,!.]?\s+(but\s+)?(i|there|you)|as an ai|i (can'?t|cannot|am unable to) (summarize|provide a summary)|unable to summarize|there (is|was) no (article|text|content|web page|information)|you (did not|didn'?t|have not|haven'?t) provide|please provide (the |an? )?(article|text|web page|content|headlines)|no (article|text|content|web page) (was )?provided)/i;
+/** Catches chatty AI refusals so they are never shown in "In short". */
+export const isSummaryRefusal = (text) => REFUSAL_RE.test(normSpace(text));
 
 /** Keeps only triggers whose exact word/phrase actually appears in the headline text. */
 export function filterTriggers(triggers, text) {
