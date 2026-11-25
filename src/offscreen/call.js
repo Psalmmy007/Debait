@@ -4,22 +4,19 @@
 // The model can act on the page you're looking at through tools (debait, restore, report, explain).
 import { getLiveGenerativeModel, ResponseModality, Schema } from 'firebase/ai';
 import { openAudio } from './voice-audio.js';
-import { getAi, projectOrder, projectName, setPreferredProject, skipProject } from '../engine/firebaseEngine.js';
+import { getAi, projectOrder, projectName, setPreferredProject, isOnline } from '../engine/firebaseEngine.js';
 import { LIVE_MODELS, LIVE_VOICE } from '../engine/firebaseConfig.js';
 
-const SYSTEM = `You are Debait, a warm, calm voice assistant built into a Chrome extension.
-Debait spots bait headlines (written to make people angry, scared or envious), labels them Rage, Fear, Envy or Clean,
-and rewrites them into honest headlines that keep the facts.
-You are on a live voice call with the user. Keep every reply short: one or two natural sentences.
-Use your tools to act on the web page the user is looking at: report on it, debait it, restore it, explain a headline,
-or change a setting. Always call page_report before talking about what is on the page.
-Explain manipulation plainly and kindly. Never claim to fact-check news, and never invent headlines.
-Start the call by saying hi in a few words and offering to check the page.
-Always speak English. Sound like a friendly, upbeat person on a phone call: warm energy, natural intonation,
-fluent and conversational at a normal speaking pace. Never sound flat, sleepy or robotic, and don't drag words out.
-Let the user finish their sentence before you answer. The user may speak softly: listen closely.
-If you did not clearly hear or understand what the user said, say so briefly and ask them to repeat it. Never guess.
-Ignore background noise, music and your own voice coming back through the speakers.`;
+const SYSTEM = `You are Debait, a calm, thoughtful voice assistant built into a Chrome extension.
+Debait spots emotional bait headlines (rage, fear, envy), labels them Rage, Fear, Envy, or Clean,
+and rewrites bait into plain, honest headlines while keeping the facts.
+You are on a live voice call with the user. Speak in a warm, relaxed, conversational tone — concise and natural, usually one or two short sentences.
+Use your tools to inspect or act on the page the user is viewing: report on it, debait it, restore it, explain a headline, summarize it, or change a setting.
+Always call page_report before talking about what is on the page. Never invent headlines or claim to fact-check news.
+Start the call with a brief, relaxed greeting and offer to check the page.
+Speak English at a natural, unhurried pace. Let the user finish their thought before you reply.
+If you didn't clearly catch what they said, briefly ask them to repeat it instead of guessing.
+Ignore background noise, music, and your own voice coming back through the speakers.`;
 
 // Speech detection: picks up a normal or soft voice without shouting (start HIGH; the mic's
 // noise suppression keeps the room out), and waits for a real pause before deciding you're
@@ -93,26 +90,48 @@ function open(debugToken, i, model, handle) {
 
 // tries every project (team, then backup) with every live model until one connects
 let picked = null; // { i, model } that connected, reused when reconnecting
+// Keep Live WebSocket App Check skips local to voice calls so normal HTTP scoring isn't affected.
+const liveSkip = new Set();
+const CONNECT_TIMEOUT = 10000;
 
-async function connect(debugToken, handle) {
+function withConnectTimeout(promise, ms = CONNECT_TIMEOUT) {
+  let timer;
+  const limit = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('connection timed out')), ms);
+  });
+  return Promise.race([promise, limit]).finally(() => clearTimeout(timer));
+}
+
+async function connect(debugToken, handle, gen) {
+  if (!isOnline()) throw new Error('OFFLINE: Talk to Debait needs an internet connection.');
   if (picked) {
-    try { return await open(debugToken, picked.i, picked.model, handle); } catch { picked = null; }
+    try {
+      const s = await withConnectTimeout(open(debugToken, picked.i, picked.model, handle));
+      if (!active || gen !== callGen) { s.close().catch(() => {}); return null; }
+      return s;
+    } catch { picked = null; }
   }
   let lastErr = null;
-  for (const i of projectOrder()) {
+  const projects = projectOrder().filter((i) => !liveSkip.has(i));
+  const order = projects.length ? projects : projectOrder();
+  for (const i of order) {
+    if (!active || gen !== callGen) return null;
+    if (!isOnline()) throw new Error('OFFLINE: Talk to Debait needs an internet connection.');
     // note: the Live WebSocket can't carry an App Check token from a browser, so calls only
     // connect on a project where App Check is not enforced for AI Logic
     for (const model of LIVE_MODELS) {
+      if (!active || gen !== callGen) return null;
       try {
-        const session = await open(debugToken, i, model, handle);
+        const s = await withConnectTimeout(open(debugToken, i, model, handle));
+        if (!active || gen !== callGen) { s.close().catch(() => {}); return null; }
         picked = { i, model };
         setPreferredProject(i);
         console.info(`[Debait] call connected: ${projectName(i)} project, ${model}`);
-        return session;
+        return s;
       } catch (err) {
         lastErr = err;
         console.debug(`[Debait] call: ${projectName(i)} project, ${model} failed:`, err?.message || err);
-        if (/app check/i.test(String(err?.message))) { skipProject(i); break; } // no model will work there
+        if (/app check/i.test(String(err?.message))) { liveSkip.add(i); break; } // no Live model will work on this project
       }
     }
   }
@@ -121,38 +140,42 @@ async function connect(debugToken, handle) {
 
 let audio = null;
 let active = false;
+let callGen = 0;        // increments on every start/end so late async resolves never leak mic or socket
 let handle = null;      // latest session resumption handle
 let token = null;
 let heard = '';         // what the user is saying, as the server transcribes it
 
-async function runTools(calls) {
+async function runTools(calls, gen) {
   // the model asked to do things on the page: hand them to the tab, send the results back
+  if (!active || gen !== callGen) return;
   state('working', calls[0]?.name);
   const responses = await Promise.all(calls.map(async (call) => {
     const res = await chrome.runtime.sendMessage({ type: 'debait/tool', name: call.name, args: call.args || {} }).catch(() => null);
     return { id: call.id, name: call.name, response: res?.result ?? { error: 'Debait is not running on this page. Ask the user to refresh it.' } };
   }));
-  if (active && session && !session.isClosed) session.sendFunctionResponses(responses).catch(() => {});
-  state('live');
+  if (active && gen === callGen && session && !session.isClosed) {
+    session.sendFunctionResponses(responses).catch(() => {});
+    state('live');
+  }
 }
 
 /** Reads the server until the socket closes. Returns true if it should reconnect. */
-async function listen(s) {
+async function listen(s, gen) {
   try {
     for await (const msg of s.receive()) {
-      if (!active) return false;
+      if (!active || gen !== callGen) return false;
       if (msg.type === 'serverContent') {
-        if (msg.interrupted) audio.interrupt();
+        if (msg.interrupted) audio?.interrupt();
         if (msg.inputTranscription?.text) {
           heard += msg.inputTranscription.text;
           state('heard', heard.trim());
         }
         if (msg.modelTurn || msg.turnComplete) heard = '';
         for (const part of msg.modelTurn?.parts || []) {
-          if (part.inlineData?.mimeType?.startsWith('audio/')) audio.play(part.inlineData.data);
+          if (part.inlineData?.mimeType?.startsWith('audio/')) audio?.play(part.inlineData.data);
         }
       } else if (msg.type === 'toolCall') {
-        runTools(msg.functionCalls || []); // don't block audio while the page works
+        runTools(msg.functionCalls || [], gen); // don't block audio while the page works
       } else if (msg.type === 'sessionResumptionUpdate') {
         if (msg.resumable !== false && msg.newHandle) handle = msg.newHandle;
       } else if (msg.type === 'goingAwayNotice') {
@@ -162,68 +185,118 @@ async function listen(s) {
   } catch (err) {
     console.debug('[Debait] call: connection dropped:', err?.message || err);
   }
-  return active; // dropped or going away: reconnect while the call is on
+  return active && gen === callGen; // dropped or going away: reconnect while the call is on
 }
 
-async function keepAlive() {
+async function keepAlive(gen) {
   // reconnect into the same conversation whenever the connection drops
   let tries = 0;
-  while (active) {
-    const again = await listen(session);
-    if (!again || !active) break;
-    audio.setMuted(true);
+  while (active && gen === callGen) {
+    const again = await listen(session, gen);
+    if (!again || !active || gen !== callGen) break;
+    if (!isOnline()) {
+      await endCall(true);
+      state('error', 'You went offline — call ended.');
+      return;
+    }
+    audio?.setMuted(true);
     state('reconnecting');
-    try { await session.close(); } catch { /* already closed */ }
+    try { await session?.close(); } catch { /* already closed */ }
     let ok = false;
-    while (active && tries < 6 && !ok) {
+    while (active && gen === callGen && tries < 6 && !ok) {
+      if (!isOnline()) break;
       await new Promise((r) => setTimeout(r, Math.min(4000, 400 * 2 ** tries)));
+      if (!active || gen !== callGen || !isOnline()) break;
       tries++;
-      try { session = await connect(token, handle); ok = true; } catch (err) {
+      try {
+        const next = await connect(token, handle, gen);
+        if (next && active && gen === callGen) { session = next; ok = true; }
+      } catch (err) {
         console.debug('[Debait] call: reconnect failed:', err?.message || err);
       }
     }
     if (!ok) {
-      if (active) state('error', 'The call dropped: check your internet and call again.');
-      await endCall(true);
+      const wasActive = active && gen === callGen;
+      if (wasActive) {
+        await endCall(true);
+        state('error', isOnline() ? 'The call dropped — check your internet and try again.' : 'You went offline — call ended.');
+      }
       return;
     }
     tries = 0;
-    audio.setMuted(false);
+    audio?.setMuted(false);
     state('live');
   }
 }
 
 export async function startCall(debugToken) {
   if (active) return;
+  if (!isOnline()) {
+    state('error', 'Talk to Debait needs an internet connection.');
+    return;
+  }
+  const gen = ++callGen;
   active = true;
   token = debugToken;
   handle = null;
+  heard = '';
   state('connecting');
+  let nextSession = null;
+  let nextAudio = null;
   try {
-    session = await connect(debugToken, null);
-    audio = await openAudio({
+    nextSession = await connect(debugToken, null, gen);
+    if (!nextSession || !active || gen !== callGen) {
+      await nextSession?.close().catch(() => {});
+      return;
+    }
+    nextAudio = await openAudio({
       onMic: (b64) => {
-        if (active && session && !session.isClosed) session.sendAudioRealtime({ mimeType: 'audio/pcm;rate=16000', data: b64 }).catch(() => {});
+        if (active && gen === callGen && session && !session.isClosed) {
+          session.sendAudioRealtime({ mimeType: 'audio/pcm;rate=16000', data: b64 }).catch(() => {});
+        }
       },
-      onTalking: (talking) => active && state(talking ? 'talking' : 'live'),
+      onTalking: (talking) => { if (active && gen === callGen) state(talking ? 'talking' : 'live'); },
     });
+    if (!active || gen !== callGen) {
+      await nextAudio.close().catch(() => {});
+      await nextSession.close().catch(() => {});
+      return;
+    }
+    session = nextSession;
+    audio = nextAudio;
     state('live');
-    keepAlive();
+    keepAlive(gen);
     // nudge the model to say hello first
-    session.send('The call just started. Greet me briefly.', true).catch(() => {});
+    session.send('The call just started. Greet me briefly in a relaxed way.', true).catch(() => {});
   } catch (err) {
-    const appCheck = /app check|401|403/i.test(String(err?.message));
+    await nextAudio?.close().catch(() => {});
+    await nextSession?.close().catch(() => {});
+    if (gen !== callGen) return; // cancelled by endCall() while connecting
+    const msg = String(err?.message || err);
+    const offline = !isOnline() || /^OFFLINE:/i.test(msg);
+    const micDenied = /NotAllowedError|PermissionDeniedError|permission/i.test(msg);
+    const appCheck = /app check|401|403/i.test(msg);
     await endCall(true);
-    state('error', appCheck ? 'Voice needs Gemini: register the App Check code from the popup in a Firebase project.' : `Could not start the call (${err?.message || err})`);
+    state(
+      'error',
+      offline ? 'Talk to Debait needs an internet connection.'
+        : micDenied ? 'Microphone access is blocked. Allow it in Chrome and try again.'
+        : appCheck ? 'Voice needs Gemini: register the App Check code from the popup in a Firebase project.'
+        : 'Could not connect the voice call. Check your internet and try again.',
+    );
   }
 }
 
 export async function endCall(quiet = false) {
+  callGen++;
   active = false;
-  try { await session?.close(); } catch { /* already closed */ }
-  try { await audio?.close(); } catch { /* already closed */ }
+  heard = '';
+  const s = session;
+  const a = audio;
   session = null;
   audio = null;
+  try { await s?.close(); } catch { /* already closed */ }
+  try { await a?.close(); } catch { /* already closed */ }
   if (!quiet) state('ended');
 }
 

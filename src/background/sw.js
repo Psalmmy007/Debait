@@ -232,20 +232,52 @@ async function toActiveTab(msg) {
   if (!tab?.id) return null;
   return chrome.tabs.sendMessage(tab.id, msg).catch(() => null);
 }
+async function broadcastCallState(state, message = '') {
+  const tabs = await chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] }).catch(() => []);
+  for (const t of tabs) {
+    if (t.id) chrome.tabs.sendMessage(t.id, { type: 'debait/call-state', state, message }).catch(() => {});
+  }
+}
+const swOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
+async function checkCallAllowed() {
+  const s = await getSettings();
+  if (!swOnline()) {
+    await broadcastCallState('error', 'Talk to Debait needs an internet connection.');
+    if (s.voice) await chrome.storage.local.set({ settings: { ...s, voice: false } });
+    return false;
+  }
+  if (s.localOnly) {
+    await broadcastCallState('error', 'Turn off Local only to use Talk to Debait.');
+    if (s.voice) await chrome.storage.local.set({ settings: { ...s, voice: false } });
+    return false;
+  }
+  return true;
+}
+async function openMicTab() {
+  const url = chrome.runtime.getURL('src/voice/index.html');
+  const existing = await chrome.tabs.query({ url }).catch(() => []);
+  if (existing[0]?.id) {
+    chrome.tabs.update(existing[0].id, { active: true }).catch(() => {});
+    return;
+  }
+  chrome.tabs.create({ url });
+}
 async function startCallFlow() {
+  if (!(await checkCallAllowed())) return;
   await ensureOffscreen();
   const mic = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'debait/mic-state' }).catch(() => null);
   if (mic?.state !== 'granted') {
     // ask for the microphone once, in a small extension tab; it starts the call when allowed
-    chrome.tabs.create({ url: chrome.runtime.getURL('src/voice/index.html') });
+    await openMicTab();
     return;
   }
   await memoryLoaded;
-  await chrome.runtime.sendMessage({ target: 'offscreen', type: 'debait/call-start', debugToken: await debugToken(), memory: engineMemory });
+  await chrome.runtime.sendMessage({ target: 'offscreen', type: 'debait/call-start', debugToken: await debugToken(), memory: engineMemory }).catch(() => {});
 }
 async function endCallFlow() {
   const has = await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
   if (has.length) await chrome.runtime.sendMessage({ target: 'offscreen', type: 'debait/call-end' }).catch(() => {});
+  else await broadcastCallState('ended');
 }
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local' || !changes.settings) return;
@@ -253,6 +285,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
   const now = changes.settings.newValue?.voice;
   if (now && !was) startCallFlow();
   if (!now && was) endCallFlow();
+  if (changes.settings.newValue?.localOnly && now) {
+    // turning Local only on during an active cloud voice call ends the call cleanly
+    chrome.storage.local.set({ settings: { ...changes.settings.newValue, voice: false } });
+  }
 });
 
 // ---------- message router ----------
@@ -282,19 +318,36 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const res = await toActiveTab({ type: 'debait/tool', name: msg.name, args: msg.args });
         sendResponse(res || { result: { error: 'Debait is not running on this page. Ask the user to refresh it.' } });
       } else if (msg.type === 'debait/call-state') {
-        toActiveTab({ type: 'debait/call-state', state: msg.state, message: msg.message });
+        await broadcastCallState(msg.state, msg.message);
         if (msg.state === 'error') {
           const s = await getSettings();
           if (s.voice) await chrome.storage.local.set({ settings: { ...s, voice: false } });
         }
         sendResponse({ ok: true });
+      } else if (msg.type === 'debait/call-status') {
+        const has = await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
+        const st = has.length
+          ? await chrome.runtime.sendMessage({ target: 'offscreen', type: 'debait/call-status' }).catch(() => null)
+          : null;
+        const inCall = !!st?.inCall;
+        if (!inCall) {
+          const s = await getSettings();
+          if (s.voice) await chrome.storage.local.set({ settings: { ...s, voice: false } });
+        }
+        sendResponse({ ok: true, inCall });
       } else if (msg.type === 'debait/mic-granted') {
-        await memoryLoaded;
-        await chrome.runtime.sendMessage({ target: 'offscreen', type: 'debait/call-start', debugToken: await debugToken(), memory: engineMemory }).catch(() => {});
+        if (await checkCallAllowed()) {
+          const s = await getSettings();
+          if (!s.voice) await chrome.storage.local.set({ settings: { ...s, voice: true } });
+          await ensureOffscreen();
+          await memoryLoaded;
+          await chrome.runtime.sendMessage({ target: 'offscreen', type: 'debait/call-start', debugToken: await debugToken(), memory: engineMemory }).catch(() => {});
+        }
         sendResponse({ ok: true });
       } else if (msg.type === 'debait/mic-denied') {
         const s = await getSettings();
-        await chrome.storage.local.set({ settings: { ...s, voice: false } });
+        if (s.voice) await chrome.storage.local.set({ settings: { ...s, voice: false } });
+        await broadcastCallState('ended');
         sendResponse({ ok: true });
       } else if (msg.type === 'debait/debaited') {
         recordDebaited(Array.isArray(msg.texts) ? msg.texts : [], msg.count || 0);

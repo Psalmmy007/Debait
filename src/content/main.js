@@ -83,18 +83,41 @@ async function start() {
   let notice = '';     // why scoring is paused, shown on the orb
   let retryTimer = null;
 
+  let voiceBusy = false;
+  let lastVoiceToggle = 0;
+  const VOICE_COOLDOWN = 900;
+
   const overlay = createOverlay();
   const orb = createOrb(overlay, {
     onClick: (origin) => { if (!extensionGone()) toggleDebaitPage(origin); },
     onDoubleClick: () => { if (extensionGone()) return; closeCard(); panel.toggle(); },
     onTripleClick: async () => {
-      if (extensionGone()) return;
-      closeCard();
-      panel.close();
-      const s = await getSettings();
-      chime(s.voice ? 'end' : 'start');
-      await setSettings({ voice: !s.voice });
-      if (s.voice) onCallState({ state: 'ended' });
+      if (extensionGone() || voiceBusy) return;
+      const now = Date.now();
+      if (now - lastVoiceToggle < VOICE_COOLDOWN) return;
+      voiceBusy = true;
+      lastVoiceToggle = now;
+      try {
+        closeCard();
+        panel.close();
+        const s = await getSettings();
+        const next = !s.voice;
+        if (next && typeof navigator !== 'undefined' && navigator.onLine === false) {
+          chime('end');
+          onCallState({ state: 'error', message: 'Talk to Debait needs an internet connection.' });
+          return;
+        }
+        if (next && s.localOnly) {
+          chime('end');
+          onCallState({ state: 'error', message: 'Turn off Local only to use Talk to Debait.' });
+          return;
+        }
+        chime(next ? 'start' : 'end');
+        await setSettings({ voice: next });
+        if (!next) onCallState({ state: 'ended' });
+      } finally {
+        voiceBusy = false;
+      }
     },
   });
   const panel = createSettingsPanel(overlay.panelLayer, {
@@ -206,7 +229,9 @@ async function start() {
     return { error: 'unknown tool' };
   }
 
+  let lastCallState = 'ended';
   function onCallState({ state, message }) {
+    lastCallState = state || 'ended';
     if (state === 'connecting') orb.setVoice({ mode: 'speaking', text: 'Calling Debait…' });
     else if (state === 'live') orb.setVoice({ mode: 'listening' });
     else if (state === 'talking') orb.setVoice({ mode: 'speaking', text: '' });
@@ -216,8 +241,8 @@ async function start() {
     else if (state === 'error') orb.setVoice({ mode: 'error', text: message });
     else orb.setVoice({ mode: 'idle' });
   }
-  // a call may already be running when this page loads
-  if (settings.voice) send({ target: 'offscreen', type: 'debait/call-status' }).then((r) => r?.inCall && onCallState({ state: 'live' }));
+  // a call may already be running when this page loads (and clears stale voice:true after restart)
+  if (settings.voice) send({ type: 'debait/call-status' }).then((r) => r?.inCall && onCallState({ state: 'live' }));
 
   // ---------- helpers ----------
   const paint = (hotRecord) => paintHighlights(records.values(), { enabled: settings.showTags, hotRecord });
@@ -428,7 +453,7 @@ async function start() {
 
   // ---------- debaiting ----------
   function debaitOne(rec) {
-    if (!rec?.result || rec.result.kind === 'clean') return;
+    if (!rec?.result || rec.result.kind === 'clean' || rec.animating) return;
     swapToRewrite(rec).then(() => { paint(); refreshOrb(); });
     setTimeout(() => rec.tag?.setDebaited(true, rec.result), 240);
     if (rec.result.source !== 'mock') send({ type: 'debait/debaited', texts: [rec.text] });
@@ -436,6 +461,7 @@ async function start() {
   }
 
   function restoreOne(rec) {
+    if (!rec?.result || rec.animating) return;
     swapToOriginal(rec).then(() => { paint(); refreshOrb(); });
     setTimeout(() => rec.tag?.setDebaited(false, rec.result), 240);
     refreshOrb();
@@ -447,7 +473,9 @@ async function start() {
   }
 
   let pageDebaited = false; // after "Debait this page", until the originals are restored
+  let togglingPage = false; // prevents overlapping debait/restore animations on rapid clicks
   function toggleDebaitPage(origin) {
+    if (togglingPage) return;
     closeCard();
     orb.pulse();
     const all = [...records.values()].filter((r) => r.result);
@@ -455,6 +483,7 @@ async function start() {
     const done = all.filter((r) => r.state === 'debaited');
 
     if (bait.length) {
+      togglingPage = true;
       pageDebaited = true;
       // the wave rolls out from the orb; each headline decodes when the wave reaches it
       const { R, duration } = playRipple(origin);
@@ -464,10 +493,11 @@ async function start() {
         return swapToRewrite(rec, { delay });
       });
       refreshOrb();
-      Promise.all(jobs).then(() => { paint(); refreshOrb(); });
+      Promise.all(jobs).finally(() => { togglingPage = false; paint(); refreshOrb(); });
       const real = bait.filter((r) => r.result.source !== 'mock').map((r) => r.text);
       if (real.length) send({ type: 'debait/debaited', texts: real });
     } else if (done.length) {
+      togglingPage = true;
       pageDebaited = false;
       // undo: the wave flows back into the orb
       const { R, duration } = playRipple(origin, { undo: true });
@@ -477,7 +507,7 @@ async function start() {
         return swapToOriginal(rec, { delay });
       });
       refreshOrb();
-      Promise.all(jobs).then(() => { paint(); refreshOrb(); });
+      Promise.all(jobs).finally(() => { togglingPage = false; paint(); refreshOrb(); });
     } else if ([...records.values()].some((r) => !r.result)) {
       // clicked while Gemini is still reading the headlines: remember it, and each bait
       // headline is debaited the moment its result arrives (see applyResult)
@@ -492,8 +522,9 @@ async function start() {
     settings = next;
     orb.setVisible(next.showOrb);
     orb.setSize(next.orbSize);
+    panel.syncSettings?.(next, prev);
     if (prev.localOnly !== next.localOnly && notice) { clearTimeout(retryTimer); notice = ''; for (const r of records.values()) if (r.failed && !r.result) { r.failed = false; r.tag?.setVisible(next.showTags); r.queued = true; queue.push(r); } flushSoon(); }
-    if (prev.voice && !next.voice) onCallState({ state: 'ended' });
+    if (prev.voice && !next.voice && lastCallState !== 'error') onCallState({ state: 'ended' });
     if (prev.showTags !== next.showTags) {
       for (const r of records.values()) r.tag?.setVisible(next.showTags);
       paint();

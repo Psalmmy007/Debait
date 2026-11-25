@@ -6,6 +6,7 @@ import { reducedMotion } from './page.js';
 import { ICON, SOURCE } from './icons.js';
 import { setHTML } from './html.js';
 import { send } from '../ext.js';
+import { chime } from './chime.js';
 
 const OUT = 'cubic-bezier(0.16, 1, 0.3, 1)';
 
@@ -30,6 +31,7 @@ const BY = { 'on-device': 'Gemini Nano', cloud: 'Gemini', mock: 'Quick summary' 
  */
 export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpenChange, onSize, onSummarize }) {
   let el = null;
+  let opening = false;
   let closing = false;
   const host = location.hostname.replace(/^www\./, '');
 
@@ -51,8 +53,11 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
   }
 
   async function open() {
+    if (el || opening) return;
+    opening = true;
+    let settings;
+    try { settings = await getSettings(); } finally { opening = false; }
     if (el) return;
-    const settings = await getSettings();
     el = document.createElement('aside');
     el.className = 'panel';
     el.setAttribute('role', 'dialog');
@@ -213,6 +218,7 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
     }
     const key = e.target.dataset?.setting;
     if (!key) return;
+    if (key === 'voice') chime(e.target.checked ? 'start' : 'end');
     await setSettings({ [key]: e.target.checked });
     if (key === 'showOrb' && !e.target.checked) close();
   }
@@ -294,11 +300,26 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
     chip.title = s.message || '';
   }
 
+  function syncSettings(next, prev) {
+    if (!el || !next) return;
+    for (const input of el.querySelectorAll('[data-setting]')) {
+      input.checked = !!next[input.dataset.setting];
+    }
+    const size = el.querySelector('[data-size]');
+    if (size && next.orbSize) {
+      size.value = String(next.orbSize);
+      const label = el.querySelector('[data-v="orbSize"]');
+      if (label) label.textContent = `${Math.round(next.orbSize * 100)}%`;
+    }
+    if (prev && prev.localOnly !== next.localOnly) loadEngine();
+  }
+
   return {
     open,
     close,
     toggle: () => (el ? close() : open()),
     refresh,
+    syncSettings,
     isOpen: () => !!el,
   };
 }

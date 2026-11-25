@@ -1,46 +1,43 @@
-// Debait's own call sounds, made on the fly (no audio files):
-// "start" is a bright two-note rise, "end" the same two notes falling, each with a soft shimmer
-// and a short echo, like a tap on glass.
-let ctx = null;
+// Debait's bundled call chimes (100% offline, zero network calls):
+// "start" plays when picking up / starting Talk to Debait, "end" when cutting / ending it.
+import startAsset from '../../assets/chime-start.ogg';
+import endAsset from '../../assets/chime-end.mp3';
 
-const NOTES = { start: [659.25, 987.77], end: [987.77, 659.25] }; // E5 and B5
+const VOLUME = 0.35;
+const ASSETS = { start: startAsset, end: endAsset };
+const players = {};
+
+function resolveUrl(url) {
+  if (!url || /^(data|blob|chrome-extension|https?):/i.test(url)) return url;
+  if (typeof chrome !== 'undefined' && chrome.runtime?.getURL) {
+    return chrome.runtime.getURL(url.replace(/^\//, ''));
+  }
+  return url;
+}
+
+function getPlayer(kind) {
+  if (!players[kind]) {
+    const audio = new Audio(resolveUrl(ASSETS[kind] || ASSETS.start));
+    audio.preload = 'auto';
+    audio.volume = VOLUME;
+    players[kind] = audio;
+  }
+  return players[kind];
+}
 
 export function chime(kind = 'start') {
+  const key = kind === 'end' ? 'end' : 'start';
   try {
-    ctx ||= new AudioContext();
-    if (ctx.state === 'suspended') ctx.resume();
-    const t0 = ctx.currentTime + 0.02;
-
-    const out = ctx.createGain();
-    out.gain.value = 0.16;
-    out.connect(ctx.destination);
-    // short echo: a little space around the notes
-    const echo = ctx.createDelay();
-    echo.delayTime.value = 0.13;
-    const feedback = ctx.createGain();
-    feedback.gain.value = 0.28;
-    const wet = ctx.createGain();
-    wet.gain.value = 0.45;
-    echo.connect(feedback).connect(echo);
-    echo.connect(wet).connect(out);
-
-    (NOTES[kind] || NOTES.start).forEach((f, i) => {
-      const at = t0 + i * 0.1;
-      // body, a quiet octave above (the "glass"), and a slightly detuned layer for width
-      for (const [type, mult, vol, len] of [['sine', 1, 1, 0.7], ['sine', 2, 0.22, 0.35], ['triangle', 1.004, 0.28, 0.5]]) {
-        const o = ctx.createOscillator();
-        o.type = type;
-        o.frequency.value = f * mult;
-        const g = ctx.createGain();
-        g.gain.setValueAtTime(0.0001, at);
-        g.gain.exponentialRampToValueAtTime(vol, at + 0.012);
-        g.gain.exponentialRampToValueAtTime(0.0001, at + len);
-        o.connect(g);
-        g.connect(out);
-        g.connect(echo);
-        o.start(at);
-        o.stop(at + len + 0.05);
-      }
-    });
-  } catch { /* no audio on this page: stay silent */ }
+    const other = players[key === 'start' ? 'end' : 'start'];
+    if (other && !other.paused) {
+      other.pause();
+      other.currentTime = 0;
+    }
+    const audio = getPlayer(key);
+    audio.volume = VOLUME;
+    audio.pause();
+    audio.currentTime = 0;
+    const p = audio.play();
+    if (p?.catch) p.catch(() => {});
+  } catch { /* autoplay or audio unavailable on this page: stay silent */ }
 }

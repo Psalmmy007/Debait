@@ -166,6 +166,7 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
     if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 5) return;
     if (!drag.moved) {
       drag.moved = true;
+      cancelClicks();
       wrap.classList.add('dragging');
     }
     const now = performance.now();
@@ -187,7 +188,7 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
     gl?.setVelocity(Math.max(-1.5, Math.min(1.5, -drag.vx)), Math.max(-1.5, Math.min(1.5, drag.vy)));
   });
 
-  const release = (e) => {
+  const finishDrag = (e, cancelled = false) => {
     if (!drag || e.pointerId !== drag.id) return;
     const wasDrag = drag.moved;
     drag = null;
@@ -200,38 +201,55 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
       [{ transform: from }, { transform: 'scale(1.06, 0.95)', offset: 0.35 }, { transform: 'scale(0.98, 1.02)', offset: 0.7 }, { transform: 'scale(1)' }],
       { duration: 600, easing: 'ease-out' },
     );
-    if (wasDrag) {
+    if (cancelled) {
+      cancelClicks();
+    } else if (wasDrag) {
+      cancelClicks();
       ratio = toRatio();
       save({ orbPos: ratio });
     } else {
       tap();
     }
   };
-  orb.addEventListener('pointerup', release);
-  orb.addEventListener('pointercancel', release);
+  orb.addEventListener('pointerup', (e) => finishDrag(e, false));
+  orb.addEventListener('pointercancel', (e) => finishDrag(e, true));
 
   // 1 click = Debait the page, 2 clicks = settings, 3 clicks = talk to Debait (voice call).
-  // Waits a moment after the last click to count them.
+  // Waits briefly after clicks 1 & 2 to distinguish multi-clicks; fires immediately on click 3.
+  const CLICK_WINDOW = 340;
   let clickTimer = null;
   let clicks = 0;
+  function cancelClicks() {
+    clearTimeout(clickTimer);
+    clickTimer = null;
+    clicks = 0;
+  }
   function tap() {
     clicks++;
     clearTimeout(clickTimer);
+    if (clicks >= 3) {
+      clicks = 0;
+      clickTimer = null;
+      onTripleClick?.(center());
+      return;
+    }
     clickTimer = setTimeout(() => {
       const n = clicks;
       clicks = 0;
-      if (n >= 3) onTripleClick?.(center());
-      else if (n === 2) onDoubleClick(center());
-      else onClick(center());
-    }, 260);
+      clickTimer = null;
+      if (n === 2) onDoubleClick(center());
+      else if (n === 1) onClick(center());
+    }, CLICK_WINDOW);
   }
   orb.addEventListener('contextmenu', (e) => {
     e.preventDefault();
+    cancelClicks();
     onDoubleClick(center());
   });
   orb.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
+      cancelClicks();
       if (e.shiftKey) onDoubleClick(center());
       else onClick(center());
     }
@@ -243,8 +261,9 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
 
   const HINT = '<em><kbd>2×</kbd> settings <kbd>3×</kbd> talk to Debait</em>';
   let lastCount = -1;
+  let errorUntil = 0;
   return {
-    destroy() { destroyed = true; gl?.release?.(); },
+    destroy() { destroyed = true; cancelClicks(); gl?.release?.(); },
     center,
     /** 0.75 – 1.6 times the normal size; labels next to it keep their size */
     setSize(next) {
@@ -295,9 +314,12 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
     /** voice state: idle | listening | heard | speaking | error */
     setVoice({ mode, text }) {
       const bubble = wrap.querySelector('.voice-bubble');
+      // Don't wipe out a fresh error bubble milliseconds later when voice:false syncs back.
+      if (mode === 'idle' && Date.now() < errorUntil) return;
+      if (mode !== 'error') errorUntil = 0;
       wrap.dataset.voice = mode;
       gl?.setBoost(mode === 'speaking' ? 2.6 : mode === 'listening' ? 1.4 : 1);
-      if (mode === 'idle') { bubble.classList.remove('show'); return; }
+      if (mode === 'idle') { clearTimeout(this._vt); bubble.classList.remove('show'); return; }
       const label = { listening: 'On a call with Debait', heard: 'You said', speaking: 'Debait', error: 'Voice' }[mode];
       bubble.replaceChildren();
       const b = document.createElement('b');
@@ -315,7 +337,16 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
       }
       bubble.classList.add('show');
       clearTimeout(this._vt);
-      if (mode === 'heard' || mode === 'error') this._vt = setTimeout(() => bubble.classList.remove('show'), 4000);
+      if (mode === 'error') {
+        errorUntil = Date.now() + 4500;
+        this._vt = setTimeout(() => {
+          errorUntil = 0;
+          bubble.classList.remove('show');
+          if (wrap.dataset.voice === 'error') wrap.dataset.voice = 'idle';
+        }, 4500);
+      } else if (mode === 'heard') {
+        this._vt = setTimeout(() => bubble.classList.remove('show'), 4000);
+      }
     },
     pulse() {
       gl?.pulse();
