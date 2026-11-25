@@ -130,12 +130,11 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
   wrap.addEventListener('pointerenter', () => gl?.setBoost(2.2));
   wrap.addEventListener('pointerleave', () => gl?.setBoost(1));
 
-  // Hidden tab: stop drawing and hand the graphics context back to Chrome (it only allows ~16,
-  // and every open tab has an orb). It comes back the moment you return to the tab.
+  // Hidden tab: pause the render loop without thrashing WebGL context loss/restoration.
   document.addEventListener('visibilitychange', () => {
     if (!gl || destroyed) return;
-    if (document.hidden || wrap.hidden) gl.release();
-    else { gl.resume(); gl.start(); }
+    if (document.hidden || wrap.hidden) gl.stop();
+    else gl.start();
   });
 
   const cancelJs = () => orb.getAnimations().forEach((a) => { if (!('animationName' in a)) a.cancel(); });
@@ -311,16 +310,16 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
       }
     },
     setPanelOpen(open) { wrap.classList.toggle('panel-open', open); },
-    /** voice state: idle | listening | heard | speaking | error */
+    /** voice state: idle | connecting | listening | heard | speaking | error */
     setVoice({ mode, text }) {
       const bubble = wrap.querySelector('.voice-bubble');
       // Don't wipe out a fresh error bubble milliseconds later when voice:false syncs back.
       if (mode === 'idle' && Date.now() < errorUntil) return;
       if (mode !== 'error') errorUntil = 0;
       wrap.dataset.voice = mode;
-      gl?.setBoost(mode === 'speaking' ? 2.6 : mode === 'listening' ? 1.4 : 1);
+      gl?.setBoost(mode === 'speaking' ? 2.6 : mode === 'connecting' ? 1.6 : mode === 'listening' ? 1.4 : 1);
       if (mode === 'idle') { clearTimeout(this._vt); bubble.classList.remove('show'); return; }
-      const label = { listening: 'On a call with Debait', heard: 'You said', speaking: 'Debait', error: 'Voice' }[mode];
+      const label = { connecting: 'Debait', listening: 'On a call with Debait', heard: 'You said', speaking: 'Debait', error: 'Voice' }[mode];
       bubble.replaceChildren();
       const b = document.createElement('b');
       b.textContent = label;

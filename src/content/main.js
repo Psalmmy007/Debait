@@ -232,11 +232,11 @@ async function start() {
   let lastCallState = 'ended';
   function onCallState({ state, message }) {
     lastCallState = state || 'ended';
-    if (state === 'connecting') orb.setVoice({ mode: 'speaking', text: 'Calling Debait…' });
+    if (state === 'connecting') orb.setVoice({ mode: 'connecting', text: 'Calling Debait…' });
     else if (state === 'live') orb.setVoice({ mode: 'listening' });
     else if (state === 'talking') orb.setVoice({ mode: 'speaking', text: '' });
     else if (state === 'heard') orb.setVoice({ mode: 'heard', text: message });
-    else if (state === 'reconnecting') orb.setVoice({ mode: 'speaking', text: 'Reconnecting…' });
+    else if (state === 'reconnecting') orb.setVoice({ mode: 'connecting', text: 'Reconnecting…' });
     else if (state === 'working') orb.setVoice({ mode: 'speaking', text: 'On it…' });
     else if (state === 'error') orb.setVoice({ mode: 'error', text: message });
     else orb.setVoice({ mode: 'idle' });
@@ -371,11 +371,12 @@ async function start() {
         ? 'Local only is on, but Gemini Nano is not downloaded yet. Open the Debait popup and click Turn on Debait, or turn off Local only.'
         : 'Debait could not reach its AI. Retrying in a minute.';
       clearTimeout(retryTimer);
+      const retryMs = isNanoOnly() ? 60000 : 5000;
       retryTimer = setTimeout(() => {
         notice = '';
         for (const r of records.values()) if (r.failed && !r.result) { r.failed = false; r.tag?.setVisible(settings.showTags); r.queued = true; queue.push(r); }
         flushSoon();
-      }, 60000);
+      }, retryMs);
     } finally {
       inflight--;
     }

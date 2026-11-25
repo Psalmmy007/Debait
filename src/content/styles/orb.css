@@ -158,25 +158,31 @@
 .orb-wrap.hint:not(.dragging) .orb-tip { opacity: 1; transform: translate(0, -50%) scale(1); }
 .orb-wrap.panel-open .orb-tip { opacity: 0 !important; }
 
-/* voice mode: a small recording dot and a message bubble */
+/* voice mode: a tiny call status dot (red while calling, green when connected) and a message bubble */
 .orb-mic {
   position: absolute;
-  left: -3px;
-  bottom: -1px;
-  width: 15px;
-  height: 15px;
+  left: 1px;
+  bottom: 1px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: #ff3b30;
-  box-shadow: 0 0 0 2px var(--surface), 0 3px 8px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 0 0 1.5px var(--surface), 0 2px 6px rgba(0, 0, 0, 0.28);
   transform: scale(0);
-  transition: transform 0.4s var(--spring);
+  transition: transform 0.35s var(--spring), background-color 0.25s var(--ease);
   pointer-events: none;
 }
+.orb-wrap[data-voice='connecting'] .orb-mic,
 .orb-wrap[data-voice='listening'] .orb-mic,
 .orb-wrap[data-voice='heard'] .orb-mic,
 .orb-wrap[data-voice='speaking'] .orb-mic { transform: scale(1); }
-.orb-wrap[data-voice='listening'] .orb-mic { animation: mic-pulse 1.6s ease-in-out infinite; }
-@keyframes mic-pulse { 50% { box-shadow: 0 0 0 2px var(--surface), 0 0 0 7px rgba(255, 59, 48, 0.18); } }
+.orb-wrap[data-voice='connecting'] .orb-mic { background: #ff3b30; animation: mic-pulse-red 1.2s ease-in-out infinite; }
+.orb-wrap[data-voice='listening'] .orb-mic,
+.orb-wrap[data-voice='heard'] .orb-mic,
+.orb-wrap[data-voice='speaking'] .orb-mic { background: #34c759; }
+.orb-wrap[data-voice='listening'] .orb-mic { animation: mic-pulse-green 1.8s ease-in-out infinite; }
+@keyframes mic-pulse-red { 50% { box-shadow: 0 0 0 1.5px var(--surface), 0 0 0 5px rgba(255, 59, 48, 0.22); } }
+@keyframes mic-pulse-green { 50% { box-shadow: 0 0 0 1.5px var(--surface), 0 0 0 5px rgba(52, 199, 89, 0.22); } }
 
 .voice-bubble {
   position: absolute;

@@ -211,19 +211,22 @@ export function createOrbRenderer(canvas, size = 56, { dpr: forcedDpr, preserve 
     draw(now);
   }
 
-  // Chrome allows only about 16 WebGL contexts per process, and every tab's orb holds one.
-  // release() hands ours back (hidden tab, or this copy of Debait shutting down); resume() takes it again.
+  // Chrome allows only about 16 WebGL contexts per process.
+  // release() frees ours on teardown; resume() only restores when we lost it and Chrome allowed restoration.
   const loser = gl.getExtension('WEBGL_lose_context');
-  let releasing = false;
+  let lostByUs = false;
+  let canRestore = false;
   let onLostChange = null;
   canvas.addEventListener('webglcontextlost', (e) => {
     e.preventDefault();
     lost = true;
-    if (!releasing) onLostChange?.(true); // Chrome took it: show the CSS orb meanwhile
+    if (lostByUs) canRestore = true;
+    else onLostChange?.(true); // Chrome took it: show the CSS orb meanwhile
   });
   canvas.addEventListener('webglcontextrestored', () => {
     lost = !init();
-    releasing = false;
+    lostByUs = false;
+    canRestore = false;
     onLostChange?.(lost);
   });
 
@@ -233,13 +236,15 @@ export function createOrbRenderer(canvas, size = 56, { dpr: forcedDpr, preserve 
     release() {
       cancelAnimationFrame(raf);
       raf = 0;
-      if (lost || !loser) return;
-      releasing = true;
-      try { loser.loseContext(); } catch { releasing = false; }
+      if (lost || lostByUs || !loser || gl.isContextLost()) return;
+      lostByUs = true;
+      canRestore = false;
+      try { loser.loseContext(); } catch { lostByUs = false; }
     },
     resume() {
-      if (!releasing || !loser) return;
-      try { loser.restoreContext(); } catch { /* not lost yet: it was never released */ }
+      if (!lostByUs || !canRestore || !loser || !gl.isContextLost()) return;
+      canRestore = false;
+      try { loser.restoreContext(); } catch { lostByUs = false; }
     },
     /** cb(lost) when the context is taken away by Chrome or comes back */
     onLostChange(cb) { onLostChange = cb; },

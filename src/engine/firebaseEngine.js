@@ -379,10 +379,14 @@ ITEMS:
 ${texts.map((t, i) => `${i + 1}. ${t}`).join('\n')}`;
 }
 
+let availCache = { state: null, until: 0 };
 async function deviceAvailability() {
+  if (availCache.state === 'available' && Date.now() < availCache.until) return 'available';
   try {
     if (typeof LanguageModel === 'undefined') return 'unavailable';
-    return await LanguageModel.availability({ expectedInputs: LANG, expectedOutputs: LANG });
+    const state = await LanguageModel.availability({ expectedInputs: LANG, expectedOutputs: LANG });
+    availCache = state === 'available' ? { state, until: Date.now() + 30000 } : { state: null, until: 0 };
+    return state;
   } catch {
     return 'unavailable';
   }
@@ -590,6 +594,7 @@ export const firebaseEngine = {
 
   async initDeviceModel() {
     deviceSlowUntil = 0;
+    availCache = { state: null, until: 0 };
     const device = await deviceAvailability();
     if (device === 'downloadable' || device === 'downloading') {
       try {
