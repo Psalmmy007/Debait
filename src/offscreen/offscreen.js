@@ -15,7 +15,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     applySkips(msg.memory.skips);
     primed = true;
   }
-  const reply = (o) => sendResponse({ ...o, memory: { prefer: preferredProject(), skips: projectSkips() } });
+  const reply = (o) => {
+    try { sendResponse({ ...o, memory: { prefer: preferredProject(), skips: projectSkips() } }); } catch { /* channel closed */ }
+  };
 
   (async () => {
     try {
@@ -26,7 +28,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       } else if (msg.type === MSG.STATUS) {
         reply({ ok: true, status: await engine.getStatus({ localOnly: msg.localOnly }) });
       } else if (msg.type === 'debait/call-start') {
-        startCall(msg.debugToken);
+        startCall(msg.debugToken).catch(() => {});
         reply({ ok: true });
       } else if (msg.type === 'debait/call-end') {
         await endCall();

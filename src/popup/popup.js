@@ -6,7 +6,7 @@ const $ = (s) => document.querySelector(s);
 const SRC_LABEL = { 'on-device': 'Gemini Nano', cloud: 'Gemini Cloud', mock: 'Heuristic — not AI', none: 'Not ready' };
 
 async function renderToday() {
-  const [today] = (await getRecentStats(1));
+  const [today = { total: 0, rage: 0, fear: 0, envy: 0, clean: 0 }] = (await getRecentStats(1));
   const bait = today.rage + today.fear + today.envy;
   const pct = today.total ? Math.round((bait / today.total) * 100) : 0;
   countUp($('#pct'), pct);
@@ -111,15 +111,17 @@ function countUp(el, to) {
 }
 
 $('#copyToken').addEventListener('click', async () => {
-  await navigator.clipboard.writeText($('#token').textContent);
-  $('#copyToken').textContent = 'Copied';
+  try {
+    await navigator.clipboard.writeText($('#token').textContent);
+    $('#copyToken').textContent = 'Copied';
+  } catch { /* clipboard unavailable */ }
 });
 
 // Run on this site
 (async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   let host = '';
-  try { if (/^https?:/.test(tab.url)) host = new URL(tab.url).hostname.replace(/^www./, ''); } catch { /* chrome:// pages */ }
+  try { if (tab?.url && /^https?:/.test(tab.url)) host = new URL(tab.url).hostname.replace(/^www./, ''); } catch { /* chrome:// pages */ }
   if (!host) { $('.site').hidden = true; return; }
   $('#host').textContent = host;
   const s = await getSettings();
@@ -139,8 +141,10 @@ $('#copyToken').addEventListener('click', async () => {
   $('#problems').hidden = false;
   $('#problemList').textContent = recent.slice(0, 3).map((e) => `${e.where}: ${e.message.split('\n')[0]}`).join(' · ');
   $('#copyProblems').addEventListener('click', async () => {
-    await navigator.clipboard.writeText(recent.map((e) => `[${e.at}] ${e.where}\n${e.message}`).join('\n\n'));
-    $('#copyProblems').textContent = 'Copied';
+    try {
+      await navigator.clipboard.writeText(recent.map((e) => `[${e.at}] ${e.where}\n${e.message}`).join('\n\n'));
+      $('#copyProblems').textContent = 'Copied';
+    } catch { /* clipboard unavailable */ }
   });
 })();
 

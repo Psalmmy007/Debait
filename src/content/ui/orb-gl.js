@@ -137,7 +137,7 @@ export function createOrbRenderer(canvas, size = 56, { dpr: forcedDpr, preserve 
     gl.shaderSource(s, src);
     gl.compileShader(s);
     if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
-      console.warn('[Debait] orb shader:', gl.getShaderInfoLog(s));
+      console.debug('[Debait] orb shader:', gl.getShaderInfoLog(s));
       return null;
     }
     return s;

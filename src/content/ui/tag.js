@@ -49,7 +49,7 @@ export function createTag(anchor, { onClick }) {
     if (flip && !reducedMotion()) {
       // first half of the flip, then swap the face, then the second half
       btn.animate([{ transform: 'perspective(200px) rotateX(0deg)' }, { transform: 'perspective(200px) rotateX(90deg)' }], { duration: 140, easing: 'ease-in' })
-        .finished.then(() => {
+        .finished.catch(() => {}).then(() => {
           apply();
           btn.animate([{ transform: 'perspective(200px) rotateX(-90deg)' }, { transform: 'perspective(200px) rotateX(0deg)' }], { duration: 420, easing: SPRING });
           widen(w0);

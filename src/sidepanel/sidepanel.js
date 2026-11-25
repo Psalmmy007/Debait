@@ -66,9 +66,10 @@ async function render() {
       : 'No days with real data yet.';
 
   // sources
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const top = Object.entries(sum.sources).sort((a, b) => b[1] - a[1]).slice(0, 5);
   $('#sources').innerHTML = top.length
-    ? top.map(([h, n], i) => `<li><span class="rank">${i + 1}</span><span class="dom">${h}</span><b>${n}</b></li>`).join('')
+    ? top.map(([h, n], i) => `<li><span class="rank">${i + 1}</span><span class="dom">${esc(h)}</span><b>${n}</b></li>`).join('')
     : '<li class="empty">Nothing yet</li>';
 
   // one suggestion, worded from the real numbers so it never claims more than they show
@@ -82,7 +83,7 @@ async function render() {
     : !bait
       ? '<b>Suggestion</b>No bait in what you read this week. Keep it up.'
       : worst.length >= 2
-        ? `<b>Suggestion</b>${list(worst.map(([h]) => h))} served ${worstShare}% of your bait this week. Muting ${worst.length === 2 ? 'both' : 'them'} would calm your feed the most.`
+        ? `<b>Suggestion</b>${esc(list(worst.map(([h]) => h)))} served ${worstShare}% of your bait this week. Muting ${worst.length === 2 ? 'both' : 'them'} would calm your feed the most.`
         : `<b>Suggestion</b>Most of your bait this week played on ${kindName[topKind]}. Try “Debait automatically” for a calmer week.`;
 }
 

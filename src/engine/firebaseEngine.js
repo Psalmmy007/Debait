@@ -346,7 +346,9 @@ export function getAi(debugToken, i = preferred) {
   const app = initializeApp(config, `debait-${name.toLowerCase()}`);
   initializeAppCheck(app, {
     provider: new CustomProvider({ getToken: () => Promise.reject(new Error('debug token only')) }),
-    isTokenAutoRefreshEnabled: true,
+    // Fetch debug tokens on demand when cloud requests actually run (avoids noisy background
+    // refresh errors while offline or when an unregistered project is skipped).
+    isTokenAutoRefreshEnabled: false,
   });
   ais[i] = getAI(app, { backend: new GoogleAIBackend() });
   return ais[i];
@@ -875,7 +877,7 @@ export const firebaseEngine = {
   },
 };
 
-// Silently pre-warm the base Nano session on engine startup if already downloaded.
+// Silently pre-warm the base Nano session on engine startup if already downloaded and idle.
 if (typeof LanguageModel !== 'undefined') {
-  queueMicrotask(() => { prewarmNano(); });
+  queueMicrotask(() => { if (deviceQueue === 0) prewarmNano().catch(() => {}); });
 }

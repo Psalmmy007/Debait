@@ -29,10 +29,19 @@ chrome.alarms?.create('debait-build-check', { periodInMinutes: 0.5 });
 chrome.alarms?.onAlarm.addListener((a) => { if (a.name === 'debait-build-check') checkBuild(); });
 
 // ---------- put Debait into tabs that were already open (after install, update or reload) ----------
+const SKIP_INJECT_RE = /(^|\.)(github\.dev|vscode\.dev|mail\.google\.com|docs\.google\.com|drive\.google\.com|sheets\.google\.com|slides\.google\.com|outlook\.live\.com|outlook\.office\.com|slack\.com|discord\.com|notion\.so|figma\.com|linear\.app|chase\.com|bankofamerica\.com|wellsfargo\.com|paypal\.com|chromewebstore\.google\.com)$/i;
 chrome.runtime.onInstalled.addListener(async () => {
-  const files = chrome.runtime.getManifest().content_scripts?.[0]?.js || [];
-  const tabs = await chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] });
-  for (const t of tabs) chrome.scripting.executeScript({ target: { tabId: t.id }, files }).catch(() => {});
+  try {
+    const files = chrome.runtime.getManifest().content_scripts?.[0]?.js || [];
+    const tabs = await chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] });
+    for (const t of tabs) {
+      if (!t.id || !t.url) continue;
+      let host = '';
+      try { host = new URL(t.url).hostname; } catch { continue; }
+      if (SKIP_INJECT_RE.test(host)) continue;
+      chrome.scripting.executeScript({ target: { tabId: t.id }, files }).catch(() => {});
+    }
+  } catch { /* ignore startup query failures */ }
 });
 const CACHE_MAX = 3000;
 
@@ -78,7 +87,7 @@ function rememberEngine(res) {
   if (!res?.memory) return;
   if (JSON.stringify(res.memory) === JSON.stringify(engineMemory)) return;
   engineMemory = res.memory;
-  chrome.storage.local.set({ engineMemory });
+  chrome.storage.local.set({ engineMemory }).catch(() => {});
 }
 
 async function toEngine(payload) {
@@ -115,7 +124,7 @@ function saveCacheSoon() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     const entries = [...cache.entries()].slice(-CACHE_MAX);
-    chrome.storage.local.set({ scoreCache: entries });
+    chrome.storage.local.set({ scoreCache: entries }).catch(() => {});
   }, 1000);
 }
 
@@ -127,8 +136,10 @@ const shortHash = (s) => { let h = 5381; for (let i = 0; i < s.length; i++) h = 
 
 // one-time reset: older versions counted backup-engine results too
 statsQueue = statsQueue.then(async () => {
-  const { statsVersion } = await chrome.storage.local.get('statsVersion');
-  if (statsVersion !== 2) await chrome.storage.local.set({ stats: {}, statsVersion: 2 });
+  try {
+    const { statsVersion } = await chrome.storage.local.get('statsVersion');
+    if (statsVersion !== 2) await chrome.storage.local.set({ stats: {}, statsVersion: 2 });
+  } catch { /* ignore storage errors */ }
 });
 
 // Copy the last two weeks of totals to Chrome sync (see shared/storage.js). Batched, because
@@ -159,45 +170,53 @@ chrome.storage.onChanged.addListener((c, area) => { if (area === 'local' && c.st
 
 function recordStats(results, host, texts) {
   statsQueue = statsQueue.then(async () => {
-    const { stats = {} } = await chrome.storage.local.get('stats');
-    const key = dayKey();
-    const day = { ...emptyDay(), ...(stats[key] || {}) };
-    const seen = new Set(day.seen || []);
-    results.forEach((r, i) => {
-      if (!r || r.source === 'mock') return;          // not real analysis
-      const id = shortHash(texts[i]);
-      if (seen.has(id)) return;                        // already counted today
-      seen.add(id);
-      day.total += 1;
-      day[r.kind] += 1;
-      if (r.kind !== 'clean' && host) day.sources[host] = (day.sources[host] || 0) + 1;
-    });
-    day.seen = [...seen].slice(-4000);
-    stats[key] = day;
-    // keep ~5 weeks
-    for (const k of Object.keys(stats).sort().slice(0, -35)) delete stats[k];
-    await chrome.storage.local.set({ stats });
+    try {
+      const { stats = {} } = await chrome.storage.local.get('stats');
+      const key = dayKey();
+      const day = { ...emptyDay(), ...(stats[key] || {}) };
+      const seen = new Set(day.seen || []);
+      results.forEach((r, i) => {
+        if (!r || r.source === 'mock') return;          // not real analysis
+        const id = shortHash(texts[i]);
+        if (seen.has(id)) return;                        // already counted today
+        seen.add(id);
+        day.total += 1;
+        day[r.kind] += 1;
+        if (r.kind !== 'clean' && host) day.sources[host] = (day.sources[host] || 0) + 1;
+      });
+      day.seen = [...seen].slice(-4000);
+      stats[key] = day;
+      // keep ~5 weeks
+      for (const k of Object.keys(stats).sort().slice(0, -35)) delete stats[k];
+      await chrome.storage.local.set({ stats });
+    } catch (err) {
+      console.debug('[Debait] stats write skipped:', err?.message || err);
+    }
   });
   return statsQueue;
 }
 // a headline counts once a day, however many times it is debaited and restored
 function recordDebaited(texts, count) {
   statsQueue = statsQueue.then(async () => {
-    const { stats = {} } = await chrome.storage.local.get('stats');
-    const key = dayKey();
-    const day = { ...emptyDay(), ...(stats[key] || {}) };
-    if (texts.length) {
-      const done = new Set(day.debaitedSeen || []);
-      for (const t of texts) {
-        const id = shortHash(t);
-        if (!done.has(id)) { done.add(id); day.debaited += 1; }
+    try {
+      const { stats = {} } = await chrome.storage.local.get('stats');
+      const key = dayKey();
+      const day = { ...emptyDay(), ...(stats[key] || {}) };
+      if (texts.length) {
+        const done = new Set(day.debaitedSeen || []);
+        for (const t of texts) {
+          const id = shortHash(t);
+          if (!done.has(id)) { done.add(id); day.debaited += 1; }
+        }
+        day.debaitedSeen = [...done].slice(-4000);
+      } else {
+        day.debaited += count;
       }
-      day.debaitedSeen = [...done].slice(-4000);
-    } else {
-      day.debaited += count;
+      stats[key] = day;
+      await chrome.storage.local.set({ stats });
+    } catch (err) {
+      console.debug('[Debait] debaited stats write skipped:', err?.message || err);
     }
-    stats[key] = day;
-    await chrome.storage.local.set({ stats });
   });
 }
 
@@ -296,8 +315,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local' || !changes.settings) return;
   const was = changes.settings.oldValue?.voice;
   const now = changes.settings.newValue?.voice;
-  if (now && !was) startCallFlow();
-  if (!now && was) endCallFlow();
+  if (now && !was) startCallFlow().catch(() => {});
+  if (!now && was) endCallFlow().catch(() => {});
   const wasLocal = changes.settings.oldValue?.localOnly;
   const nowLocal = changes.settings.newValue?.localOnly;
   if (nowLocal && !wasLocal) {
@@ -308,7 +327,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
   if (nowLocal && now) {
     // turning Local only on during an active cloud voice call ends the call cleanly
-    chrome.storage.local.set({ settings: { ...changes.settings.newValue, voice: false } });
+    chrome.storage.local.set({ settings: { ...changes.settings.newValue, voice: false } }).catch(() => {});
   }
 });
 
@@ -386,6 +405,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (items.length) recordStats(items.map((x) => x.result), host, items.map((x) => x.text));
         sendResponse({ ok: true });
       } else if (msg.type === 'debait/openSidePanel') {
+        if (!sender.tab?.id) throw new Error('no active tab');
         await chrome.sidePanel.open({ tabId: sender.tab.id });
         sendResponse({ ok: true });
       } else {

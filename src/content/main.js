@@ -87,23 +87,22 @@ async function start() {
   const stopHere = (reason) => {
     if (!alive) return;
     alive = false;
-    try {
-      clearInterval(liveTimer);
-      removeEventListener('online', onOnline);
-      chrome.storage?.onChanged?.removeListener(onCacheStorage);
-      pageObserver?.disconnect();
-      io.disconnect();
-      viewIo.disconnect();
-      clearTimeout(scanTimer); clearTimeout(retryTimer); clearTimeout(upgradeTimer); clearTimeout(hitTimer);
-      queue.length = 0;
-      orb.destroy?.();
-      if (reason === 'gone') {
-        // Debait was updated or removed and no new copy took over: take our dead UI off the page
-        for (const r of records.values()) r.tag?.remove();
-        overlay.host.remove();
-        if ('highlights' in CSS) { CSS.highlights.delete('debait-bait'); CSS.highlights.delete('debait-hot'); }
-      }
-    } catch { /* still starting up: the alive flag is enough */ }
+    const safely = (fn) => { try { fn(); } catch { /* context invalidated or not yet initialized */ } };
+    safely(() => clearInterval(liveTimer));
+    safely(() => removeEventListener('online', onOnline));
+    safely(() => chrome.storage?.onChanged?.removeListener(onCacheStorage));
+    safely(() => pageObserver?.disconnect());
+    safely(() => io.disconnect());
+    safely(() => viewIo.disconnect());
+    safely(() => { clearTimeout(scanTimer); clearTimeout(retryTimer); clearTimeout(upgradeTimer); clearTimeout(hitTimer); });
+    safely(() => { queue.length = 0; });
+    safely(() => orb.destroy?.());
+    if (reason === 'gone') {
+      // Debait was updated or removed and no new copy took over: take our dead UI off the page
+      safely(() => { for (const r of records.values()) r.tag?.remove(); });
+      safely(() => overlay.host.remove());
+      safely(() => { if ('highlights' in CSS) { CSS.highlights.delete('debait-bait'); CSS.highlights.delete('debait-hot'); } });
+    }
   };
   // this copy is the old one now: step aside quietly
   document.addEventListener('debait:takeover', () => stopHere('takeover'), { once: true });

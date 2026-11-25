@@ -425,7 +425,7 @@ export function playRipple(origin, { undo = false } = {}) {
       delay,
       easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
       fill: 'both',
-    }).finished.then(() => el.remove());
+    }).finished.catch(() => {}).finally(() => el.remove());
   };
   ring(0, 2.5, 1);
   ring(120, 1.2, 0.7);
