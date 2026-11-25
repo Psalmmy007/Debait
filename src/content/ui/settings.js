@@ -220,7 +220,11 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
     }
     const key = e.target.dataset?.setting;
     if (!key) return;
-    if (key === 'voice') chime(e.target.checked ? 'start' : 'end');
+    if (key === 'voice') {
+      const cur = await getSettings();
+      const blocked = e.target.checked && (cur.localOnly || (typeof navigator !== 'undefined' && navigator.onLine === false));
+      chime(e.target.checked && !blocked ? 'start' : 'end');
+    }
     await setSettings({ [key]: e.target.checked });
     if (key === 'showOrb' && !e.target.checked) close();
   }
@@ -255,7 +259,7 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
         ? 'Local only is on, but Gemini Nano is not ready on this computer.'
         : /OFFLINE_UNAVAILABLE/.test(err.message)
         ? 'Offline — Gemini Nano is not ready on this device to summarize.'
-        : /app check|401|403/i.test(err.message)
+        : /app ?check|401|403/i.test(err.message)
         ? 'Cloud AI is waiting for App Check approval in the Debait popup.'
         : 'Could not summarize this page right now.';
       retry.textContent = 'Try again';

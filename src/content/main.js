@@ -463,11 +463,11 @@ async function start() {
         ? 'Local only is on, but Gemini Nano is not downloaded yet. Open the Debait popup and click Turn on Debait, or turn off Local only.'
         : /OFFLINE_UNAVAILABLE/.test(err.message)
         ? 'Offline — Gemini Nano is not ready on this device. Reconnect or click Turn on Debait when online.'
-        : /app check|401|403/i.test(err.message)
+        : /app ?check|401|403/i.test(err.message)
         ? 'Cloud AI needs App Check debug token approval in the Debait popup.'
         : 'Debait could not reach Gemini right now. Retrying shortly.';
       clearTimeout(retryTimer);
-      const retryMs = isNanoOnly() ? 60000 : 5000;
+      const retryMs = isNanoOnly() ? 60000 : 6000;
       retryTimer = setTimeout(() => {
         notice = '';
         for (const r of records.values()) if (r.failed && !r.result) { r.failed = false; r.tag?.setVisible(settings.showTags); r.queued = true; queue.push(r); }
@@ -664,12 +664,31 @@ async function start() {
     if (prev.localOnly !== next.localOnly) {
       cancelSummary();
       if (next.localOnly && lastSummary?.source !== 'on-device') lastSummary = null;
-      if (notice) {
-        clearTimeout(retryTimer);
-        notice = '';
-        for (const r of records.values()) if (r.failed && !r.result) { r.failed = false; r.tag?.setVisible(next.showTags); r.queued = true; queue.push(r); }
-        flushSoon();
+      clearTimeout(retryTimer);
+      notice = '';
+      let requeued = 0;
+      for (const r of records.values()) {
+        if (r.failed && !r.result) {
+          r.failed = false;
+          r.tag?.setVisible(next.showTags);
+          if (!r.queued) { r.queued = true; queue.push(r); requeued++; }
+        } else if (next.localOnly && r.state === 'scored' && r.result?.source === 'cloud') {
+          const cached = localCache.get(r.text);
+          if (isCacheEntryValid(cached, true)) {
+            applyResult(r, cached);
+          } else {
+            r.result = null;
+            r.state = 'pending';
+            r.tag?.remove();
+            mountTag(r);
+            viewIo.observe(r.el);
+            if (!r.queued) { r.queued = true; queue.push(r); requeued++; }
+          }
+        }
       }
+      if (requeued) flushSoon();
+      paint();
+      refreshOrb();
     }
     if (prev.voice && !next.voice && lastCallState !== 'error') onCallState({ state: 'ended' });
     if (prev.showTags !== next.showTags) {

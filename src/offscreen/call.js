@@ -4,8 +4,8 @@
 // The model can act on the page you're looking at through tools (debait, restore, report, explain).
 import { getLiveGenerativeModel, ResponseModality, Schema } from 'firebase/ai';
 import { openAudio } from './voice-audio.js';
-import { getAi, projectOrder, projectName, setPreferredProject, isOnline } from '../engine/firebaseEngine.js';
-import { LIVE_MODELS, LIVE_VOICE } from '../engine/firebaseConfig.js';
+import { getAi, projectOrder, projectName, isOnline } from '../engine/firebaseEngine.js';
+import { FIREBASE_PROJECTS, LIVE_MODELS, LIVE_VOICE } from '../engine/firebaseConfig.js';
 
 const SYSTEM = `You are Debait — a chill, sharp, easygoing friend who lives inside the Debait Chrome extension.
 Never break character. Never say you are a large language model, never mention Google or Gemini, and never refer to any underlying API or model.
@@ -75,11 +75,27 @@ let picked = null; // { i, model } that connected, reused when reconnecting
 const liveSkip = new Set();
 const CONNECT_TIMEOUT = 10000;
 
-function withConnectTimeout(promise, ms = CONNECT_TIMEOUT) {
+// Browsers cannot attach X-Firebase-AppCheck headers to WebSocket handshakes, so try allowed
+// projects without enforced App Check first for Live calls (HTTP scoring still tries Team first).
+export function liveProjectOrder(order = projectOrder()) {
+  const noAppCheck = order.filter((i) => FIREBASE_PROJECTS[i]?.appCheckEnforced === false);
+  const rest = order.filter((i) => FIREBASE_PROJECTS[i]?.appCheckEnforced !== false);
+  return [...noAppCheck, ...rest];
+}
+
+export function withConnectTimeout(promise, ms = CONNECT_TIMEOUT) {
   let timer;
+  let timedOut = false;
   const limit = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new Error('connection timed out')), ms);
+    timer = setTimeout(() => {
+      timedOut = true;
+      reject(new Error('connection timed out'));
+    }, ms);
   });
+  // If the underlying WebSocket resolves after the timeout already fired, close it immediately.
+  Promise.resolve(promise).then((s) => {
+    if (timedOut) s?.close?.().catch?.(() => {});
+  }, () => {});
   return Promise.race([promise, limit]).finally(() => clearTimeout(timer));
 }
 
@@ -93,8 +109,9 @@ async function connect(debugToken, handle, gen) {
     } catch { picked = null; }
   }
   let lastErr = null;
-  const projects = projectOrder().filter((i) => !liveSkip.has(i));
-  const order = projects.length ? projects : projectOrder();
+  const baseOrder = liveProjectOrder(projectOrder());
+  const projects = baseOrder.filter((i) => !liveSkip.has(i));
+  const order = projects.length ? projects : baseOrder;
   for (const i of order) {
     if (!active || gen !== callGen) return null;
     if (!isOnline()) throw new Error('OFFLINE: Talk to Debait needs an internet connection.');
@@ -106,13 +123,12 @@ async function connect(debugToken, handle, gen) {
         const s = await withConnectTimeout(open(debugToken, i, model, handle));
         if (!active || gen !== callGen) { s.close().catch(() => {}); return null; }
         picked = { i, model };
-        setPreferredProject(i);
         console.info(`[Debait] call connected: ${projectName(i)} project, ${model}`);
         return s;
       } catch (err) {
         lastErr = err;
         console.debug(`[Debait] call: ${projectName(i)} project, ${model} failed:`, err?.message || err);
-        if (/app check/i.test(String(err?.message))) { liveSkip.add(i); break; } // no Live model will work on this project
+        if (/app ?check/i.test(String(err?.message))) { liveSkip.add(i); break; } // no Live model will work on this project
       }
     }
   }
@@ -262,7 +278,7 @@ export async function startCall(debugToken) {
     const msg = String(err?.message || err);
     const offline = !isOnline() || /^OFFLINE:/i.test(msg);
     const micDenied = /NotAllowedError|PermissionDeniedError|permission/i.test(msg);
-    const appCheck = /app check|401|403/i.test(msg);
+    const appCheck = /app ?check|401|403/i.test(msg);
     await endCall(true);
     state(
       'error',

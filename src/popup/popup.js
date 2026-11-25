@@ -79,6 +79,7 @@ $('#turnOn').addEventListener('click', async () => {
       },
     });
     session.destroy();
+    await chrome.runtime.sendMessage({ type: MSG.INIT }).catch(() => {});
     btn.textContent = 'Gemini Nano is ready';
   } catch (err) {
     btn.textContent = err.message.length > 60 ? 'Could not download Gemini Nano' : err.message;

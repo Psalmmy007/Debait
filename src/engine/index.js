@@ -15,8 +15,8 @@ const GEMINI_TIMEOUT = 25000;  // Nano gets 10 s before the cloud is asked; clou
 const deviceTimeout = (passes = 1) => LOCAL_BUDGET * (deviceQueueDepth() + passes) + 15000;
 const SUMMARY_TIMEOUT = 30000;
 const RETRY_AFTER = 2 * 60 * 1000;     // after an App Check / permission rejection
-const RETRY_SOON = 15 * 1000;          // after a passing server error (busy, network)
-const retryDelay = (err) => (/app check|401|403|permission|api key/i.test(String(err?.message || err)) ? RETRY_AFTER : RETRY_SOON);
+const RETRY_SOON = 5 * 1000;           // after a passing server error (busy, network)
+const retryDelay = (err) => (/app ?check|401|403|permission|api key/i.test(String(err?.message || err)) ? RETRY_AFTER : RETRY_SOON);
 
 let gemini = 'unknown';        // unknown | ok | failing
 let lastError = null;
@@ -25,7 +25,7 @@ let retryAt = 0;
 // Clear any transient offline/network lockout the moment connectivity returns.
 if (typeof self !== 'undefined' && typeof self.addEventListener === 'function') {
   self.addEventListener('online', () => {
-    if (gemini === 'failing' && !/app check|401|403|permission|api key/i.test(String(lastError?.message || ''))) {
+    if (gemini === 'failing' && !/app ?check|401|403|permission|api key/i.test(String(lastError?.message || ''))) {
       gemini = 'unknown';
       retryAt = 0;
     }
@@ -50,7 +50,7 @@ function withTimeout(run, ms, message = 'Gemini took too long') {
   work.catch(() => {}); // prevent uncaught rejections if timeout settles first
   return Promise.race([work, limit]).finally(() => clearTimeout(timer));
 }
-const isAbort = (err) => err?.name === 'AbortError' || /aborted/i.test(String(err?.message || ''));
+const isAbort = (err) => err?.name === 'AbortError' || /aborted|LOCAL_ONLY_SWITCH|cancelled/i.test(String(err?.message || ''));
 const asLocalError = (err) => (/LOCAL_ONLY/.test(err?.message) ? err : new Error(`LOCAL_ONLY_FAILED: ${err?.message || err}`));
 const LOCAL_SLOW_MSG = 'LOCAL_ONLY_SLOW: Gemini Nano did not finish in time on this computer';
 const OFFLINE_SLOW_MSG = 'OFFLINE_SLOW: Gemini Nano did not finish in time on this computer';
@@ -99,7 +99,7 @@ export const engine = USE_MOCK ? mockEngine : {
   async getStatus(opts = {}) {
     const s = await firebaseEngine.getStatus(opts);
     if (gemini === 'failing' && s.source === 'cloud') {
-      const appCheck = /app check|401|403/i.test(lastError?.message || '');
+      const appCheck = /app ?check|401|403/i.test(lastError?.message || '');
       return {
         ...s,
         ready: false,
@@ -122,8 +122,13 @@ export const engine = USE_MOCK ? mockEngine : {
     }
     try {
       const nanoOnly = opts.localOnly || !isOnline();
-      return await withTimeout((signal) => firebaseEngine.summarize(page, { ...opts, signal }), nanoOnly ? deviceTimeout(1) : SUMMARY_TIMEOUT,
+      const out = await withTimeout((signal) => firebaseEngine.summarize(page, { ...opts, signal }), nanoOnly ? deviceTimeout(1) : SUMMARY_TIMEOUT,
         opts.localOnly ? LOCAL_SLOW_MSG : nanoOnly ? OFFLINE_SLOW_MSG : undefined);
+      if (out?.source === 'cloud') {
+        gemini = 'ok';
+        lastError = null;
+      }
+      return out;
     } catch (err) {
       if (opts.localOnly) throw asLocalError(err);
       throw new Error(`${!isOnline() ? 'OFFLINE_UNAVAILABLE' : 'AI_UNAVAILABLE'}: ${err?.message || err}`);

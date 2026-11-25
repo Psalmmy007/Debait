@@ -33,19 +33,31 @@ export async function openAudio({ onMic, onTalking }) {
   });
   // Capture at 16 kHz when Chrome allows it (proper anti-aliasing), otherwise let the worklet resample.
   let micCtx;
+  let outCtx;
   let src;
   try {
-    micCtx = new AudioContext({ sampleRate: MIC_RATE, latencyHint: 'interactive' });
-    src = micCtx.createMediaStreamSource(stream);
-  } catch {
-    await micCtx?.close().catch(() => {});
-    micCtx = new AudioContext({ latencyHint: 'interactive' });
-    src = micCtx.createMediaStreamSource(stream);
+    try {
+      micCtx = new AudioContext({ sampleRate: MIC_RATE, latencyHint: 'interactive' });
+      src = micCtx.createMediaStreamSource(stream);
+    } catch {
+      await micCtx?.close().catch(() => {});
+      micCtx = new AudioContext({ latencyHint: 'interactive' });
+      src = micCtx.createMediaStreamSource(stream);
+    }
+    try {
+      outCtx = new AudioContext({ sampleRate: SPEAKER_RATE, latencyHint: 'interactive' });
+    } catch {
+      await outCtx?.close().catch(() => {});
+      outCtx = new AudioContext({ latencyHint: 'interactive' });
+    }
+    const url = chrome.runtime.getURL('voice-worklets.js');
+    await Promise.all([micCtx.audioWorklet.addModule(url), outCtx.audioWorklet.addModule(url)]);
+    await Promise.all([micCtx.resume(), outCtx.resume()]);
+  } catch (err) {
+    stream.getTracks().forEach((t) => t.stop());
+    await Promise.all([micCtx?.close(), outCtx?.close()]).catch(() => {});
+    throw err;
   }
-  const outCtx = new AudioContext({ sampleRate: SPEAKER_RATE, latencyHint: 'interactive' });
-  const url = chrome.runtime.getURL('voice-worklets.js');
-  await Promise.all([micCtx.audioWorklet.addModule(url), outCtx.audioWorklet.addModule(url)]);
-  await Promise.all([micCtx.resume(), outCtx.resume()]);
 
   const mic = new AudioWorkletNode(micCtx, 'debait-mic', {
     processorOptions: { targetSampleRate: MIC_RATE, frameSeconds: MIC_FRAME_SEC },
@@ -75,7 +87,10 @@ export async function openAudio({ onMic, onTalking }) {
   src.connect(boost).connect(comp).connect(mic);
 
   // ---------- 24 kHz PCM playback on the dedicated audio render thread ----------
-  const player = new AudioWorkletNode(outCtx, 'debait-player', { outputChannelCount: [1] });
+  const player = new AudioWorkletNode(outCtx, 'debait-player', {
+    outputChannelCount: [1],
+    processorOptions: { inputSampleRate: SPEAKER_RATE },
+  });
   player.connect(outCtx.destination);
 
   function setTalking(next) {
@@ -102,7 +117,8 @@ export async function openAudio({ onMic, onTalking }) {
     play(b64) {
       if (closed || !b64) return;
       if (outCtx.state === 'suspended') outCtx.resume().catch(() => {});
-      const bin = atob(b64);
+      let bin;
+      try { bin = atob(b64); } catch { return; }
       const n = bin.length >> 1;
       if (!n) return;
       const samples = new Float32Array(n);

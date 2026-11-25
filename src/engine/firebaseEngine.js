@@ -42,7 +42,7 @@ export const applySkips = (skips = {}) => {
 // Gemini usually answers in 1-2 s, but under load the same request can sit for 8 s or fail with
 // "high demand". So: if a cloud request is slow (or fails with a passing server error), send the
 // same request once more and use whichever answers first; the slower one is cancelled.
-const isAuth = (err) => /app check|401|403|permission|api key/i.test(String(err?.message || err));
+const isAuth = (err) => /app ?check|401|403|permission|api key/i.test(String(err?.message || err));
 const isTransient = (err) => !isAuth(err) && /\b(5\d\d|429)\b|high demand|overloaded|unavailable|deadline|timed? ?out|network|fetch/i.test(String(err?.message || err));
 
 function hedged(run, after) {
@@ -236,10 +236,17 @@ function withCloudTimeout(signal, run, ms = CLOUD_BUDGET) {
   if (signal?.aborted) return Promise.reject(signal.reason || new DOMException('Aborted', 'AbortError'));
   const ctrl = new AbortController();
   activeCloudControllers.add(ctrl);
-  const timer = setTimeout(() => ctrl.abort(new Error('Cloud request timed out')), ms);
+  let timer;
+  const limit = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      const err = new Error('Cloud request timed out');
+      ctrl.abort(err);
+      reject(err);
+    }, ms);
+  });
   const work = Promise.resolve().then(() => run(anySignal(signal, ctrl.signal)));
   work.catch(() => {});
-  return work.finally(() => {
+  return Promise.race([work, limit]).finally(() => {
     clearTimeout(timer);
     activeCloudControllers.delete(ctrl);
   });
@@ -374,7 +381,7 @@ const nanoItemSchema = {
   properties: {
     k: { type: 'string', enum: ['c', 'r', 'f', 'e'] },
     s: { type: 'integer', minimum: 0, maximum: 100 },
-    t: { type: 'array', items: { type: 'string' }, maxItems: 4 },
+    t: { type: 'array', items: { type: 'string' } },
     w: { type: 'string' },
   },
   required: ['k', 's'],
@@ -412,6 +419,7 @@ export function expandNanoItem(data, text) {
 
 let nanoBase = null;
 let nanoWarming = null;
+let directNanoBroken = false;
 
 function createNanoSession(signal) {
   return LanguageModel.create({
@@ -452,6 +460,7 @@ async function scoreOneNano(text, signal) {
   let session = null;
   try {
     let base = nanoBase || (await prewarmNano());
+    signal?.throwIfAborted();
     if (base && typeof base.clone === 'function') {
       try {
         session = await base.clone(signal ? { signal } : undefined);
@@ -686,7 +695,7 @@ function safeSummaryStream(onText) {
 
 async function scoreWithNano(texts, { localOnly, offline, debugToken, signal, budget }) {
   const effectiveBudget = budget ?? budgetFor(localOnly);
-  if (typeof LanguageModel !== 'undefined' && typeof LanguageModel.create === 'function') {
+  if (!directNanoBroken && typeof LanguageModel !== 'undefined' && typeof LanguageModel.create === 'function') {
     try {
       const out = await onDevice(signal, effectiveBudget, slowErrorFor(localOnly), async (s) => {
         if (!localOnly && !offline && budget == null && deviceSlow()) throw new Error('skip');
@@ -702,7 +711,8 @@ async function scoreWithNano(texts, { localOnly, offline, debugToken, signal, bu
       // If aborted, timed out, or deliberately skipped in hybrid mode, propagate immediately.
       if (signal?.aborted || err?.message === 'skip' || /SLOW|in time/i.test(String(err?.message || ''))) throw err;
       // Otherwise (e.g. Chrome Prompt API rejected initialPrompts/clone/compact schema),
-      // fall back cleanly to Firebase AI Logic ONLY_ON_DEVICE so offline/Local-only never breaks.
+      // remember for this session and fall back cleanly to Firebase AI Logic ONLY_ON_DEVICE.
+      directNanoBroken = true;
       resetNanoBase();
       console.debug('[Debait] direct Nano clone session failed; falling back to Firebase ONLY_ON_DEVICE:', err?.message || err);
     }
@@ -827,7 +837,7 @@ export const firebaseEngine = {
           if (signal?.aborted) throw cloudErr;
           if (!triedDevice && (await deviceAvailability()) === 'available') {
             console.debug('[Debait] cloud slow or unreachable; failing over to Gemini Nano:', cloudErr?.message || cloudErr);
-            const r = await scoreWithNano(texts, { localOnly: false, offline: false, debugToken, signal, budget: DEVICE_BUDGET });
+            const r = await scoreWithNano(texts, { localOnly: false, offline: false, debugToken, signal, budget: DEVICE_BUDGET * 2 });
             out = r.out;
             list = r.list;
             res = r.res;
@@ -861,6 +871,7 @@ export const firebaseEngine = {
 
   async initDeviceModel() {
     deviceSlowUntil = 0;
+    directNanoBroken = false;
     availCache = { state: null, until: 0 };
     resetNanoBase();
     const device = await deviceAvailability();

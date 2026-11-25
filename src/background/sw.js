@@ -90,16 +90,21 @@ function rememberEngine(res) {
   chrome.storage.local.set({ engineMemory }).catch(() => {});
 }
 
-async function toEngine(payload) {
+async function sendToOffscreen(payload) {
   await ensureOffscreen();
-  await memoryLoaded;
-  const msg = { target: 'offscreen', debugToken: await debugToken(), memory: engineMemory, ...payload };
+  const msg = { target: 'offscreen', ...payload };
   let res = await chrome.runtime.sendMessage(msg).catch(() => undefined);
   if (res === undefined) {
     // a brand-new offscreen page may still be loading its code: give it a moment, once
     await new Promise((r) => setTimeout(r, 400));
     res = await chrome.runtime.sendMessage(msg).catch(() => undefined);
   }
+  return res;
+}
+
+async function toEngine(payload) {
+  await memoryLoaded;
+  const res = await sendToOffscreen({ debugToken: await debugToken(), memory: engineMemory, ...payload });
   rememberEngine(res);
   if (!res?.ok) throw new Error(res?.error || 'engine error');
   return res;
@@ -294,17 +299,17 @@ async function openMicTab() {
   }
   chrome.tabs.create({ url });
 }
+let skipNextStartFlow = false;
 async function startCallFlow() {
   if (!(await checkCallAllowed())) return;
-  await ensureOffscreen();
-  const mic = await chrome.runtime.sendMessage({ target: 'offscreen', type: 'debait/mic-state' }).catch(() => null);
+  const mic = await sendToOffscreen({ type: 'debait/mic-state' });
   if (mic?.state !== 'granted') {
     // ask for the microphone once, in a small extension tab; it starts the call when allowed
     await openMicTab();
     return;
   }
   await memoryLoaded;
-  await chrome.runtime.sendMessage({ target: 'offscreen', type: 'debait/call-start', debugToken: await debugToken(), memory: engineMemory }).catch(() => {});
+  await sendToOffscreen({ type: 'debait/call-start', debugToken: await debugToken(), memory: engineMemory });
 }
 async function endCallFlow() {
   const has = await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
@@ -315,7 +320,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local' || !changes.settings) return;
   const was = changes.settings.oldValue?.voice;
   const now = changes.settings.newValue?.voice;
-  if (now && !was) startCallFlow().catch(() => {});
+  if (now && !was) {
+    if (skipNextStartFlow) skipNextStartFlow = false;
+    else startCallFlow().catch(() => {});
+  }
   if (!now && was) endCallFlow().catch(() => {});
   const wasLocal = changes.settings.oldValue?.localOnly;
   const nowLocal = changes.settings.newValue?.localOnly;
@@ -384,10 +392,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       } else if (msg.type === 'debait/mic-granted') {
         if (await checkCallAllowed()) {
           const s = await getSettings();
-          if (!s.voice) await chrome.storage.local.set({ settings: { ...s, voice: true } });
-          await ensureOffscreen();
+          if (!s.voice) {
+            skipNextStartFlow = true;
+            await chrome.storage.local.set({ settings: { ...s, voice: true } });
+          }
           await memoryLoaded;
-          await chrome.runtime.sendMessage({ target: 'offscreen', type: 'debait/call-start', debugToken: await debugToken(), memory: engineMemory }).catch(() => {});
+          await sendToOffscreen({ type: 'debait/call-start', debugToken: await debugToken(), memory: engineMemory });
         }
         sendResponse({ ok: true });
       } else if (msg.type === 'debait/mic-denied') {

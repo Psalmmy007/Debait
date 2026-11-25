@@ -45,8 +45,12 @@ class DebaitMic extends AudioWorkletProcessor {
 }
 
 class DebaitPlayer extends AudioWorkletProcessor {
-  constructor() {
+  constructor(options) {
     super();
+    const inputRate = options?.processorOptions?.inputSampleRate || sampleRate;
+    this.ratio = inputRate / sampleRate;
+    this.exactRate = Math.abs(this.ratio - 1) < 1e-4;
+
     // Power-of-two circular Float32 ring buffer (~10.9 s @ 24 kHz), zero per-frame allocations.
     this.capacity = 1 << 18;
     this.mask = this.capacity - 1;
@@ -56,7 +60,7 @@ class DebaitPlayer extends AudioWorkletProcessor {
     this.buffered = 0;
 
     // Minimal steady 40 ms pre-buffer on initial start or underrun; 2 ms soft ramp eliminates clicks.
-    this.prebuffer = Math.round(sampleRate * 0.04);
+    this.prebuffer = Math.round(inputRate * 0.04);
     this.fadeStep = 1 / Math.max(1, Math.round(sampleRate * 0.002));
     this.quietHold = Math.round(sampleRate * 0.06);
 
@@ -64,6 +68,8 @@ class DebaitPlayer extends AudioWorkletProcessor {
     this.talking = false;
     this.gain = 0;
     this.lastSample = 0;
+    this.curSample = 0;
+    this.frac = 0;
     this.quietSamples = this.quietHold;
 
     this.port.onmessage = (e) => {
@@ -74,6 +80,8 @@ class DebaitPlayer extends AudioWorkletProcessor {
         this.writeIdx = 0;
         this.buffered = 0;
         this.playing = false;
+        this.curSample = 0;
+        this.frac = 0;
         this.quietSamples = this.quietHold;
         if (this.talking) {
           this.talking = false;
@@ -104,25 +112,55 @@ class DebaitPlayer extends AudioWorkletProcessor {
     const out = outputs[0]?.[0];
     if (!out) return true;
 
-    if (!this.playing && this.buffered >= this.prebuffer) {
-      this.playing = true;
-    }
-
     const ring = this.ring;
     const mask = this.mask;
     const step = this.fadeStep;
 
-    for (let i = 0; i < out.length; i++) {
-      if (this.playing && this.buffered > 0) {
-        const s = ring[this.readIdx];
+    if (!this.playing && this.buffered >= this.prebuffer) {
+      this.playing = true;
+      if (!this.exactRate && this.buffered > 0) {
+        this.curSample = ring[this.readIdx];
         this.readIdx = (this.readIdx + 1) & mask;
         this.buffered--;
+        this.frac = 0;
+      }
+    }
+
+    for (let i = 0; i < out.length; i++) {
+      let haveSample = false;
+      let s = 0;
+      if (this.playing) {
+        if (this.exactRate) {
+          if (this.buffered > 0) {
+            s = ring[this.readIdx];
+            this.readIdx = (this.readIdx + 1) & mask;
+            this.buffered--;
+            haveSample = true;
+          }
+        } else {
+          while (this.frac >= 1 && this.buffered > 0) {
+            this.curSample = ring[this.readIdx];
+            this.readIdx = (this.readIdx + 1) & mask;
+            this.buffered--;
+            this.frac -= 1;
+          }
+          if (this.buffered > 0) {
+            const nextSample = ring[this.readIdx];
+            s = this.curSample + (nextSample - this.curSample) * this.frac;
+            this.frac += this.ratio;
+            haveSample = true;
+          }
+        }
+      }
+
+      if (haveSample) {
         this.lastSample = s;
         if (this.gain < 1) this.gain = Math.min(1, this.gain + step);
         out[i] = s * this.gain;
         this.quietSamples = 0;
       } else {
         this.playing = false;
+        this.frac = 0;
         if (this.gain > 0) {
           this.gain = Math.max(0, this.gain - step);
           out[i] = this.lastSample * this.gain;

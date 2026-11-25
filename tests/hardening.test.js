@@ -20,6 +20,7 @@ import {
   cancelActiveCloudRequests,
 } from '../src/engine/firebaseEngine.js';
 import { LIVE_VOICE, ALLOW_BACKUP_FALLBACK, FIREBASE_PROJECTS } from '../src/engine/firebaseConfig.js';
+import { liveProjectOrder, withConnectTimeout } from '../src/offscreen/call.js';
 import { SITES, EXCLUDED_SITES } from '../manifest.config.js';
 import { isPrivateHost } from '../src/content/sites/index.js';
 
@@ -149,6 +150,35 @@ test('Nano compact expansion integrates cleanly with strict rewrite-safety norma
 test('P2-11: AudioWorklet ring buffer, optimistic mute, and WebGL restoreContext guard remain intact', () => {
   const worklet = fs.readFileSync('public/voice-worklets.js', 'utf8');
   assert.ok(worklet.includes('new Float32Array(this.capacity)') && worklet.includes("data === 'flush'"));
+  assert.ok(worklet.includes('inputSampleRate'), 'DebaitPlayer must support hardware sample-rate fallback');
   const orbGl = fs.readFileSync('src/content/ui/orb-gl.js', 'utf8');
   assert.ok(orbGl.includes('lostByUs') && orbGl.includes('canRestore') && orbGl.includes('gl.isContextLost()'));
+});
+
+test('Network, Call, and Local resilience regressions', async () => {
+  // Call: prefers Live-compatible non-App-Check project first without breaking HTTP projectOrder()
+  assert.equal(projectOrder()[0], 0);
+  const liveOrder = liveProjectOrder([0, 1]);
+  assert.equal(liveOrder[0], 1, 'Live WebSocket order must try non-App-Check-enforced project first');
+  assert.deepEqual(liveOrder, [1, 0]);
+
+  // Call: withConnectTimeout closes late-resolving WebSocket sessions
+  let closed = false;
+  let resolveLate;
+  const late = new Promise((r) => { resolveLate = r; });
+  await assert.rejects(() => withConnectTimeout(late, 10), /timed out/i);
+  resolveLate({ close: async () => { closed = true; } });
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(closed, true, 'late WebSocket session must be closed after timeout');
+
+  // Local: nanoItemSchema must not include maxItems (incompatible with some Chrome Prompt API builds)
+  const engineSrc = fs.readFileSync('src/engine/firebaseEngine.js', 'utf8');
+  assert.equal(engineSrc.includes('maxItems'), false, 'nanoItemSchema must omit maxItems');
+  assert.ok(engineSrc.includes('directNanoBroken'), 'direct Nano fallback must avoid repeating broken calls');
+  assert.ok(engineSrc.includes('/app ?check|401|403'), 'isAuth must match Firebase appCheck/* codes without a space');
+
+  // Network: retry cooldown in engine/index.js must be shorter than content/main.js online retry delay
+  const idxSrc = fs.readFileSync('src/engine/index.js', 'utf8');
+  assert.ok(idxSrc.includes('RETRY_SOON = 5 * 1000'));
+  assert.ok(idxSrc.includes('LOCAL_ONLY_SWITCH'));
 });
