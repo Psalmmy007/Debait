@@ -62,20 +62,25 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick, onMu
   const MIC_ON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>';
   const MIC_OFF_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 9v2a3 3 0 0 0 5.12 2.12M15 9.34V6a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A6.5 6.5 0 0 1 5.5 11m13 0a6.45 6.45 0 0 1-.46 2.4"/><path d="M12 17.5V21M3 3l18 18"/></svg>';
 
+  let isMuted = false;
   function applyMuted(muted) {
     if (!muteBtn) return;
-    const on = !!muted;
-    muteBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
-    muteBtn.setAttribute('aria-label', on ? 'Unmute microphone' : 'Mute microphone');
-    muteBtn.title = on ? 'Unmute mic' : 'Mute mic';
-    setHTML(muteBtn, on ? MIC_OFF_SVG : MIC_ON_SVG);
+    isMuted = !!muted;
+    muteBtn.setAttribute('aria-pressed', isMuted ? 'true' : 'false');
+    muteBtn.setAttribute('aria-label', isMuted ? 'Unmute microphone' : 'Mute microphone');
+    muteBtn.title = isMuted ? 'Unmute mic' : 'Mute mic';
+    setHTML(muteBtn, isMuted ? MIC_OFF_SVG : MIC_ON_SVG);
   }
   applyMuted(false);
   muteBtn?.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
+  muteBtn?.addEventListener('mousedown', (e) => { e.stopPropagation(); });
   muteBtn?.addEventListener('click', (e) => {
     e.stopPropagation();
+    e.preventDefault();
     cancelClicks();
-    onMuteToggle?.();
+    const next = !isMuted;
+    applyMuted(next); // 0 ms optimistic visual flip
+    onMuteToggle?.(next);
   });
 
   // drawn once at the largest size, so it stays sharp when scaled up

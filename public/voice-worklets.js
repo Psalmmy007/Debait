@@ -1,14 +1,12 @@
-// Debait voice call audio, running on the audio thread.
+// Debait voice call audio, running on the audio render thread.
 //
-// debait-mic: microphone -> 16 kHz 16-bit PCM in 40 ms frames.
-//   Anti-aliased (averages every input sample in each output step, not just one), keeps its
-//   position across blocks so there are no clicks at block edges, and sends 25 frames a second
-//   instead of hundreds of tiny ones.
+// debait-mic: microphone -> 16 kHz 16-bit PCM in steady 20 ms frames.
+//   Anti-aliased (averages every input sample in each output step), keeps its fractional position
+//   across blocks so there are no clicks at block edges.
 //
-// debait-player: 24 kHz PCM from Gemini -> speakers, through a jitter buffer.
-//   Waits for a small cushion before speaking, rides out late network packets instead of
-//   cracking, fades in/out on gaps, grows the cushion if the network keeps stalling, and
-//   reports when Gemini starts and stops talking.
+// debait-player: 24 kHz PCM from Gemini -> speakers via a lock-free Float32 circular ring buffer.
+//   Runs 100% off the main thread so page loads/jank never cause crackling or popping.
+//   Uses a steady 40 ms pre-buffer on initial start/underrun, 2 ms anti-click ramps, and <1 ms flush on barge-in.
 
 class DebaitMic extends AudioWorkletProcessor {
   constructor(options) {
@@ -49,54 +47,98 @@ class DebaitMic extends AudioWorkletProcessor {
 class DebaitPlayer extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.queue = [];       // Float32Array chunks
-    this.head = 0;         // read position in queue[0]
-    this.buffered = 0;     // samples waiting
-    this.cushion = Math.round(sampleRate * 0.22);   // start speaking once this much is buffered (fewer mid-word stalls)
-    this.maxCushion = Math.round(sampleRate * 0.6);
+    // Power-of-two circular Float32 ring buffer (~10.9 s @ 24 kHz), zero per-frame allocations.
+    this.capacity = 1 << 18;
+    this.mask = this.capacity - 1;
+    this.ring = new Float32Array(this.capacity);
+    this.readIdx = 0;
+    this.writeIdx = 0;
+    this.buffered = 0;
+
+    // Minimal steady 40 ms pre-buffer on initial start or underrun; 2 ms soft ramp eliminates clicks.
+    this.prebuffer = Math.round(sampleRate * 0.04);
+    this.fadeStep = 1 / Math.max(1, Math.round(sampleRate * 0.002));
+    this.quietHold = Math.round(sampleRate * 0.06);
+
     this.playing = false;
     this.talking = false;
-    this.gain = 0;         // for short fades, so gaps never click
-    this.quiet = 0;        // samples of silence since the last audio
-    this.last = 0;         // last sample played, faded out on a gap instead of cutting to 0
+    this.gain = 0;
+    this.lastSample = 0;
+    this.quietSamples = this.quietHold;
+
     this.port.onmessage = (e) => {
-      if (e.data === 'clear') {
-        this.queue = []; this.head = 0; this.buffered = 0; this.playing = false;
+      const data = e.data;
+      if (data === 'flush' || data === 'clear') {
+        // Instant barge-in (< 1 ms): clear ring buffer immediately and drop talking state.
+        this.readIdx = 0;
+        this.writeIdx = 0;
+        this.buffered = 0;
+        this.playing = false;
+        this.quietSamples = this.quietHold;
+        if (this.talking) {
+          this.talking = false;
+          this.port.postMessage({ talking: false });
+        }
         return;
       }
-      this.queue.push(e.data);
-      this.buffered += e.data.length;
+      if (!(data instanceof Float32Array) || !data.length) return;
+      const len = data.length;
+      const free = this.capacity - this.buffered;
+      if (len > free) {
+        // Overflow guard: advance read pointer to keep newest audio.
+        const drop = Math.min(this.buffered, len - free);
+        this.readIdx = (this.readIdx + drop) & this.mask;
+        this.buffered -= drop;
+      }
+      const n = Math.min(len, this.capacity);
+      const start = len - n;
+      for (let i = start; i < len; i++) {
+        this.ring[this.writeIdx] = data[i];
+        this.writeIdx = (this.writeIdx + 1) & this.mask;
+      }
+      this.buffered += n;
     };
   }
 
   process(_inputs, outputs) {
-    const out = outputs[0][0];
-    if (!this.playing && this.buffered >= this.cushion) this.playing = true;
-    const fadeStep = 1 / (sampleRate * 0.006); // 6 ms fades
-    for (let i = 0; i < out.length; i++) {
-      let s = 0;
-      if (this.playing && this.buffered > 0) {
-        const chunk = this.queue[0];
-        s = chunk[this.head++];
-        this.last = s;
-        this.buffered--;
-        if (this.head >= chunk.length) { this.queue.shift(); this.head = 0; }
-        this.gain = Math.min(1, this.gain + fadeStep);
-        this.quiet = 0;
-      } else {
-        if (this.playing) {
-          // ran dry mid-sentence: the network is slow, so keep a bigger cushion from now on
-          this.playing = false;
-          this.cushion = Math.min(this.maxCushion, Math.round(this.cushion * 1.5));
-        }
-        this.gain = Math.max(0, this.gain - fadeStep);
-        s = this.last;
-        this.quiet++;
-      }
-      out[i] = s * this.gain;
+    const out = outputs[0]?.[0];
+    if (!out) return true;
+
+    if (!this.playing && this.buffered >= this.prebuffer) {
+      this.playing = true;
     }
-    const talking = this.quiet < sampleRate * 0.35;
-    if (talking !== this.talking) { this.talking = talking; this.port.postMessage({ talking }); }
+
+    const ring = this.ring;
+    const mask = this.mask;
+    const step = this.fadeStep;
+
+    for (let i = 0; i < out.length; i++) {
+      if (this.playing && this.buffered > 0) {
+        const s = ring[this.readIdx];
+        this.readIdx = (this.readIdx + 1) & mask;
+        this.buffered--;
+        this.lastSample = s;
+        if (this.gain < 1) this.gain = Math.min(1, this.gain + step);
+        out[i] = s * this.gain;
+        this.quietSamples = 0;
+      } else {
+        this.playing = false;
+        if (this.gain > 0) {
+          this.gain = Math.max(0, this.gain - step);
+          out[i] = this.lastSample * this.gain;
+          if (this.gain === 0) this.lastSample = 0;
+        } else {
+          out[i] = 0;
+        }
+        this.quietSamples++;
+      }
+    }
+
+    const isTalking = this.playing || this.buffered > 0 || this.gain > 0.001 || this.quietSamples < this.quietHold;
+    if (isTalking !== this.talking) {
+      this.talking = isTalking;
+      this.port.postMessage({ talking: isTalking });
+    }
     return true;
   }
 }

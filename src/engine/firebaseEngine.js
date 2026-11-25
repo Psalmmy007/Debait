@@ -174,6 +174,7 @@ const anySignal = (...signals) => {
 // - in hybrid mode, Nano that misses its budget is skipped for a while and the cloud answers
 export const LOCAL_BUDGET = 150 * 1000; // Local only / offline: per request, counted from when its turn starts
 const DEVICE_BUDGET = 10 * 1000; // hybrid: after this, cancel Nano and ask the cloud instead
+const CLOUD_BUDGET = 8 * 1000;   // hybrid: tight per-request cloud cap so flaky networks fail over to Nano fast
 const SLOW_FOR = 10 * 60 * 1000; // hybrid: how long to skip a Nano that was too slow
 let deviceSlowUntil = 0;
 const deviceSlow = () => Date.now() < deviceSlowUntil;
@@ -208,6 +209,7 @@ async function deviceTurn(signal, run) {
  * A streamed answer calls started() on its first words, which lifts the budget.
  */
 function onDevice(signal, budget, slowError, run) {
+  if (signal?.aborted) return Promise.reject(signal.reason || new DOMException('Aborted', 'AbortError'));
   return deviceTurn(signal, async () => {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(slowError), budget);
@@ -219,6 +221,15 @@ function onDevice(signal, budget, slowError, run) {
       clearTimeout(timer);
     }
   });
+}
+/** Tight per-request timeout on cloud calls so flaky networks fail over to Nano instead of hanging. */
+function withCloudTimeout(signal, run, ms = CLOUD_BUDGET) {
+  if (signal?.aborted) return Promise.reject(signal.reason || new DOMException('Aborted', 'AbortError'));
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(new Error('Cloud request timed out')), ms);
+  const work = Promise.resolve().then(() => run(anySignal(signal, ctrl.signal)));
+  work.catch(() => {});
+  return work.finally(() => clearTimeout(timer));
 }
 const localSlow = () => new Error('LOCAL_ONLY_SLOW: Gemini Nano did not finish in time on this computer');
 const offlineSlow = () => new Error('OFFLINE_SLOW: Gemini Nano did not finish in time on this computer');
@@ -616,6 +627,29 @@ function safeSummaryStream(onText) {
   };
 }
 
+async function scoreWithNano(texts, { localOnly, offline, debugToken, signal, budget }) {
+  if (typeof LanguageModel !== 'undefined' && typeof LanguageModel.create === 'function') {
+    const out = await onDevice(signal, budget ?? budgetFor(localOnly), slowErrorFor(localOnly), async (s) => {
+      if (!localOnly && !offline && budget == null && deviceSlow()) throw new Error('skip');
+      const items = [];
+      for (const text of texts) {
+        s?.throwIfAborted();
+        items.push(await scoreOneNano(text, s));
+      }
+      return items;
+    });
+    return { out, list: null, res: null };
+  }
+  const request = prompt(texts);
+  const res = await onDevice(signal, budget ?? budgetFor(localOnly), slowErrorFor(localOnly), (s) => {
+    if (!localOnly && !offline && budget == null && deviceSlow()) throw new Error('skip');
+    return model(ON_DEVICE, debugToken, preferred, s).generateContent(request, { signal: s });
+  });
+  const list = resultList(res);
+  if (!list) throw unreadable('Gemini Nano');
+  return { out: null, list, res };
+}
+
 /** @type {import('./contract.js').Engine} */
 export const firebaseEngine = {
   /** Streams the summary: onText(textSoFar) is called as the words arrive. */
@@ -624,7 +658,9 @@ export const firebaseEngine = {
     const request = summaryPrompt(page);
     const streamOut = safeSummaryStream(onText);
     const offline = !isOnline();
+    let triedDevice = false;
     if ((await useDevice(localOnly)) && (localOnly || offline || (!deviceSlow() && deviceQueue === 0))) {
+      triedDevice = true;
       // Nano gets a budget to start writing; once it writes, it may finish
       try {
         const out = await onDevice(signal, budgetFor(localOnly), slowErrorFor(localOnly),
@@ -643,7 +679,8 @@ export const firebaseEngine = {
     for (const i of projectOrder()) {
       try {
         const m = summaryModel(IN_CLOUD, debugToken, i);
-        const out = await hedgedStream((s, first, chunk) => streamOnce(m, request, anySignal(s, signal), first, chunk), 3000, streamOut);
+        const out = await withCloudTimeout(signal, (cs) =>
+          hedgedStream((s, first, chunk) => streamOnce(m, request, anySignal(s, cs), first, chunk), 3000, streamOut), CLOUD_BUDGET + 2000);
         if (!out.text) throw new Error('empty summary');
         preferred = i;
         if (isSummaryRefusal(out.text)) return { summary: NO_SUMMARY_TEXT, source: 'none' };
@@ -654,6 +691,14 @@ export const firebaseEngine = {
         if (isAuth(err)) skipProject(i);
       }
     }
+    // Cloud failed or timed out on a flaky network: fail over to Gemini Nano if available.
+    if (!triedDevice && !signal?.aborted && (await deviceAvailability()) === 'available') {
+      const out = await onDevice(signal, LOCAL_BUDGET, offlineSlow(),
+        (s, started) => streamOnce(summaryModel(ON_DEVICE, debugToken, preferred, s), request, s, started, streamOut));
+      if (!out.text) throw new Error('empty summary');
+      if (isSummaryRefusal(out.text)) return { summary: NO_SUMMARY_TEXT, source: 'none' };
+      return { summary: out.text, source: out.source };
+    }
     throw lastErr || new Error('no Firebase project answered');
   },
   async scoreHeadlines(texts, { localOnly, debugToken, signal }) {
@@ -662,29 +707,15 @@ export const firebaseEngine = {
     let list = null;
     let out = null;
     let mode = IN_CLOUD;
+    let triedDevice = false;
     if ((await useDevice(localOnly)) && (localOnly || offline || (!deviceSlow() && deviceQueue === 0))) {
+      triedDevice = true;
       try {
-        if (typeof LanguageModel !== 'undefined' && typeof LanguageModel.create === 'function') {
-          out = await onDevice(signal, budgetFor(localOnly), slowErrorFor(localOnly), async (s) => {
-            if (!localOnly && !offline && deviceSlow()) throw new Error('skip');
-            const items = [];
-            for (const text of texts) {
-              s?.throwIfAborted();
-              items.push(await scoreOneNano(text, s));
-            }
-            return items;
-          });
-          mode = ON_DEVICE;
-        } else {
-          const request = prompt(texts);
-          res = await onDevice(signal, budgetFor(localOnly), slowErrorFor(localOnly), (s) => {
-            if (!localOnly && !offline && deviceSlow()) throw new Error('skip');
-            return model(ON_DEVICE, debugToken, preferred, s).generateContent(request, { signal: s });
-          });
-          list = resultList(res);
-          if (!list) throw unreadable('Gemini Nano');
-          mode = ON_DEVICE;
-        }
+        const r = await scoreWithNano(texts, { localOnly, offline, debugToken, signal });
+        out = r.out;
+        list = r.list;
+        res = r.res;
+        mode = ON_DEVICE;
       } catch (err) {
         if (localOnly || offline || signal?.aborted) throw err;
         // one garbled answer doesn't make Nano slow: only real failures switch it off for a while
@@ -699,19 +730,36 @@ export const firebaseEngine = {
         if (localOnly) throw new Error('LOCAL_ONLY: Gemini Nano is not ready on this computer');
         if (offline) throw noEngineOffline(); // never wait on a cloud request that cannot succeed
         const request = prompt(texts);
-        // cloud: fall through to the next project; a slow request is sent once more
-        const won = await raceProjects(projectOrder(), (i, outer) => {
-          const m = model(IN_CLOUD, debugToken, i);
-          return hedged((s) => m.generateContent(request, { signal: anySignal(s, outer, signal) }), 4000);
-        }, 2500);
-        preferred = won.i;
-        res = won.v;
-        list = resultList(res);
-        if (!list) throw unreadable('Gemini');
+        try {
+          // cloud: tight per-request timeout so flaky networks fail over to Nano instead of hanging
+          const won = await withCloudTimeout(signal, (cs) =>
+            raceProjects(projectOrder(), (i, outer) => {
+              const m = model(IN_CLOUD, debugToken, i);
+              return hedged((s) => m.generateContent(request, { signal: anySignal(s, outer, cs) }), 3500);
+            }, 2200), CLOUD_BUDGET);
+          preferred = won.i;
+          res = won.v;
+          list = resultList(res);
+          if (!list) throw unreadable('Gemini');
+        } catch (cloudErr) {
+          if (signal?.aborted) throw cloudErr;
+          if (!triedDevice && (await deviceAvailability()) === 'available') {
+            console.debug('[Debait] cloud slow or unreachable; failing over to Gemini Nano:', cloudErr?.message || cloudErr);
+            const r = await scoreWithNano(texts, { localOnly: false, offline: false, debugToken, signal, budget: DEVICE_BUDGET });
+            out = r.out;
+            list = r.list;
+            res = r.res;
+            mode = ON_DEVICE;
+          } else {
+            throw cloudErr;
+          }
+        }
       }
-      const source = res.response.inferenceSource === 'on_device' ? 'on-device' : 'cloud';
-      const blank = { kind: 'clean', score: 0, triggers: [] };
-      out = texts.map((_, i) => ({ ...(list[i] && typeof list[i] === 'object' ? list[i] : blank), source }));
+      if (!out) {
+        const source = res.response.inferenceSource === 'on_device' ? 'on-device' : 'cloud';
+        const blank = { kind: 'clean', score: 0, triggers: [] };
+        out = texts.map((_, i) => ({ ...(list[i] && typeof list[i] === 'object' ? list[i] : blank), source }));
+      }
     }
     await fixUnchangedRewrites(out, texts, { mode, localOnly, debugToken, signal });
     return out;

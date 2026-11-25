@@ -325,7 +325,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       } else if (msg.type === 'debait/call-mute-toggle') {
         const has = await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
         const res = has.length
-          ? await chrome.runtime.sendMessage({ target: 'offscreen', type: 'debait/call-mute-toggle' }).catch(() => null)
+          ? await chrome.runtime.sendMessage({ target: 'offscreen', type: 'debait/call-mute-toggle', muted: msg.muted }).catch(() => null)
           : null;
         sendResponse({ ok: true, muted: !!res?.muted });
       } else if (msg.type === 'debait/call-status') {

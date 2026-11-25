@@ -318,13 +318,14 @@ export async function endCall(quiet = false) {
   if (!quiet) state('ended', '', { muted: false });
 }
 
-export function toggleMute() {
+export function setMuted(next) {
   if (!active) return false;
-  userMuted = !userMuted;
+  userMuted = typeof next === 'boolean' ? next : !userMuted;
   audio?.setMuted(userMuted);
   state('mute', '', { muted: userMuted });
   return userMuted;
 }
 
+export const toggleMute = () => setMuted();
 export const isMuted = () => active && userMuted;
 export const inCall = () => active;

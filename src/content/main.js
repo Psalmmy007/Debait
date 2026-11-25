@@ -156,7 +156,7 @@ async function start() {
         voiceBusy = false;
       }
     },
-    onMuteToggle: () => { if (!extensionGone()) send({ type: 'debait/call-mute-toggle' }); },
+    onMuteToggle: (muted) => { if (!extensionGone()) send({ type: 'debait/call-mute-toggle', muted }); },
   });
   const panel = createSettingsPanel(overlay.panelLayer, {
     getPage: pageCounts,
@@ -431,6 +431,7 @@ async function start() {
     refreshOrb();
     try {
       const res = await send({ type: MSG.SCORE, texts: batch.map((r) => r.text) });
+      if (!alive) return;
       if (!res?.ok) throw new Error(res?.error || 'no response');
       notice = '';
       stats.hits += res.cacheHits;
@@ -439,6 +440,7 @@ async function start() {
       if (res.results.some((r) => r?.source === 'mock')) upgradeSoon();
       console.debug(`[Debait] scored ${batch.length} (cache hits so far: ${stats.hits}/${stats.scored})`);
     } catch (err) {
+      if (!alive) return;
       console.debug('[Debait] scoring failed:', err.message); // the orb tells the user; not an extension error
       // keep the records (no rescan loop), hide the waiting pills, tell the user why, retry in a minute
       batch.forEach((rec) => { rec.queued = false; rec.failed = true; rec.tag?.setVisible(false); });
@@ -491,11 +493,11 @@ async function start() {
   }
 
   async function flush() {
-    if (flushing) return;
+    if (flushing || !alive) return;
     flushing = true;
     // up to PARALLEL batches at once online (1 at a time on Nano), viewport headlines strictly first
     const running = new Set();
-    while (queue.length || running.size) {
+    while (alive && (queue.length || running.size)) {
       const nano = isNanoOnly();
       const maxParallel = nano ? 1 : PARALLEL;
       const batchSize = nano ? 1 : BATCH;

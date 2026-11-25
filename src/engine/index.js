@@ -46,8 +46,11 @@ function withTimeout(run, ms, message = 'Gemini took too long') {
       no(err);
     }, ms);
   });
-  return Promise.race([run(ctrl.signal), limit]).finally(() => clearTimeout(timer));
+  const work = Promise.resolve().then(() => run(ctrl.signal));
+  work.catch(() => {}); // prevent uncaught rejections if timeout settles first
+  return Promise.race([work, limit]).finally(() => clearTimeout(timer));
 }
+const isAbort = (err) => err?.name === 'AbortError' || /aborted/i.test(String(err?.message || ''));
 const asLocalError = (err) => (/LOCAL_ONLY/.test(err?.message) ? err : new Error(`LOCAL_ONLY_FAILED: ${err?.message || err}`));
 const LOCAL_SLOW_MSG = 'LOCAL_ONLY_SLOW: Gemini Nano did not finish in time on this computer';
 const OFFLINE_SLOW_MSG = 'OFFLINE_SLOW: Gemini Nano did not finish in time on this computer';
@@ -80,10 +83,12 @@ export const engine = USE_MOCK ? mockEngine : {
       lastError = null;
       return res;
     } catch (err) {
-      gemini = 'failing';
-      lastError = err;
-      retryAt = Date.now() + retryDelay(err);
-      console.debug('[Debait] Gemini unavailable, using quick estimates for now:', err.message);
+      if (!isAbort(err)) {
+        gemini = 'failing';
+        lastError = err;
+        retryAt = Date.now() + retryDelay(err);
+        console.debug('[Debait] Gemini unavailable, using quick estimates for now:', err.message);
+      }
       return mockEngine.scoreHeadlines(texts, opts);
     }
   },
