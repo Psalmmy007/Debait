@@ -30,7 +30,7 @@ chrome.alarms?.onAlarm.addListener((a) => { if (a.name === 'debait-build-check')
 
 // ---------- put Debait into tabs that were already open (after install, update or reload) ----------
 const SKIP_INJECT_RE = /(^|\.)(github\.dev|vscode\.dev|mail\.google\.com|docs\.google\.com|drive\.google\.com|sheets\.google\.com|slides\.google\.com|outlook\.live\.com|outlook\.office\.com|slack\.com|discord\.com|notion\.so|figma\.com|linear\.app|chase\.com|bankofamerica\.com|wellsfargo\.com|paypal\.com|chromewebstore\.google\.com)$/i;
-chrome.runtime.onInstalled.addListener(async () => {
+async function injectOpenTabs() {
   try {
     const files = chrome.runtime.getManifest().content_scripts?.[0]?.js || [];
     const tabs = await chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] });
@@ -42,7 +42,15 @@ chrome.runtime.onInstalled.addListener(async () => {
       chrome.scripting.executeScript({ target: { tabId: t.id }, files }).catch(() => {});
     }
   } catch { /* ignore startup query failures */ }
-});
+}
+chrome.runtime.onInstalled.addListener(() => { injectOpenTabs(); });
+// Ensure tabs stay live after unpacked chrome.runtime.reload() even when onInstalled doesn't re-fire.
+chrome.storage.session?.get('debaitTabsInjected').then((res) => {
+  if (!res?.debaitTabsInjected) {
+    chrome.storage.session.set({ debaitTabsInjected: true }).catch(() => {});
+    injectOpenTabs();
+  }
+}).catch(() => {});
 const CACHE_MAX = 3000;
 
 // ---------- offscreen engine host ----------

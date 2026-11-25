@@ -7,13 +7,13 @@ import { NO_SUMMARY_TEXT, hasEnoughSummaryText } from './contract.js';
 
 export const USE_MOCK = false;
 
-const FIRST_TIMEOUT = 30000;   // the first answer also connects (App Check)
-const GEMINI_TIMEOUT = 25000;  // Nano gets 10 s before the cloud is asked; cloud has an 8 s per-request cap
+const FIRST_TIMEOUT = 45000;   // the first answer also connects (App Check + initial cloud round-trip)
+const GEMINI_TIMEOUT = 35000;  // Nano gets 10 s before the cloud is asked; cloud has an 18 s per-request cap
 // Local only / offline: Nano is the only engine and runs one prompt at a time, each with its own
 // LOCAL_BUDGET once its turn comes (firebaseEngine.js). So the overall limit covers the requests
 // already waiting ahead of this one (plus an optional second rewrite pass when scoring).
 const deviceTimeout = (passes = 1) => LOCAL_BUDGET * (deviceQueueDepth() + passes) + 15000;
-const SUMMARY_TIMEOUT = 30000;
+const SUMMARY_TIMEOUT = 40000;
 const RETRY_AFTER = 2 * 60 * 1000;     // after an App Check / permission rejection
 const RETRY_SOON = 5 * 1000;           // after a passing server error (busy, network)
 const retryDelay = (err) => (/app ?check|401|403|permission|api key/i.test(String(err?.message || err)) ? RETRY_AFTER : RETRY_SOON);

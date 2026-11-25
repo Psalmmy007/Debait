@@ -174,7 +174,7 @@ const anySignal = (...signals) => {
 // - in hybrid mode, Nano that misses its budget is skipped for a while and the cloud answers
 export const LOCAL_BUDGET = 150 * 1000; // Local only / offline: per request, counted from when its turn starts
 const DEVICE_BUDGET = 10 * 1000; // hybrid: after this, cancel Nano and ask the cloud instead
-const CLOUD_BUDGET = 8 * 1000;   // hybrid: tight per-request cloud cap so flaky networks fail over to Nano fast
+const CLOUD_BUDGET = 18 * 1000;  // hybrid: generous enough for international/busy networks, still fails over to Nano if hung
 const SLOW_FOR = 10 * 60 * 1000; // hybrid: how long to skip a Nano that was too slow
 let deviceSlowUntil = 0;
 const deviceSlow = () => Date.now() < deviceSlowUntil;

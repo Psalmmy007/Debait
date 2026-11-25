@@ -33,6 +33,9 @@ const adapters = [
     match: (h) => /^(www.)?google.[a-z.]+$/.test(h),
     // only the result titles and Top stories / News cards; never AI Overviews, AI Mode or your own query
     find: (root) => (/[?&]udm=50(&|$)/.test(location.search) ? [] : root.querySelectorAll('#rso a h3, #rso g-section-with-header a [role="heading"], #rso a [role="heading"][aria-level="3"]')),
+    // Google wraps organic result <h3> links inside span.V9tjod with transform: scaleY(-1);
+    // placing the tag right after .yuRUbf keeps it upright and cleanly below the headline.
+    place: (el) => el.closest('.yuRUbf') || el,
   },
   {
     name: 'demo',

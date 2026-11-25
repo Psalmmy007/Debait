@@ -181,4 +181,10 @@ test('Network, Call, and Local resilience regressions', async () => {
   const idxSrc = fs.readFileSync('src/engine/index.js', 'utf8');
   assert.ok(idxSrc.includes('RETRY_SOON = 5 * 1000'));
   assert.ok(idxSrc.includes('LOCAL_ONLY_SWITCH'));
+
+  // Google Search: avoid inverted tags inside span.V9tjod scaleY(-1) wrappers
+  const sitesSrc = fs.readFileSync('src/content/sites/index.js', 'utf8');
+  assert.ok(sitesSrc.includes("el.closest('.yuRUbf')"), 'Google adapter must place tags outside scaleY(-1) link wrappers');
+  const tagSrc = fs.readFileSync('src/content/ui/tag.js', 'utf8');
+  assert.ok(tagSrc.includes('hasVerticalFlip') && tagSrc.includes('scaleY(-1)'), 'tag.js must counter-flip if mounted inside a vertically flipped ancestor');
 });

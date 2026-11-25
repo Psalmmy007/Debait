@@ -13,6 +13,19 @@ function isDarkTone(el) {
   return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6;
 }
 
+/** True when an ancestor chain applies an odd number of vertical flips (e.g. Google's scaleY(-1) wrapper). */
+function hasVerticalFlip(el) {
+  let flipped = false;
+  for (let p = el.parentElement; p && p !== document.documentElement; p = p.parentElement) {
+    const t = getComputedStyle(p).transform;
+    if (!t || t === 'none') continue;
+    try {
+      if (new DOMMatrix(t).d < 0) flipped = !flipped;
+    } catch { /* ignore unsupported transform */ }
+  }
+  return flipped;
+}
+
 export function createTag(anchor, { onClick }) {
   const host = document.createElement('debait-tag');
   host.style.cssText =
@@ -21,6 +34,7 @@ export function createTag(anchor, { onClick }) {
   adoptCss(shadow, tokens + tagCss);
   setHTML(shadow, `<button class="tag pending" type="button"><span class="ico">${ICON.dots}</span><span class="label">Reading</span><span class="score"></span></button>`);
   anchor.insertAdjacentElement('afterend', host);
+  if (hasVerticalFlip(host)) host.style.setProperty('transform', 'scaleY(-1)', 'important');
 
   const btn = shadow.querySelector('.tag');
   const ico = shadow.querySelector('.ico');
