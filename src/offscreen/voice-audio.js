@@ -1,12 +1,12 @@
 // Debait's own audio pipeline for the voice call (replaces the SDK's startAudioConversation):
-// - Mic capture: 16 kHz 16-bit PCM in steady 30 ms frames via AudioWorklet (echo cancellation,
+// - Mic capture: 16 kHz 16-bit PCM in steady 20 ms frames via AudioWorklet (echo cancellation,
 //   noise suppression, and auto gain control explicitly enabled).
-// - Playback: 24 kHz PCM scheduled via monotonic `nextPlayTime` AudioBufferSourceNodes with a
-//   40 ms jitter buffer for zero-crackle stitching and instant mid-sentence barge-in.
+// - Playback: 24 kHz PCM scheduled immediately via monotonic `nextPlayTime` AudioBufferSourceNodes
+//   with zero artificial lead-in delay and instant mid-sentence barge-in.
 const MIC_RATE = 16000;
 const SPEAKER_RATE = 24000;
-const MIC_FRAME_SEC = 0.03;      // steady 30 ms mic frames (480 samples @ 16 kHz)
-const JITTER_BUFFER_SEC = 0.04;  // 40 ms jitter cushion before starting a new utterance
+const MIC_FRAME_SEC = 0.02;      // low-latency 20 ms mic frames (320 samples @ 16 kHz)
+const MAX_IDLE_DRIFT_SEC = 0.25; // reset nextPlayTime if it ever drifts > 250 ms ahead without active audio
 // Light residual-echo floor while Debait speaks: keeps room noise out without blocking barge-in.
 const ECHO_GATE = 0.018;
 // Gentle lift for soft voices, paired with a compressor so louder speech stays clean.
@@ -19,7 +19,7 @@ function toBase64(bytes) {
 }
 
 /**
- * @param onMic      (base64Pcm16k) => void, ~33 times a second (30 ms frames)
+ * @param onMic      (base64Pcm16k) => void, 50 times a second (20 ms frames)
  * @param onTalking  (bool) => void, when Gemini starts / stops speaking
  */
 export async function openAudio({ onMic, onTalking }) {
@@ -75,7 +75,7 @@ export async function openAudio({ onMic, onTalking }) {
   comp.release.value = 0.2;
   src.connect(boost).connect(comp).connect(mic);
 
-  // ---------- 24 kHz PCM playback: monotonic nextPlayTime scheduler + instant barge-in ----------
+  // ---------- 24 kHz PCM playback: immediate monotonic nextPlayTime scheduler + instant barge-in ----------
   const outGain = outCtx.createGain();
   outGain.gain.value = 1;
   outGain.connect(outCtx.destination);
@@ -101,17 +101,15 @@ export async function openAudio({ onMic, onTalking }) {
     activeSources.clear();
     nextPlayTime = 0;
     if (!closed && outCtx.state !== 'closed') {
-      // Brief 8 ms ramp prevents a speaker click when cutting mid-waveform.
       const now = outCtx.currentTime;
       outGain.gain.cancelScheduledValues(now);
-      outGain.gain.setValueAtTime(0.0001, now);
-      outGain.gain.linearRampToValueAtTime(1, now + 0.008);
+      outGain.gain.setValueAtTime(1, now);
     }
     setTalking(false);
   }
 
   return {
-    /** Schedules a base64 16-bit little-endian PCM chunk at 24 kHz seamlessly on the hardware clock. */
+    /** Schedules a base64 16-bit little-endian PCM chunk at 24 kHz immediately with zero lead-in lag. */
     play(b64) {
       if (closed || !b64) return;
       if (outCtx.state === 'suspended') outCtx.resume().catch(() => {});
@@ -124,15 +122,14 @@ export async function openAudio({ onMic, onTalking }) {
         if (v >= 0x8000) v -= 0x10000;
         samples[i] = v / 32768;
       }
+
       const now = outCtx.currentTime;
-      const wasDry = nextPlayTime <= now;
-      if (wasDry) {
-        // Fresh utterance or real network underrun: seed with a 40 ms jitter buffer and apply a
-        // 2 ms fade-in on the opening samples to eliminate any startup click.
-        nextPlayTime = now + JITTER_BUFFER_SEC;
-        const fadeLen = Math.min(48, n);
-        for (let i = 0; i < fadeLen; i++) samples[i] *= i / fadeLen;
+      // Guard against stale clock drift > 250 ms ahead when no audio is actively playing.
+      if (activeSources.size === 0 && nextPlayTime > now + MAX_IDLE_DRIFT_SEC) {
+        nextPlayTime = now;
       }
+      const startAt = Math.max(now, nextPlayTime);
+
       const buf = outCtx.createBuffer(1, n, SPEAKER_RATE);
       buf.copyToChannel(samples, 0);
 
@@ -140,8 +137,7 @@ export async function openAudio({ onMic, onTalking }) {
       node.buffer = buf;
       node.connect(outGain);
 
-      const startAt = nextPlayTime;
-      nextPlayTime += buf.duration;
+      nextPlayTime = startAt + buf.duration;
 
       clearTimeout(talkEndTimer);
       talkEndTimer = null;
@@ -155,17 +151,21 @@ export async function openAudio({ onMic, onTalking }) {
           clearTimeout(talkEndTimer);
           talkEndTimer = setTimeout(() => {
             if (activeSources.size === 0) setTalking(false);
-          }, 80);
+          }, 25);
         }
       };
       node.start(startAt);
     },
     /** User barged in: stop and disconnect every active/queued node immediately. */
     interrupt,
-    /** Stop sending mic audio (e.g. while reconnecting). */
-    setMuted(m) { muted = m; },
+    /** Mute/unmute the microphone immediately (disables live audio tracks and skips PCM frames). */
+    setMuted(m) {
+      muted = !!m;
+      stream.getAudioTracks().forEach((t) => { t.enabled = !muted; });
+    },
     async close() {
       closed = true;
+      muted = false;
       interrupt();
       mic.port.onmessage = null;
       try { src.disconnect(); boost.disconnect(); comp.disconnect(); mic.disconnect(); } catch { /* ignore */ }

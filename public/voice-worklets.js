@@ -14,9 +14,9 @@ class DebaitMic extends AudioWorkletProcessor {
   constructor(options) {
     super();
     const targetRate = options.processorOptions?.targetSampleRate || 16000;
-    const frameSeconds = options.processorOptions?.frameSeconds || 0.03;
+    const frameSeconds = options.processorOptions?.frameSeconds || 0.02;
     this.ratio = sampleRate / targetRate; // input samples per output sample
-    this.frame = new Int16Array(Math.round(targetRate * frameSeconds)); // steady 30 ms frames
+    this.frame = new Int16Array(Math.round(targetRate * frameSeconds)); // steady 20 ms frames
     this.fill = 0;
     this.acc = 0;   // sum of input samples in the current output step
     this.n = 0;     // how many

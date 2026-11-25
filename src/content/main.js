@@ -119,6 +119,7 @@ async function start() {
         voiceBusy = false;
       }
     },
+    onMuteToggle: () => { if (!extensionGone()) send({ type: 'debait/call-mute-toggle' }); },
   });
   const panel = createSettingsPanel(overlay.panelLayer, {
     getPage: pageCounts,
@@ -230,19 +231,28 @@ async function start() {
   }
 
   let lastCallState = 'ended';
-  function onCallState({ state, message }) {
+  function onCallState({ state, message, muted }) {
+    if (state === 'mute') {
+      orb.setMuted?.(!!muted);
+      return;
+    }
     lastCallState = state || 'ended';
+    if (typeof muted === 'boolean') orb.setMuted?.(muted);
     if (state === 'connecting') orb.setVoice({ mode: 'connecting', text: 'Calling Debait…' });
     else if (state === 'live') orb.setVoice({ mode: 'listening' });
     else if (state === 'talking') orb.setVoice({ mode: 'speaking', text: '' });
     else if (state === 'heard') orb.setVoice({ mode: 'heard', text: message });
     else if (state === 'reconnecting') orb.setVoice({ mode: 'connecting', text: 'Reconnecting…' });
     else if (state === 'working') orb.setVoice({ mode: 'speaking', text: 'On it…' });
-    else if (state === 'error') orb.setVoice({ mode: 'error', text: message });
-    else orb.setVoice({ mode: 'idle' });
+    else if (state === 'error') { orb.setMuted?.(false); orb.setVoice({ mode: 'error', text: message }); }
+    else { orb.setMuted?.(false); orb.setVoice({ mode: 'idle' }); }
   }
   // a call may already be running when this page loads (and clears stale voice:true after restart)
-  if (settings.voice) send({ type: 'debait/call-status' }).then((r) => r?.inCall && onCallState({ state: 'live' }));
+  if (settings.voice) {
+    send({ type: 'debait/call-status' }).then((r) => {
+      if (r?.inCall) onCallState({ state: 'live', muted: !!r.muted });
+    });
+  }
 
   // ---------- helpers ----------
   const paint = (hotRecord) => paintHighlights(records.values(), { enabled: settings.showTags, hotRecord });

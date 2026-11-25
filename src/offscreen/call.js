@@ -31,8 +31,8 @@ const REALTIME_INPUT = {
     disabled: false,
     startOfSpeechSensitivity: 'START_SENSITIVITY_HIGH',
     endOfSpeechSensitivity: 'END_SENSITIVITY_LOW',
-    prefixPaddingMs: 200,
-    silenceDurationMs: 650,
+    prefixPaddingMs: 150,
+    silenceDurationMs: 450,
   },
   activityHandling: 'START_OF_ACTIVITY_INTERRUPTS',
 };
@@ -79,7 +79,7 @@ const TOOLS = [{
 }];
 
 let session = null;
-const state = (s, message = '') => chrome.runtime.sendMessage({ type: 'debait/call-state', state: s, message }).catch(() => {});
+const state = (s, message = '', extra = {}) => chrome.runtime.sendMessage({ type: 'debait/call-state', state: s, message, ...extra }).catch(() => {});
 
 function open(debugToken, i, model, handle) {
   const live = getLiveGenerativeModel(getAi(debugToken, i), {
@@ -151,6 +151,7 @@ async function connect(debugToken, handle, gen) {
 
 let audio = null;
 let active = false;
+let userMuted = false;
 let callGen = 0;        // increments on every start/end so late async resolves never leak mic or socket
 let handle = null;      // latest session resumption handle
 let token = null;
@@ -238,8 +239,8 @@ async function keepAlive(gen) {
       return;
     }
     tries = 0;
-    audio?.setMuted(false);
-    state('live');
+    audio?.setMuted(userMuted);
+    state('live', '', { muted: userMuted });
   }
 }
 
@@ -251,10 +252,11 @@ export async function startCall(debugToken) {
   }
   const gen = ++callGen;
   active = true;
+  userMuted = false;
   token = debugToken;
   handle = null;
   heard = '';
-  state('connecting');
+  state('connecting', '', { muted: false });
   let nextSession = null;
   let nextAudio = null;
   try {
@@ -265,7 +267,7 @@ export async function startCall(debugToken) {
     }
     nextAudio = await openAudio({
       onMic: (b64) => {
-        if (active && gen === callGen && session && !session.isClosed) {
+        if (active && !userMuted && gen === callGen && session && !session.isClosed) {
           session.sendAudioRealtime({ mimeType: 'audio/pcm;rate=16000', data: b64 }).catch(() => {});
         }
       },
@@ -278,7 +280,8 @@ export async function startCall(debugToken) {
     }
     session = nextSession;
     audio = nextAudio;
-    state('live');
+    if (userMuted) audio.setMuted(true);
+    state('live', '', { muted: userMuted });
     keepAlive(gen);
     // nudge the model to say hello first
     session.send('The call just started. Say a quick, casual hi.', true).catch(() => {});
@@ -304,6 +307,7 @@ export async function startCall(debugToken) {
 export async function endCall(quiet = false) {
   callGen++;
   active = false;
+  userMuted = false;
   heard = '';
   const s = session;
   const a = audio;
@@ -311,7 +315,16 @@ export async function endCall(quiet = false) {
   audio = null;
   try { await s?.close(); } catch { /* already closed */ }
   try { await a?.close(); } catch { /* already closed */ }
-  if (!quiet) state('ended');
+  if (!quiet) state('ended', '', { muted: false });
 }
 
+export function toggleMute() {
+  if (!active) return false;
+  userMuted = !userMuted;
+  audio?.setMuted(userMuted);
+  state('mute', '', { muted: userMuted });
+  return userMuted;
+}
+
+export const isMuted = () => active && userMuted;
 export const inCall = () => active;

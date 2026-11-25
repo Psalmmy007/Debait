@@ -34,6 +34,7 @@ export function createOverlay() {
       </button>
       <span class="orb-badge"></span>
       <span class="orb-mic" aria-hidden="true"></span>
+      <button class="orb-mute" type="button" aria-label="Mute microphone" aria-pressed="false" title="Mute mic"></button>
       <div class="voice-bubble" role="status" aria-live="polite"></div>
       <span class="orb-tip"></span>
     </div>`);
@@ -50,12 +51,32 @@ export function createOverlay() {
 // ============================================================
 // ORB: drag anywhere, click = Debait page, double-click = settings
 // ============================================================
-export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
+export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick, onMuteToggle }) {
   const wrap = overlay.orbWrap;
   const orb = wrap.querySelector('.orb');
   const badge = wrap.querySelector('.orb-badge');
+  const muteBtn = wrap.querySelector('.orb-mute');
   const tip = wrap.querySelector('.orb-tip');
   const canvas = wrap.querySelector('.orb-gl');
+
+  const MIC_ON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>';
+  const MIC_OFF_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 9v2a3 3 0 0 0 5.12 2.12M15 9.34V6a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A6.5 6.5 0 0 1 5.5 11m13 0a6.45 6.45 0 0 1-.46 2.4"/><path d="M12 17.5V21M3 3l18 18"/></svg>';
+
+  function applyMuted(muted) {
+    if (!muteBtn) return;
+    const on = !!muted;
+    muteBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    muteBtn.setAttribute('aria-label', on ? 'Unmute microphone' : 'Mute microphone');
+    muteBtn.title = on ? 'Unmute mic' : 'Mute mic';
+    setHTML(muteBtn, on ? MIC_OFF_SVG : MIC_ON_SVG);
+  }
+  applyMuted(false);
+  muteBtn?.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
+  muteBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    cancelClicks();
+    onMuteToggle?.();
+  });
 
   // drawn once at the largest size, so it stays sharp when scaled up
   const gl = createOrbRenderer(canvas, Math.round(ORB * ORB_MAX));
@@ -310,6 +331,7 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
       }
     },
     setPanelOpen(open) { wrap.classList.toggle('panel-open', open); },
+    setMuted: applyMuted,
     /** voice state: idle | connecting | listening | heard | speaking | error */
     setVoice({ mode, text }) {
       const bubble = wrap.querySelector('.voice-bubble');

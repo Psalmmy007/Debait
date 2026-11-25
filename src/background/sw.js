@@ -232,10 +232,10 @@ async function toActiveTab(msg) {
   if (!tab?.id) return null;
   return chrome.tabs.sendMessage(tab.id, msg).catch(() => null);
 }
-async function broadcastCallState(state, message = '') {
+async function broadcastCallState(state, message = '', extra = {}) {
   const tabs = await chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] }).catch(() => []);
   for (const t of tabs) {
-    if (t.id) chrome.tabs.sendMessage(t.id, { type: 'debait/call-state', state, message }).catch(() => {});
+    if (t.id) chrome.tabs.sendMessage(t.id, { type: 'debait/call-state', state, message, ...extra }).catch(() => {});
   }
 }
 const swOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
@@ -318,12 +318,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const res = await toActiveTab({ type: 'debait/tool', name: msg.name, args: msg.args });
         sendResponse(res || { result: { error: 'Debait is not running on this page. Ask the user to refresh it.' } });
       } else if (msg.type === 'debait/call-state') {
-        await broadcastCallState(msg.state, msg.message);
+        await broadcastCallState(msg.state, msg.message, typeof msg.muted === 'boolean' ? { muted: msg.muted } : {});
         if (msg.state === 'error') {
           const s = await getSettings();
           if (s.voice) await chrome.storage.local.set({ settings: { ...s, voice: false } });
         }
         sendResponse({ ok: true });
+      } else if (msg.type === 'debait/call-mute-toggle') {
+        const has = await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
+        const res = has.length
+          ? await chrome.runtime.sendMessage({ target: 'offscreen', type: 'debait/call-mute-toggle' }).catch(() => null)
+          : null;
+        sendResponse({ ok: true, muted: !!res?.muted });
       } else if (msg.type === 'debait/call-status') {
         const has = await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] });
         const st = has.length
@@ -334,7 +340,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const s = await getSettings();
           if (s.voice) await chrome.storage.local.set({ settings: { ...s, voice: false } });
         }
-        sendResponse({ ok: true, inCall });
+        sendResponse({ ok: true, inCall, muted: !!st?.muted });
       } else if (msg.type === 'debait/mic-granted') {
         if (await checkCallAllowed()) {
           const s = await getSettings();

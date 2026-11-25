@@ -1,7 +1,7 @@
 // Hosts the engine. The service worker forwards requests here.
 import { engine } from '../engine/index.js';
 import { MSG, normalizeResult } from '../engine/contract.js';
-import { startCall, endCall, inCall } from './call.js';
+import { startCall, endCall, inCall, toggleMute, isMuted } from './call.js';
 import { setPreferredProject, preferredProject, projectSkips, applySkips } from '../engine/firebaseEngine.js';
 
 // Start from what the service worker remembers: the Firebase project that answered last, and any
@@ -32,7 +32,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         await endCall();
         reply({ ok: true });
       } else if (msg.type === 'debait/call-status') {
-        reply({ ok: true, inCall: inCall() });
+        reply({ ok: true, inCall: inCall(), muted: isMuted() });
+      } else if (msg.type === 'debait/call-mute-toggle') {
+        reply({ ok: true, muted: toggleMute() });
       } else if (msg.type === 'debait/mic-state') {
         const p = await navigator.permissions.query({ name: 'microphone' }).catch(() => null);
         reply({ ok: true, state: p?.state || 'prompt' });

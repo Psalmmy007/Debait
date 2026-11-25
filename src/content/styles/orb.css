@@ -184,6 +184,47 @@
 @keyframes mic-pulse-red { 50% { box-shadow: 0 0 0 1.5px var(--surface), 0 0 0 5px rgba(255, 59, 48, 0.22); } }
 @keyframes mic-pulse-green { 50% { box-shadow: 0 0 0 1.5px var(--surface), 0 0 0 5px rgba(52, 199, 89, 0.22); } }
 
+/* minimal circular mute button: appears cleanly below the orb only during a call */
+.orb-mute {
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 7px);
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0.5px solid var(--sep);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--material);
+  backdrop-filter: blur(20px) saturate(1.8);
+  -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  color: var(--label);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  outline: none;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) scale(0.75);
+  transition: opacity 0.2s var(--ease), transform 0.35s var(--spring), background-color 0.2s var(--ease), color 0.2s var(--ease), border-color 0.2s var(--ease);
+}
+.orb-mute svg { width: 13px; height: 13px; display: block; }
+.orb-wrap[data-voice='connecting'] .orb-mute,
+.orb-wrap[data-voice='listening'] .orb-mute,
+.orb-wrap[data-voice='heard'] .orb-mute,
+.orb-wrap[data-voice='speaking'] .orb-mute {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%) scale(1);
+}
+.orb-mute:hover { transform: translateX(-50%) scale(1.08); }
+.orb-mute:active { transform: translateX(-50%) scale(0.94); }
+.orb-mute[aria-pressed='true'] {
+  background: #ff3b30;
+  color: #ffffff;
+  border-color: transparent;
+}
+
 .voice-bubble {
   position: absolute;
   right: 0;
