@@ -371,9 +371,15 @@ async function start() {
     if (!records.has(rec.el) || !result) return;
     rec.queued = false;
     if (rec.state === 'debaited') {
-      // a better answer arrived for a headline that's already debaited: show its honest wording
+      // a better answer arrived for a headline that's already debaited
       rec.result = result;
-      if (result.kind !== 'clean' && textOf(rec.el) !== result.honest_rewrite) rec.el.replaceChildren(document.createTextNode(result.honest_rewrite));
+      if (result.kind === 'clean') {
+        swapToOriginal(rec).then(() => { paint(); refreshOrb(); });
+        rec.tag?.setResult(result);
+        rec.tag?.setDebaited(false, result);
+        return;
+      }
+      if (textOf(rec.el) !== result.honest_rewrite) rec.el.replaceChildren(document.createTextNode(result.honest_rewrite));
       rec.tag?.setResult(result);
       rec.tag?.setDebaited(true, result);
       return;
@@ -390,6 +396,7 @@ async function start() {
 
   // ---------- debaiting ----------
   function debaitOne(rec) {
+    if (!rec?.result || rec.result.kind === 'clean') return;
     swapToRewrite(rec).then(() => { paint(); refreshOrb(); });
     setTimeout(() => rec.tag?.setDebaited(true, rec.result), 240);
     if (rec.result.source !== 'mock') send({ type: 'debait/debaited', texts: [rec.text] });

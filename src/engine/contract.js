@@ -32,6 +32,8 @@
  */
 
 export const KINDS = ['rage', 'fear', 'envy', 'clean'];
+// Minimum manipulation score (0-100) required to classify a headline as bait.
+export const BAIT_THRESHOLD = 60;
 
 // Message types used between content script, service worker and offscreen page.
 export const MSG = {
@@ -41,16 +43,45 @@ export const MSG = {
   SUMMARY: 'debait/summary',
 };
 
-/** Makes sure a result from any engine has the right shape. */
+const normSpace = (s) => String(s || '').replace(/\s+/g, ' ').trim();
+/** Same words, ignoring punctuation, quote marks and spacing (capital letters still count). */
+const words = (s) => String(s || '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+export const sameWords = (a, b) => words(a) === words(b);
+
+/** Keeps only triggers whose exact word/phrase actually appears in the headline text. */
+export function filterTriggers(triggers, text) {
+  if (!Array.isArray(triggers)) return [];
+  const haystack = normSpace(text).toLowerCase();
+  if (!haystack) return [];
+  return triggers
+    .filter((t) => {
+      if (!t || typeof t.word !== 'string') return false;
+      const w = normSpace(t.word);
+      return w.length >= 2 && haystack.includes(w.toLowerCase());
+    })
+    .map((t) => ({ word: t.word.trim(), why: typeof t.why === 'string' ? t.why.trim() : '' }))
+    .slice(0, 6);
+}
+
+/** Makes sure a result from any engine has the right shape and enforces clean-text guards. */
 export function normalizeResult(r, text) {
   const kind = KINDS.includes(r?.kind) ? r.kind : 'clean';
   const score = Math.max(0, Math.min(100, Math.round(Number(r?.score) || 0)));
-  const triggers = Array.isArray(r?.triggers)
-    ? r.triggers.filter((t) => t && typeof t.word === 'string' && t.word.trim()).slice(0, 6)
-    : [];
+  const triggers = filterTriggers(r?.triggers, text);
   const honest_rewrite = typeof r?.honest_rewrite === 'string' && r.honest_rewrite.trim()
     ? r.honest_rewrite.trim()
     : text;
   const source = ['on-device', 'cloud', 'mock'].includes(r?.source) ? r.source : 'mock';
+  // Never mark or rewrite neutral/borderline text: real bait must clear the score threshold,
+  // cite at least one trigger actually present in the headline, and offer a genuinely calmer rewrite.
+  if (kind === 'clean' || score < BAIT_THRESHOLD || triggers.length === 0 || sameWords(honest_rewrite, text)) {
+    return {
+      kind: 'clean',
+      score: kind === 'clean' ? score : Math.min(score, BAIT_THRESHOLD - 1),
+      triggers: [],
+      honest_rewrite: text,
+      source,
+    };
+  }
   return { kind, score, triggers, honest_rewrite, source };
 }

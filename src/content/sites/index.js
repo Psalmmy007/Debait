@@ -63,19 +63,21 @@ const adapters = [
 
 // ---------- every other website ----------
 // Finds headline-like text: article headings and headline links, skipping menus, footers,
-// buttons and forms. Keeps the innermost match (a heading inside a link, not both).
-const SKIP = 'nav, footer, header nav, aside nav, [role="navigation"], [role="menu"], [role="banner"] nav, form, button, [contenteditable="true"], debait-tag, debait-root, [aria-hidden="true"], code, pre';
+// dialogs, buttons and forms. Keeps the innermost match (a heading inside a link, not both).
+const SKIP = 'nav, footer, header nav, aside nav, [role="navigation"], [role="menu"], [role="menuitem"], [role="menubar"], [role="banner"] nav, [role="contentinfo"], [role="dialog"], [role="alertdialog"], [aria-modal="true"], [role="alert"], [role="status"], [role="toolbar"], [role="tablist"], [role="tab"], [role="button"], dialog, form, button, label, select, [contenteditable="true"], debait-tag, debait-root, [aria-hidden="true"], code, pre';
 const CANDIDATES = 'h1, h2, h3, h4, [role="heading"], a[href], [class*="headline" i], [class*="title" i], [data-testid*="title" i], [data-testid*="headline" i]';
+const UI_TEXT = /^(sign in|sign up|log in|log out|sign out|subscribe|unsubscribe|cookie|accept|reject|decline|dismiss|skip to|jump to|back to|go to|return to|menu|share|read more|learn more|see more|show more|view more|view all|load more|continue (on|with|to|reading|watching|as|without|using|browsing|shopping)|create (an? |your )?account|get started|get the app|open in|download (the )?app|try (it )?free|start (your )?free|manage (your )?|update (your )?|verify (your )?|confirm (your )?|reset (your )?|forgot (your )?|choose (an? |your )?|select (an? |your )?|switch to|use another|turn on|turn off|enable |disable |allow |privacy policy|terms of (service|use)|contact us|help center|your account|my account)\b/i;
 
 function looksLikeHeadline(el) {
   if (el.closest(SKIP)) return false;
+  if (el.hasAttribute('aria-haspopup')) return false;
   if (!el.offsetParent && getComputedStyle(el).position !== 'fixed') return false; // hidden
   const t = textOf(el);
   if (t.length < 22 || t.length > 220) return false;
   if (el.children.length > 6) return false; // a container, not a headline
   const words = t.split(' ').length;
   if (words < 4 || words > 32) return false;
-  if (/^(sign in|log in|subscribe|cookie|accept|skip to|menu|share|read more)/i.test(t)) return false;
+  if (UI_TEXT.test(t)) return false;
   return true;
 }
 
