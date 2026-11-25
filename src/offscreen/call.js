@@ -7,40 +7,55 @@ import { openAudio } from './voice-audio.js';
 import { getAi, projectOrder, projectName, setPreferredProject, isOnline } from '../engine/firebaseEngine.js';
 import { LIVE_MODELS, LIVE_VOICE } from '../engine/firebaseConfig.js';
 
-const SYSTEM = `You are Debait, a calm, thoughtful voice assistant built into a Chrome extension.
-Debait spots emotional bait headlines (rage, fear, envy), labels them Rage, Fear, Envy, or Clean,
-and rewrites bait into plain, honest headlines while keeping the facts.
-You are on a live voice call with the user. Speak in a warm, relaxed, conversational tone — concise and natural, usually one or two short sentences.
-Use your tools to inspect or act on the page the user is viewing: report on it, debait it, restore it, explain a headline, summarize it, or change a setting.
-Always call page_report before talking about what is on the page. Never invent headlines or claim to fact-check news.
-Start the call with a brief, relaxed greeting and offer to check the page.
-Speak English at a natural, unhurried pace. Let the user finish their thought before you reply.
-If you didn't clearly catch what they said, briefly ask them to repeat it instead of guessing.
-Ignore background noise, music, and your own voice coming back through the speakers.`;
+const SYSTEM = `You are Debait, a calm, warm voice assistant built into the Debait Chrome extension.
+Never break character. Never say you are a large language model, never mention being trained by Google, never mention Gemini, and never refer to any underlying API or AI model.
+If asked "Who created you?", "Who made you?", or "What are you?", answer naturally as the product: "I'm Debait, built by the Debait team to help you read the web without the clickbait and noise."
 
-// Speech detection: picks up a normal or soft voice without shouting (start HIGH; the mic's
-// noise suppression keeps the room out), and waits for a real pause before deciding you're
-// done (end LOW + 800 ms), so it doesn't cut you off.
-// The SDK has no option for this, so it's added to the setup message on its way out.
+You are easygoing and natural to talk to — welcome greetings, light small talk, and friendly banter warmly so the call feels relaxed and human.
+Stay grounded as Debait: your focus is Debait itself, how it works, and the web page or headlines the user is currently viewing. If a conversation drifts far into unrelated tasks (like coding homework, trivia, or deep off-topic questions), gently and naturally steer things back toward Debait or the page without lecturing or shutting the user down abruptly.
+
+About Debait: Debait spots emotional bait (rage, fear, envy), labels headlines Rage, Fear, Envy, or Clean, rewrites bait into calm, factual headlines while keeping the real facts, summarizes pages ("In short"), and tracks reading habits in Weekly Mind Facts. It works right on your device as well as online, and respects Local only and offline mode.
+
+Voice & style:
+- Speak in a calm, warm, unhurried, relaxed conversational tone — concise and human, usually one or two short sentences.
+- Use your tools to inspect or act on the page the user is viewing: report on it, debait it, restore it, explain a headline, summarize it, open Weekly Mind Facts, or change a setting.
+- Always call page_report before describing what is on the page. Never invent headlines or claim to fact-check news.
+- Start the call with a brief, warm, relaxed greeting and offer to check the page.
+- Speak English at an unhurried, natural pace. Let the user finish their thought before replying; if they interrupt you, drop your previous thought immediately and follow their new topic.
+- If you did not clearly catch what they said, briefly ask them to repeat it instead of guessing.
+- Ignore background noise, music, and your own voice coming back through the speakers.`;
+
+// Speech detection & instant barge-in:
+// - START_OF_ACTIVITY_INTERRUPTS cancels Gemini's current audio turn the instant the user speaks.
+// - High start sensitivity picks up normal/soft voices; low end sensitivity + 650 ms pause avoids
+//   cutting the user off mid-sentence while staying snappy.
+// The SDK has no option for this, so it's injected into the Live setup message on its way out.
 const REALTIME_INPUT = {
   automaticActivityDetection: {
+    disabled: false,
     startOfSpeechSensitivity: 'START_SENSITIVITY_HIGH',
     endOfSpeechSensitivity: 'END_SENSITIVITY_LOW',
-    prefixPaddingMs: 300,
-    silenceDurationMs: 800,
+    prefixPaddingMs: 200,
+    silenceDurationMs: 650,
   },
+  activityHandling: 'START_OF_ACTIVITY_INTERRUPTS',
 };
-const wsSend = WebSocket.prototype.send;
-WebSocket.prototype.send = function (data) {
-  if (typeof data === 'string' && data.startsWith('{"setup":')) {
-    try {
-      const msg = JSON.parse(data);
-      msg.setup.realtimeInputConfig = REALTIME_INPUT;
-      data = JSON.stringify(msg);
-    } catch { /* send as is */ }
-  }
-  return wsSend.call(this, data);
-};
+if (!WebSocket.prototype.__debaitPatched) {
+  const wsSend = WebSocket.prototype.send;
+  WebSocket.prototype.send = function (data) {
+    if (typeof data === 'string' && data.includes('"setup"')) {
+      try {
+        const msg = JSON.parse(data);
+        if (msg?.setup && typeof msg.setup === 'object') {
+          msg.setup.realtimeInputConfig = REALTIME_INPUT;
+          data = JSON.stringify(msg);
+        }
+      } catch { /* send as is */ }
+    }
+    return wsSend.call(this, data);
+  };
+  WebSocket.prototype.__debaitPatched = true;
+}
 
 const TOOLS = [{
   functionDeclarations: [
@@ -165,7 +180,10 @@ async function listen(s, gen) {
     for await (const msg of s.receive()) {
       if (!active || gen !== callGen) return false;
       if (msg.type === 'serverContent') {
-        if (msg.interrupted) audio?.interrupt();
+        if (msg.interrupted) {
+          heard = '';
+          audio?.interrupt();
+        }
         if (msg.inputTranscription?.text) {
           heard += msg.inputTranscription.text;
           state('heard', heard.trim());

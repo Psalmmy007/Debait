@@ -22,6 +22,16 @@ let gemini = 'unknown';        // unknown | ok | failing
 let lastError = null;
 let retryAt = 0;
 
+// Clear any transient offline/network lockout the moment connectivity returns.
+if (typeof self !== 'undefined' && typeof self.addEventListener === 'function') {
+  self.addEventListener('online', () => {
+    if (gemini === 'failing' && !/app check|401|403|permission|api key/i.test(String(lastError?.message || ''))) {
+      gemini = 'unknown';
+      retryAt = 0;
+    }
+  });
+}
+
 /**
  * Runs run(signal) with a time limit. When the limit passes, the work is really cancelled (an
  * on-device Gemini Nano request keeps the computer busy otherwise), not just stopped waiting on.
