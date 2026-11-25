@@ -1,5 +1,5 @@
 // Debait content script: finds headlines, gets them scored, and runs the on-page UI.
-import { MSG, NO_SUMMARY_TEXT, hasEnoughSummaryText } from '../engine/contract.js';
+import { MSG, CACHE_VERSION, NO_SUMMARY_TEXT, hasEnoughSummaryText } from '../engine/contract.js';
 import { getSettings, onSettingsChange } from '../shared/storage.js';
 import { getAdapter, textOf } from './sites/index.js';
 import { injectPageStyles, paintHighlights, swapToRewrite, swapToOriginal } from './ui/page.js';
@@ -42,6 +42,41 @@ async function start() {
   });
   if (settings.disabledSites.includes(host)) return; // switched off for this site
 
+  // Hydrate an in-memory copy of the normalized score cache so revisited or scrolled-back
+  // headlines resolve in 0 ms offline without waiting behind an active Nano prompt.
+  const localCache = new Map();
+  try {
+    const stored = await chrome.storage.local.get(['scoreCache', 'cacheVersion']);
+    if (stored?.cacheVersion === CACHE_VERSION && Array.isArray(stored.scoreCache)) {
+      for (const [k, v] of stored.scoreCache) if (k && v && v.source !== 'mock') localCache.set(k, v);
+    }
+  } catch { /* preview / storage unavailable */ }
+  const onCacheStorage = (changes, area) => {
+    if (area !== 'local') return;
+    if (changes.cacheVersion && changes.cacheVersion.newValue !== CACHE_VERSION) {
+      localCache.clear();
+      return;
+    }
+    if (changes.scoreCache && Array.isArray(changes.scoreCache.newValue)) {
+      for (const [k, v] of changes.scoreCache.newValue) if (k && v && v.source !== 'mock') localCache.set(k, v);
+    }
+  };
+  chrome.storage?.onChanged?.addListener(onCacheStorage);
+
+  // Batch 0 ms local cache hits into one background stats update for Weekly Mind Facts.
+  let pendingHits = [];
+  let hitTimer = null;
+  function queueCacheHit(text, result) {
+    pendingHits.push({ text, result });
+    if (hitTimer) return;
+    hitTimer = setTimeout(() => {
+      hitTimer = null;
+      const items = pendingHits;
+      pendingHits = [];
+      if (items.length && alive && extensionAlive()) send({ type: 'debait/record-hits', items });
+    }, 500);
+  }
+
   // When Debait reloads (an update or a new build) Chrome puts a fresh copy into open tabs, but the
   // old copy keeps running in its own sandbox. Tell any old copy to stop and clear its tags and orb,
   // so a headline never shows two or three tags.
@@ -55,9 +90,11 @@ async function start() {
     try {
       clearInterval(liveTimer);
       removeEventListener('online', onOnline);
+      chrome.storage?.onChanged?.removeListener(onCacheStorage);
       pageObserver?.disconnect();
       io.disconnect();
-      clearTimeout(scanTimer); clearTimeout(retryTimer); clearTimeout(upgradeTimer);
+      viewIo.disconnect();
+      clearTimeout(scanTimer); clearTimeout(retryTimer); clearTimeout(upgradeTimer); clearTimeout(hitTimer);
       queue.length = 0;
       orb.destroy?.();
       if (reason === 'gone') {
@@ -282,12 +319,28 @@ async function start() {
   }
 
   // ---------- finding headlines ----------
+  // Live viewport observer: keeps rec.inView fresh so Nano always prioritizes what is on screen right now.
+  const viewIo = new IntersectionObserver((entries) => {
+    let added = false;
+    for (const e of entries) {
+      const rec = records.get(e.target);
+      if (!rec) continue;
+      rec.inView = e.isIntersecting;
+      if (e.isIntersecting && !rec.result && !rec.queued && !rec.failed) {
+        rec.queued = true;
+        queue.push(rec);
+        added = true;
+      }
+    }
+    if (added) flushSoon();
+  }, { rootMargin: '80px 0px' });
+
   const io = new IntersectionObserver((entries) => {
     for (const e of entries) {
       if (!e.isIntersecting) continue;
       io.unobserve(e.target);
       const rec = records.get(e.target);
-      if (rec && !rec.result && !rec.queued) {
+      if (rec && !rec.result && !rec.queued && !rec.failed) {
         rec.queued = true;
         queue.push(rec);
       }
@@ -299,8 +352,9 @@ async function start() {
     if (!alive || extensionGone()) return;
     // the site redrew or removed a headline (Google, React apps): drop its old tag so tags never pile up
     for (const [el, rec] of records) {
-      if (!el.isConnected) { rec.tag?.remove(); io.unobserve(el); records.delete(el); }
+      if (!el.isConnected) { rec.tag?.remove(); io.unobserve(el); viewIo.unobserve(el); records.delete(el); }
     }
+    let instantHits = 0;
     for (const el of adapter.find(document)) {
       if (el.closest('debait-tag, debait-root')) continue;
       const existing = records.get(el);
@@ -313,15 +367,28 @@ async function start() {
         // sites like X reuse elements for new posts: rescore if the text changed
         if (existing.animating || existing.state === 'debaited' || textOf(el) === existing.text || textOf(el) === existing.result?.honest_rewrite) continue;
         existing.tag?.remove();
+        io.unobserve(el);
+        viewIo.unobserve(el);
         records.delete(el);
       }
       const text = textOf(el);
       if (text.length < MIN_LEN || text.length > MAX_LEN) continue;
-      const rec = { el, text, result: null, state: 'pending', tag: null, original: null };
+      const rec = { el, text, result: null, state: 'pending', tag: null, original: null, inView: false };
       records.set(el, rec);
       mountTag(rec);
-      io.observe(el);
+      const cached = localCache.get(text);
+      if (cached) {
+        stats.hits++;
+        stats.scored++;
+        applyResult(rec, cached);
+        queueCacheHit(text, cached);
+        instantHits++;
+      } else {
+        viewIo.observe(el);
+        io.observe(el);
+      }
     }
+    if (instantHits) paint();
     refreshOrb();
   }
 
@@ -412,22 +479,59 @@ async function start() {
   }
 
   // Local only or offline: Gemini Nano handles one prompt at a time and large batches can exceed
-  // its time budget on slower machines. Score visible headlines one-by-one so results land smoothly.
+  // its time budget on slower machines. Score visible headlines one-by-one and skip items scrolled far past.
   const isNanoOnly = () => settings.localOnly || (typeof navigator !== 'undefined' && navigator.onLine === false);
+
+  function priorityKey(rec) {
+    if (rec.inView) {
+      const r = rec.el?.isConnected ? rec.el.getBoundingClientRect() : null;
+      return r ? Math.max(0, r.top) : 0;
+    }
+    return 100000 + byDistance(rec);
+  }
 
   async function flush() {
     if (flushing) return;
     flushing = true;
-    // up to PARALLEL batches at once online (1 at a time on Nano), visible headlines first
+    // up to PARALLEL batches at once online (1 at a time on Nano), viewport headlines strictly first
     const running = new Set();
     while (queue.length || running.size) {
-      const maxParallel = isNanoOnly() ? 1 : PARALLEL;
-      const batchSize = isNanoOnly() ? 1 : BATCH;
+      const nano = isNanoOnly();
+      const maxParallel = nano ? 1 : PARALLEL;
+      const batchSize = nano ? 1 : BATCH;
       while (queue.length && running.size < maxParallel) {
-        queue.sort((x, y) => byDistance(x) - byDistance(y));
+        // Resolve any duplicate/newly-cached headlines in 0 ms and drop far-scrolled-past items in Nano mode.
+        const maxOffscreen = innerHeight * 1.5;
+        for (let i = queue.length - 1; i >= 0; i--) {
+          const rec = queue[i];
+          if (!rec.el?.isConnected || !records.has(rec.el)) {
+            rec.queued = false;
+            queue.splice(i, 1);
+            continue;
+          }
+          const cached = localCache.get(rec.text);
+          if (cached && (!rec.result || rec.result.source === 'mock')) {
+            rec.queued = false;
+            queue.splice(i, 1);
+            stats.hits++;
+            stats.scored++;
+            applyResult(rec, cached);
+            queueCacheHit(rec.text, cached);
+            continue;
+          }
+          if (nano && !rec.inView && byDistance(rec) > maxOffscreen) {
+            // User scrolled far past this headline: deprioritize it now, re-observe so scroll-back re-queues it.
+            rec.queued = false;
+            queue.splice(i, 1);
+            io.observe(rec.el);
+          }
+        }
+        if (!queue.length) break;
+        queue.sort((x, y) => priorityKey(x) - priorityKey(y));
         const job = scoreBatch(queue.splice(0, batchSize)).finally(() => running.delete(job));
         running.add(job);
       }
+      if (!running.size) break;
       await Promise.race(running);
     }
     flushing = false;
@@ -438,6 +542,10 @@ async function start() {
   function applyResult(rec, result) {
     if (!records.has(rec.el) || !result) return;
     rec.queued = false;
+    if (result.source !== 'mock') {
+      viewIo.unobserve(rec.el);
+      localCache.set(rec.text, result);
+    }
     if (rec.state === 'debaited') {
       // a better answer arrived for a headline that's already debaited
       rec.result = result;

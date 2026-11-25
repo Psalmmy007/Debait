@@ -34,6 +34,8 @@
 export const KINDS = ['rage', 'fear', 'envy', 'clean'];
 // Minimum manipulation score (0-100) required to classify a headline as bait.
 export const BAIT_THRESHOLD = 60;
+// Shared score cache version across service worker and content script instant cache.
+export const CACHE_VERSION = 4;
 export const NO_SUMMARY_TEXT = 'Not enough text on this page to summarize.';
 
 // Message types used between content script, service worker and offscreen page.

@@ -1,5 +1,5 @@
 // Service worker: routes messages, keeps the score cache and the daily stats.
-import { MSG } from '../engine/contract.js';
+import { MSG, CACHE_VERSION } from '../engine/contract.js';
 import { getSettings, dayKey, emptyDay, SYNC_PREFIX, SYNC_DAYS, syncableDay } from '../shared/storage.js';
 
 const OFFSCREEN_URL = 'src/offscreen/index.html';
@@ -98,9 +98,7 @@ async function toEngine(payload) {
 
 // ---------- cache (never score the same headline twice) ----------
 let cache = null; // Map<text, result>
-// Bump when saved results should be thrown away (v2: older results could have a rewrite
-// with the same words as the headline, so debaiting them changed nothing).
-const CACHE_VERSION = 4; // v4: stricter bait threshold and clean-text guards (drop old false positives)
+// CACHE_VERSION is shared from contract.js (bump to evict old cached entries).
 async function loadCache() {
   if (cache) return cache;
   const { scoreCache = [], cacheVersion } = await chrome.storage.local.get(['scoreCache', 'cacheVersion']);
@@ -357,6 +355,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: true });
       } else if (msg.type === 'debait/debaited') {
         recordDebaited(Array.isArray(msg.texts) ? msg.texts : [], msg.count || 0);
+        sendResponse({ ok: true });
+      } else if (msg.type === 'debait/record-hits') {
+        // Content script resolved cached headlines in 0 ms: still count them in daily stats.
+        const host = sender.tab?.url ? new URL(sender.tab.url).hostname.replace(/^www\./, '') : '';
+        const items = Array.isArray(msg.items) ? msg.items : [];
+        if (items.length) recordStats(items.map((x) => x.result), host, items.map((x) => x.text));
         sendResponse({ ok: true });
       } else if (msg.type === 'debait/openSidePanel') {
         await chrome.sidePanel.open({ tabId: sender.tab.id });
