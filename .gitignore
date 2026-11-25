@@ -33,6 +33,9 @@ dist-web
 # Third-party Claude skills (local only)
 .claude/skills/
 
+# Local AI assistant rules (local only)
+GEMINI.md
+
 # Ad renders (large binaries)
 ad/out/
 

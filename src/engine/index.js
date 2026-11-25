@@ -2,14 +2,16 @@
 // two Gemini takes; the quick backup estimate is only used while Gemini is really unreachable,
 // and those guesses are never counted in Weekly Mind Facts.
 import { mockEngine } from './mockEngine.js';
-import { firebaseEngine } from './firebaseEngine.js';
+import { firebaseEngine, isOnline, deviceQueueDepth, LOCAL_BUDGET } from './firebaseEngine.js';
 
 export const USE_MOCK = false;
 
 const FIRST_TIMEOUT = 30000;   // the first answer also connects (App Check, picking the project)
 const GEMINI_TIMEOUT = 25000;  // Nano gets 10 s before the cloud is asked; a slow cloud request is re-sent after 4 s
-const LOCAL_TIMEOUT = 4 * 60 * 1000; // Local only: Nano can take minutes on slower computers (each request
-                                     // also has its own 150 s budget once its turn comes; see firebaseEngine.js)
+// Local only / offline: Nano is the only engine and runs one prompt at a time, each with its own
+// LOCAL_BUDGET once its turn comes (firebaseEngine.js). So the overall limit covers the requests
+// already waiting ahead of this one, instead of expiring while it is still in the queue.
+const deviceTimeout = () => LOCAL_BUDGET * (deviceQueueDepth() + 1) + 15000;
 const SUMMARY_TIMEOUT = 30000;
 const RETRY_AFTER = 2 * 60 * 1000;     // after an App Check / permission rejection
 const RETRY_SOON = 20 * 1000;          // after a passing server error (busy, network)
@@ -36,18 +38,27 @@ function withTimeout(run, ms, message = 'Gemini took too long') {
   return Promise.race([run(ctrl.signal), limit]).finally(() => clearTimeout(timer));
 }
 const asLocalError = (err) => (/LOCAL_ONLY/.test(err?.message) ? err : new Error(`LOCAL_ONLY_FAILED: ${err?.message || err}`));
+const LOCAL_SLOW_MSG = 'LOCAL_ONLY_SLOW: Gemini Nano did not finish in time on this computer';
+const OFFLINE_SLOW_MSG = 'OFFLINE_SLOW: Gemini Nano did not finish in time on this computer';
 
 /** @type {import('./contract.js').Engine} */
 export const engine = USE_MOCK ? mockEngine : {
   async scoreHeadlines(texts, opts) {
-    if (opts.localOnly) {
-      // on-device only: no backup guesses, but never hang if Gemini Nano isn't ready
-      const st = await firebaseEngine.getStatus({ localOnly: true });
-      if (st.source !== 'on-device') throw new Error(`LOCAL_ONLY: ${st.message}`);
+    if (opts.localOnly || !isOnline()) {
+      // Nano only (Local only, or no network): never hang if Gemini Nano isn't ready
+      const local = !!opts.localOnly;
+      const st = await firebaseEngine.getStatus({ localOnly: local });
+      if (st.source !== 'on-device') {
+        if (local) throw new Error(`LOCAL_ONLY: ${st.message}`);
+        // offline without Nano: quick estimates (never cached or counted; re-asked later)
+        return mockEngine.scoreHeadlines(texts, opts);
+      }
       try {
-        return await withTimeout((signal) => firebaseEngine.scoreHeadlines(texts, { ...opts, signal }), LOCAL_TIMEOUT, 'LOCAL_ONLY_SLOW: Gemini Nano did not finish in time on this computer');
+        return await withTimeout((signal) => firebaseEngine.scoreHeadlines(texts, { ...opts, signal }), deviceTimeout(), local ? LOCAL_SLOW_MSG : OFFLINE_SLOW_MSG);
       } catch (err) {
-        throw asLocalError(err);
+        if (local) throw asLocalError(err);
+        console.debug('[Debait] offline and Gemini Nano failed, using quick estimates for now:', err.message);
+        return mockEngine.scoreHeadlines(texts, opts);
       }
     }
     // Gemini just failed: don't make every page wait on it; quick estimates until the retry time
@@ -85,8 +96,9 @@ export const engine = USE_MOCK ? mockEngine : {
       if (st.source !== 'on-device') throw new Error(`LOCAL_ONLY: ${st.message}`);
     }
     try {
-      return await withTimeout((signal) => firebaseEngine.summarize(page, { ...opts, signal }), opts.localOnly ? LOCAL_TIMEOUT : SUMMARY_TIMEOUT,
-        opts.localOnly ? 'LOCAL_ONLY_SLOW: Gemini Nano did not finish in time on this computer' : undefined);
+      const nanoOnly = opts.localOnly || !isOnline();
+      return await withTimeout((signal) => firebaseEngine.summarize(page, { ...opts, signal }), nanoOnly ? deviceTimeout() : SUMMARY_TIMEOUT,
+        opts.localOnly ? LOCAL_SLOW_MSG : nanoOnly ? OFFLINE_SLOW_MSG : undefined);
     } catch (err) {
       if (opts.localOnly) throw asLocalError(err);
       return mockEngine.summarize(page, opts);

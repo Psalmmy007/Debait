@@ -60,6 +60,26 @@ Design tools on the same server:
 - http://localhost:5180/orb.html shows the orb large, in every mood, on light and dark backgrounds.
 - http://localhost:5180/pages.html shows Weekly Mind Facts, and `pages.html?page=popup` the popup.
 
+## How the hybrid AI works
+
+Every AI request goes through Firebase AI Logic (`getGenerativeModel`), but Debait picks the
+inference mode itself for each request, `InferenceMode.ONLY_ON_DEVICE` (Gemini Nano) or
+`InferenceMode.ONLY_IN_CLOUD` (Gemini), instead of handing the choice to `PREFER_ON_DEVICE`.
+That gives it control over time limits, cancellation and queueing:
+
+- **One Nano prompt at a time.** Gemini Nano is single-turn, so every on-device request goes through
+  one serial queue.
+- **Online:** Nano answers when it is downloaded and free. If it is busy, missing or too slow (10 s),
+  the request goes to the cloud, so pages never wait.
+- **Offline:** the cloud is never tried. Requests queue for Nano with a long time budget; without
+  Nano, a quick offline estimate is shown (never saved or counted) and re-checked later.
+- **Local only:** the cloud is never used, whatever happens.
+- **Turning Nano on:** Chrome only downloads Gemini Nano after a click, so the popup shows
+  **Turn on Debait** whenever the model can still be downloaded.
+
+Each result records what really ran (`on-device` or `cloud`), and the popup chip shows it.
+See `src/engine/firebaseEngine.js`.
+
 ## Project layout
 
 ```

@@ -27,7 +27,10 @@ async function renderEngine() {
     chip.dataset.src = s.source;
     chip.querySelector('span').textContent = SRC_LABEL[s.source] || s.source;
     chip.title = s.message || '';
-    $('#turnOn').hidden = s.ready;
+    // Offer the download click whenever Nano can still be downloaded, not only when the cloud is
+    // missing: Chrome only downloads Gemini Nano after a user gesture, so this click is the way in.
+    const needsDownload = s.device === 'downloadable' || s.device === 'downloading';
+    $('#turnOn').hidden = s.ready && !needsDownload;
     if (s.needsAppCheck && res.debugToken) {
       $('#setup').hidden = false;
       $('#token').textContent = res.debugToken;

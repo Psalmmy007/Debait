@@ -1,5 +1,17 @@
 // Firebase AI Logic engine: Gemini Nano on-device first, Gemini in the cloud as a fallback.
 // Two Firebase projects (team, then backup) for the cloud side. Runs in the offscreen page.
+//
+// HOW THE HYBRID SWITCH WORKS (on purpose, not InferenceMode.PREFER_ON_DEVICE):
+// Every request is made through Firebase AI Logic's getGenerativeModel(), but we pick the mode
+// ourselves for each request: InferenceMode.ONLY_ON_DEVICE (Gemini Nano) or
+// InferenceMode.ONLY_IN_CLOUD (Gemini). PREFER_ON_DEVICE makes the same choice inside the SDK, but
+// gives us no say over time limits, cancellation or queueing, and Nano can take minutes per prompt
+// on slower computers. Doing it by hand lets Debait:
+//   - run ONE Nano prompt at a time (Nano is single-turn; parallel prompts only slow each other down)
+//   - online:  never wait behind another Nano prompt; a busy, missing or too-slow Nano -> the cloud
+//   - offline: skip the cloud entirely and queue for Nano with a long time budget
+//   - Local only: never touch the cloud, whatever happens
+// The result's `source` ('on-device' | 'cloud') always says what really ran.
 import { initializeApp, setLogLevel } from 'firebase/app';
 
 // Firebase logs a warning for every expected fallback (e.g. a project that hasn't registered
@@ -158,25 +170,34 @@ const anySignal = (...signals) => {
 // - every Nano request gets a time budget and is really cancelled when it runs out (the SDK
 //   doesn't forward abort signals on device, so the signal goes in Chrome's own prompt options)
 // - in hybrid mode, Nano that misses its budget is skipped for a while and the cloud answers
-const LOCAL_BUDGET = 150 * 1000; // Local only: per request, counted from when its turn starts
+export const LOCAL_BUDGET = 150 * 1000; // Local only / offline: per request, counted from when its turn starts
 const DEVICE_BUDGET = 10 * 1000; // hybrid: after this, cancel Nano and ask the cloud instead
 const SLOW_FOR = 10 * 60 * 1000; // hybrid: how long to skip a Nano that was too slow
 let deviceSlowUntil = 0;
 const deviceSlow = () => Date.now() < deviceSlowUntil;
+/** False only when Chrome knows there is no network (then the cloud is never tried). */
+export const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
 const markDeviceSlow = (err) => {
+  if (!isOnline()) return; // offline, Nano is the only engine: never switch it off
   deviceSlowUntil = Date.now() + SLOW_FOR;
   console.debug('[Debait] Gemini Nano too slow or failed here; using the cloud for now:', err?.message || err);
 };
+// The single serial queue for Nano: each request waits for the one before it.
 let deviceLock = Promise.resolve();
+let deviceQueue = 0; // requests waiting for or using Nano right now
+/** How many requests are waiting for or using Gemini Nano. */
+export const deviceQueueDepth = () => deviceQueue;
 async function deviceTurn(signal, run) {
   const prev = deviceLock;
   let release;
   deviceLock = new Promise((r) => { release = r; });
+  deviceQueue++;
   try {
     await prev;
     signal?.throwIfAborted();
     return await run();
   } finally {
+    deviceQueue--;
     release();
   }
 }
@@ -198,7 +219,36 @@ function onDevice(signal, budget, slowError, run) {
   });
 }
 const localSlow = () => new Error('LOCAL_ONLY_SLOW: Gemini Nano did not finish in time on this computer');
+const offlineSlow = () => new Error('OFFLINE_SLOW: Gemini Nano did not finish in time on this computer');
 const hybridSlow = () => new Error('Gemini Nano did not answer in time');
+const noEngineOffline = () => new Error('OFFLINE: no internet connection, and Gemini Nano is not ready on this computer');
+/** Local only and offline: Nano is the only engine, so it gets the long budget. */
+const budgetFor = (localOnly) => (localOnly || !isOnline() ? LOCAL_BUDGET : DEVICE_BUDGET);
+const slowErrorFor = (localOnly) => (localOnly ? localSlow() : !isOnline() ? offlineSlow() : hybridSlow());
+
+/**
+ * Reads a JSON answer safely: strips ``` fences, and if there is chatter around the JSON, keeps
+ * just the outermost {...} or [...]. Returns null instead of throwing.
+ */
+export function parseJson(text) {
+  const s = String(text || '').trim().replace(/^```(?:json)?\s*|\s*```$/g, '');
+  try { return JSON.parse(s); } catch { /* try the inner part */ }
+  const start = s.search(/[[{]/);
+  const end = Math.max(s.lastIndexOf('}'), s.lastIndexOf(']'));
+  if (start >= 0 && end > start) {
+    try { return JSON.parse(s.slice(start, end + 1)); } catch { /* unreadable */ }
+  }
+  return null;
+}
+/** The results array from a scoring answer, or null if the answer is unreadable. */
+function resultList(res) {
+  let text = '';
+  try { text = res?.response?.text(); } catch { return null; }
+  const data = parseJson(text);
+  const list = Array.isArray(data) ? data : data?.results;
+  return Array.isArray(list) ? list : null;
+}
+const unreadable = (where) => Object.assign(new Error(`${where} returned unreadable JSON`), { unreadable: true });
 
 /** One streamed request: reports the text so far as it arrives. */
 async function streamOnce(m, request, signal, onFirst, onText) {
@@ -364,9 +414,9 @@ async function fixUnchangedRewrites(out, texts, { mode, localOnly, debugToken, s
   try {
     const request = rewritePrompt(bad.map((i) => ({ text: texts[i], triggers: Array.isArray(out[i].triggers) ? out[i].triggers : [] })));
     const res = mode === ON_DEVICE
-      ? await onDevice(signal, localOnly ? LOCAL_BUDGET : DEVICE_BUDGET, hybridSlow(), (s) => rewriteModel(ON_DEVICE, debugToken, preferred, s).generateContent(request, { signal: s }))
+      ? await onDevice(signal, budgetFor(localOnly), slowErrorFor(localOnly), (s) => rewriteModel(ON_DEVICE, debugToken, preferred, s).generateContent(request, { signal: s }))
       : await hedged((s) => rewriteModel(IN_CLOUD, debugToken, preferred).generateContent(request, { signal: anySignal(s, signal) }), 4000);
-    const data = JSON.parse(res.response.text().trim().replace(/^```(json)?|```$/g, ''));
+    const data = parseJson(res.response.text());
     bad.forEach((idx, k) => {
       const r = data?.rewrites?.[k];
       if (typeof r === 'string' && r.trim() && !sameWords(r, texts[idx])) out[idx].honest_rewrite = r.trim();
@@ -384,9 +434,18 @@ function summaryModel(mode, debugToken, i, signal) {
   });
 }
 
-/** Nano is worth trying: Local only, or hybrid with Nano ready and not recently too slow. */
+/**
+ * Is Nano worth trying for this request?
+ * - Local only: always (and nothing else is allowed).
+ * - Offline: whenever it is downloaded (it is the only engine), queueing behind other requests.
+ * - Online: only when it is downloaded, not recently too slow, and free right now. A request never
+ *   waits behind another Nano prompt while the cloud could answer it in a second or two.
+ */
 async function useDevice(localOnly) {
-  return localOnly || (!deviceSlow() && (await deviceAvailability()) === 'available');
+  if (localOnly) return true;
+  if ((await deviceAvailability()) !== 'available') return false;
+  if (!isOnline()) return true;
+  return !deviceSlow() && deviceQueue === 0;
 }
 
 function summaryPrompt({ title, text, headlines, kind }) {
@@ -406,18 +465,21 @@ export const firebaseEngine = {
   /** Streams the summary: onText(textSoFar) is called as the words arrive. */
   async summarize(page, { localOnly, debugToken, signal, onText = () => {} }) {
     const request = summaryPrompt(page);
+    const offline = !isOnline();
     if (await useDevice(localOnly)) {
       // Nano gets a budget to start writing; once it writes, it may finish
       try {
-        const out = await onDevice(signal, localOnly ? LOCAL_BUDGET : DEVICE_BUDGET, localOnly ? localSlow() : hybridSlow(),
+        const out = await onDevice(signal, budgetFor(localOnly), slowErrorFor(localOnly),
           (s, started) => streamOnce(summaryModel(ON_DEVICE, debugToken, preferred, s), request, s, started, onText));
         if (!out.text) throw new Error('empty summary');
         return { summary: out.text, source: out.source };
       } catch (err) {
-        if (localOnly || signal?.aborted) throw err;
+        if (localOnly || offline || signal?.aborted) throw err;
         markDeviceSlow(err);
       }
     }
+    if (localOnly) throw new Error('LOCAL_ONLY: Gemini Nano is not ready on this computer');
+    if (offline) throw noEngineOffline(); // never wait on a cloud request that cannot succeed
     let lastErr = null;
     for (const i of projectOrder()) {
       try {
@@ -436,22 +498,31 @@ export const firebaseEngine = {
   },
   async scoreHeadlines(texts, { localOnly, debugToken, signal }) {
     const request = prompt(texts);
+    const offline = !isOnline();
     let res = null;
+    let list = null;
     let mode = IN_CLOUD;
     if (await useDevice(localOnly)) {
       try {
-        res = await onDevice(signal, localOnly ? LOCAL_BUDGET : DEVICE_BUDGET, localOnly ? localSlow() : hybridSlow(), (s) => {
-          // hybrid: another request may have found Nano too slow while this one waited its turn
-          if (!localOnly && deviceSlow()) throw new Error('skip');
+        res = await onDevice(signal, budgetFor(localOnly), slowErrorFor(localOnly), (s) => {
+          // online hybrid: another request may have found Nano too slow while this one waited its turn
+          if (!localOnly && !offline && deviceSlow()) throw new Error('skip');
           return model(ON_DEVICE, debugToken, preferred, s).generateContent(request, { signal: s });
         });
+        list = resultList(res);
+        if (!list) throw unreadable('Gemini Nano');
         mode = ON_DEVICE;
       } catch (err) {
-        if (localOnly || signal?.aborted) throw err;
-        if (err.message !== 'skip') markDeviceSlow(err);
+        if (localOnly || offline || signal?.aborted) throw err;
+        // one garbled answer doesn't make Nano slow: only real failures switch it off for a while
+        if (err.message !== 'skip' && !err.unreadable) markDeviceSlow(err);
+        res = null;
+        list = null;
       }
     }
-    if (!res) {
+    if (!list) {
+      if (localOnly) throw new Error('LOCAL_ONLY: Gemini Nano is not ready on this computer');
+      if (offline) throw noEngineOffline(); // never wait on a cloud request that cannot succeed
       // cloud: fall through to the next project; a slow request is sent once more
       const won = await raceProjects(projectOrder(), (i, outer) => {
         const m = model(IN_CLOUD, debugToken, i);
@@ -459,23 +530,26 @@ export const firebaseEngine = {
       }, 2500);
       preferred = won.i;
       res = won.v;
+      list = resultList(res);
+      if (!list) throw unreadable('Gemini');
     }
     const source = res.response.inferenceSource === 'on_device' ? 'on-device' : 'cloud';
-    const raw = res.response.text().trim().replace(/^```(json)?|```$/g, '');
-    const data = JSON.parse(raw);
-    const list = Array.isArray(data) ? data : data.results;
-    if (!Array.isArray(list)) throw new Error('AI returned no results');
-    const out = texts.map((_, i) => ({ ...(list[i] || { kind: 'clean', score: 0, triggers: [] }), source }));
+    const blank = { kind: 'clean', score: 0, triggers: [] };
+    const out = texts.map((_, i) => ({ ...(list[i] && typeof list[i] === 'object' ? list[i] : blank), source }));
     await fixUnchangedRewrites(out, texts, { mode, localOnly, debugToken, signal });
     return out;
   },
 
+  /** `device` is Chrome's Nano availability, so the popup can offer the download click. */
   async getStatus({ localOnly }) {
     const device = await deviceAvailability();
-    if (device === 'available' && !localOnly && deviceSlow()) return { ready: true, source: 'cloud', localOnly, message: `Gemini in the cloud: Gemini Nano is too slow on this computer (${projectName()} project)` };
-    if (device === 'available') return { ready: true, source: 'on-device', localOnly, message: 'Gemini Nano, on this device' };
-    if (localOnly) return { ready: false, source: 'none', localOnly, message: device === 'unavailable' ? 'This computer cannot run Gemini Nano' : 'Gemini Nano needs to download: click Turn on Debait' };
-    return { ready: true, source: 'cloud', localOnly, message: `Gemini in the cloud (${CLOUD_MODEL}, ${projectName()} project)` };
+    const online = isOnline();
+    const base = { localOnly, device, online };
+    if (device === 'available' && !localOnly && online && deviceSlow()) return { ...base, ready: true, source: 'cloud', message: `Gemini in the cloud: Gemini Nano is too slow on this computer (${projectName()} project)` };
+    if (device === 'available') return { ...base, ready: true, source: 'on-device', message: online ? 'Gemini Nano, on this device' : 'Gemini Nano, on this device (offline)' };
+    if (localOnly) return { ...base, ready: false, source: 'none', message: device === 'unavailable' ? 'This computer cannot run Gemini Nano' : 'Gemini Nano needs to download: click Turn on Debait' };
+    if (!online) return { ...base, ready: false, source: 'none', message: device === 'unavailable' ? 'Offline, and this computer cannot run Gemini Nano' : 'Offline, and Gemini Nano is not downloaded yet: click Turn on Debait when back online' };
+    return { ...base, ready: true, source: 'cloud', message: `Gemini in the cloud (${CLOUD_MODEL}, ${projectName()} project)` };
   },
 
   async initDeviceModel() {
