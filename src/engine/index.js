@@ -98,14 +98,14 @@ export const engine = USE_MOCK ? mockEngine : {
   },
   async getStatus(opts = {}) {
     const s = await firebaseEngine.getStatus(opts);
-    if (gemini !== 'ok' && s.source === 'cloud') {
+    if (gemini === 'failing' && s.source === 'cloud') {
       const appCheck = /app check|401|403/i.test(lastError?.message || '');
       return {
         ...s,
         ready: false,
         source: 'none',
         needsAppCheck: appCheck,
-        message: appCheck ? 'Cloud AI blocked until App Check debug token is registered' : gemini === 'unknown' ? 'Connecting to Gemini…' : `Gemini unavailable (${lastError?.message})`,
+        message: appCheck ? 'Cloud AI blocked until App Check debug token is registered' : `Gemini unavailable (${lastError?.message})`,
       };
     }
     return s;

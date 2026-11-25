@@ -1,6 +1,6 @@
-// Firebase web app configs. Primary project (Team) enforces App Check.
-// Never weaken App Check or silently route user data to an unenforced project by default.
-export const ALLOW_BACKUP_FALLBACK = false;
+// Firebase web app configs. Primary project (Team) enforces App Check and is always tried first.
+// Backup project is tried only if Team rejects an unregistered per-install debug token (or Live WebSocket).
+export const ALLOW_BACKUP_FALLBACK = true;
 
 export const FIREBASE_PROJECTS = [
   {

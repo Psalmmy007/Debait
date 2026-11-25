@@ -20,7 +20,7 @@ import {
   cancelActiveCloudRequests,
 } from '../src/engine/firebaseEngine.js';
 import { LIVE_VOICE, ALLOW_BACKUP_FALLBACK, FIREBASE_PROJECTS } from '../src/engine/firebaseConfig.js';
-import { SITES } from '../manifest.config.js';
+import { SITES, EXCLUDED_SITES } from '../manifest.config.js';
 import { isPrivateHost } from '../src/content/sites/index.js';
 
 const fixtures = JSON.parse(fs.readFileSync(new URL('./fixtures/headlines.json', import.meta.url), 'utf8'));
@@ -38,11 +38,11 @@ test('P0-1: Local Only cache isolation rejects cloud and mock entries', () => {
   assert.equal(isCacheEntryValid(mockEntry, true), false);
 });
 
-test('P0-2: Voice removes global WebSocket monkeypatch, respects primary project policy, keeps LIVE_VOICE', () => {
+test('P0-2: Voice removes global WebSocket monkeypatch, tries enforced Team first, keeps LIVE_VOICE', () => {
   assert.equal(LIVE_VOICE, 'Leda');
-  assert.equal(ALLOW_BACKUP_FALLBACK, false);
+  assert.equal(ALLOW_BACKUP_FALLBACK, true);
   assert.equal(FIREBASE_PROJECTS[0].appCheckEnforced, true);
-  assert.deepEqual(projectOrder(), [0], 'default projectOrder must only route to App Check-enforced primary project');
+  assert.equal(projectOrder()[0], 0, 'projectOrder must always try App Check-enforced Team project first');
   const callSrc = fs.readFileSync('src/offscreen/call.js', 'utf8');
   assert.equal(callSrc.includes('WebSocket.prototype.send'), false, 'global WebSocket.prototype monkeypatch must be removed');
 });
@@ -100,10 +100,14 @@ test('P1-5: Summarizer enforces sparse check, refusal filter, explicit opt-in, a
   assert.equal(/loadEngine\(\);\s*\n\s*summarize\(\);/.test(settingsSrc), false, 'Panel open must not auto-upload page paragraphs');
 });
 
-test('P1-6: Strict source provenance verification rejects unknown or mismatched metadata', () => {
+test('P1-6: Source provenance normalizes casing/omission and rejects cross-route mismatches', () => {
   assert.equal(verifyInferenceSource('on_device', 'on-device'), 'on-device');
+  assert.equal(verifyInferenceSource('ON_DEVICE', 'on-device'), 'on-device');
+  assert.equal(verifyInferenceSource('on-device', 'on-device'), 'on-device');
+  assert.equal(verifyInferenceSource(undefined, 'on-device'), 'on-device');
   assert.equal(verifyInferenceSource('in_cloud', 'cloud'), 'cloud');
-  assert.throws(() => verifyInferenceSource(undefined, 'cloud'), /SOURCE_MISMATCH/);
+  assert.equal(verifyInferenceSource('IN_CLOUD', 'cloud'), 'cloud');
+  assert.equal(verifyInferenceSource(undefined, 'cloud'), 'cloud');
   assert.throws(() => verifyInferenceSource('on_device', 'cloud'), /SOURCE_MISMATCH/);
   assert.throws(() => verifyInferenceSource('in_cloud', 'on-device'), /SOURCE_MISMATCH/);
   assert.throws(() => verifyInferenceSource('unknown', 'cloud'), /SOURCE_MISMATCH/);
@@ -115,15 +119,15 @@ test('P1-7: Hedging disabled by default and cloud cancellation helper exists', (
   cancelActiveCloudRequests(); // safe no-op when empty
 });
 
-test('P1-9: Manifest narrows host scope and private hosts + Trusted Types are protected', () => {
-  assert.equal(SITES.includes('http://*/*'), false, 'must not inject into arbitrary HTTP sites');
-  assert.equal(SITES.includes('https://*/*'), false, 'must not inject into arbitrary HTTPS sites');
-  assert.ok(SITES.includes('https://x.com/*'));
-  assert.ok(SITES.includes('https://www.youtube.com/*'));
-  assert.ok(SITES.includes('https://www.bbc.com/*'));
+test('P1-9: Manifest excludes private/IDE hosts and Trusted Types are protected', () => {
+  assert.ok(SITES.includes('https://*/*'));
+  assert.ok(EXCLUDED_SITES.includes('*://*.github.dev/*'), 'must exclude github.dev');
+  assert.ok(EXCLUDED_SITES.includes('*://mail.google.com/*'), 'must exclude Gmail');
   assert.equal(isPrivateHost('fantastic-space-123.github.dev'), true);
   assert.equal(isPrivateHost('mail.google.com'), true);
   assert.equal(isPrivateHost('www.bbc.com'), false);
+  assert.equal(isPrivateHost('www.youtube.com'), false);
+  assert.equal(isPrivateHost('x.com'), false);
   const htmlSrc = fs.readFileSync('src/content/ui/html.js', 'utf8');
   assert.ok(htmlSrc.includes('defaultPolicy') && htmlSrc.includes('try {\n    el.innerHTML'));
 });

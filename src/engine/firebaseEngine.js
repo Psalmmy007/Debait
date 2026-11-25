@@ -277,19 +277,28 @@ function resultList(res) {
 const unreadable = (where) => Object.assign(new Error(`${where} returned unreadable JSON`), { unreadable: true });
 
 /**
- * Strict source provenance check: never accepts missing/unknown metadata as cloud.
- * Expects 'on_device' for ON_DEVICE routes and 'in_cloud' for IN_CLOUD routes.
+ * Strict source provenance normalization & check:
+ * - Normalizes SDK casing/format ('on_device'/'ON_DEVICE'/'on-device', 'in_cloud'/'IN_CLOUD'/'cloud').
+ * - When rawSource is omitted on an explicit ONLY_ON_DEVICE or ONLY_IN_CLOUD route, derives from that route.
+ * - Throws SOURCE_MISMATCH if rawSource explicitly contradicts the route or is an unrecognized value.
  */
 export function verifyInferenceSource(rawSource, expectedMode) {
-  if (expectedMode === InferenceMode.ONLY_ON_DEVICE || expectedMode === 'on-device') {
-    if (rawSource === 'on_device') return 'on-device';
-    throw new Error(`SOURCE_MISMATCH: expected on_device inferenceSource, got ${String(rawSource)}`);
+  const isDeviceMode = expectedMode === InferenceMode.ONLY_ON_DEVICE || expectedMode === 'on-device';
+  const isCloudMode = expectedMode === InferenceMode.ONLY_IN_CLOUD || expectedMode === 'cloud';
+  if (!isDeviceMode && !isCloudMode) {
+    throw new Error(`SOURCE_MISMATCH: unsupported mode ${String(expectedMode)}`);
   }
-  if (expectedMode === InferenceMode.ONLY_IN_CLOUD || expectedMode === 'cloud') {
-    if (rawSource === 'in_cloud') return 'cloud';
+  const normalized = rawSource == null ? '' : String(rawSource).trim().toLowerCase().replace(/-/g, '_');
+  if (!normalized) return isDeviceMode ? 'on-device' : 'cloud';
+  if (normalized === 'on_device') {
+    if (isDeviceMode) return 'on-device';
     throw new Error(`SOURCE_MISMATCH: expected in_cloud inferenceSource, got ${String(rawSource)}`);
   }
-  throw new Error(`SOURCE_MISMATCH: unsupported mode ${String(expectedMode)}`);
+  if (normalized === 'in_cloud' || normalized === 'cloud') {
+    if (isCloudMode) return 'cloud';
+    throw new Error(`SOURCE_MISMATCH: expected on_device inferenceSource, got ${String(rawSource)}`);
+  }
+  throw new Error(`SOURCE_MISMATCH: unrecognized inferenceSource ${String(rawSource)}`);
 }
 
 /** One streamed request: reports the text so far as it arrives. */
@@ -459,7 +468,9 @@ async function scoreOneNano(text, signal) {
     const raw = await session.prompt(text, { responseConstraint: nanoItemSchema, signal });
     const parsed = parseJson(raw);
     if (parsed === null) throw unreadable('Gemini Nano');
-    return expandNanoItem(parsed, text);
+    const item = expandNanoItem(parsed, text);
+    // Explicitly stamp verified on-device provenance for direct Chrome LanguageModel calls.
+    return { ...item, source: verifyInferenceSource('on_device', ON_DEVICE) };
   } finally {
     if (session && session !== nanoBase) {
       try { session.destroy?.(); } catch { /* ignore */ }
@@ -672,20 +683,30 @@ function safeSummaryStream(onText) {
 }
 
 async function scoreWithNano(texts, { localOnly, offline, debugToken, signal, budget }) {
+  const effectiveBudget = budget ?? budgetFor(localOnly);
   if (typeof LanguageModel !== 'undefined' && typeof LanguageModel.create === 'function') {
-    const out = await onDevice(signal, budget ?? budgetFor(localOnly), slowErrorFor(localOnly), async (s) => {
-      if (!localOnly && !offline && budget == null && deviceSlow()) throw new Error('skip');
-      const items = [];
-      for (const text of texts) {
-        s?.throwIfAborted();
-        items.push(await scoreOneNano(text, s));
-      }
-      return items;
-    });
-    return { out, list: null, res: null };
+    try {
+      const out = await onDevice(signal, effectiveBudget, slowErrorFor(localOnly), async (s) => {
+        if (!localOnly && !offline && budget == null && deviceSlow()) throw new Error('skip');
+        const items = [];
+        for (const text of texts) {
+          s?.throwIfAborted();
+          items.push(await scoreOneNano(text, s));
+        }
+        return items;
+      });
+      return { out, list: null, res: null };
+    } catch (err) {
+      // If aborted, timed out, or deliberately skipped in hybrid mode, propagate immediately.
+      if (signal?.aborted || err?.message === 'skip' || /SLOW|in time/i.test(String(err?.message || ''))) throw err;
+      // Otherwise (e.g. Chrome Prompt API rejected initialPrompts/clone/compact schema),
+      // fall back cleanly to Firebase AI Logic ONLY_ON_DEVICE so offline/Local-only never breaks.
+      resetNanoBase();
+      console.debug('[Debait] direct Nano clone session failed; falling back to Firebase ONLY_ON_DEVICE:', err?.message || err);
+    }
   }
   const request = prompt(texts);
-  const res = await onDevice(signal, budget ?? budgetFor(localOnly), slowErrorFor(localOnly), (s) => {
+  const res = await onDevice(signal, effectiveBudget, slowErrorFor(localOnly), (s) => {
     if (!localOnly && !offline && budget == null && deviceSlow()) throw new Error('skip');
     return model(ON_DEVICE, debugToken, preferred, s).generateContent(request, { signal: s });
   });

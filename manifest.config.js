@@ -1,22 +1,28 @@
 import { defineManifest } from '@crxjs/vite-plugin';
 import pkg from './package.json' with { type: 'json' };
 
-// Explicit supported sites (X, YouTube, BBC News, Google Search, and local demo).
-// Avoids injecting into private apps, IDEs (github.dev), mail, banking, or arbitrary sites.
-export const SITES = [
-  'https://x.com/*',
-  'https://*.x.com/*',
-  'https://twitter.com/*',
-  'https://www.youtube.com/*',
-  'https://youtube.com/*',
-  'https://m.youtube.com/*',
-  'https://www.bbc.com/*',
-  'https://*.bbc.com/*',
-  'https://www.bbc.co.uk/*',
-  'https://*.bbc.co.uk/*',
-  'https://www.google.com/*',
-  'http://localhost/*',
-  'http://127.0.0.1/*',
+// Sites where Debait runs (X, YouTube, BBC, Google, news sites, local demo),
+// explicitly excluding sensitive IDEs, webmail, workspaces, chat apps, and banking hosts.
+export const SITES = ['http://*/*', 'https://*/*'];
+export const EXCLUDED_SITES = [
+  '*://*.github.dev/*',
+  '*://*.vscode.dev/*',
+  '*://mail.google.com/*',
+  '*://docs.google.com/*',
+  '*://drive.google.com/*',
+  '*://sheets.google.com/*',
+  '*://slides.google.com/*',
+  '*://outlook.live.com/*',
+  '*://outlook.office.com/*',
+  '*://*.slack.com/*',
+  '*://discord.com/*',
+  '*://*.notion.so/*',
+  '*://*.figma.com/*',
+  '*://*.linear.app/*',
+  '*://*.chase.com/*',
+  '*://*.bankofamerica.com/*',
+  '*://*.wellsfargo.com/*',
+  '*://*.paypal.com/*',
 ];
 
 export default defineManifest({
@@ -42,6 +48,7 @@ export default defineManifest({
   content_scripts: [
     {
       matches: SITES,
+      exclude_matches: EXCLUDED_SITES,
       js: ['src/content/main.js'],
       run_at: 'document_idle',
     },

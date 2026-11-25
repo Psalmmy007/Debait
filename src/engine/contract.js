@@ -84,7 +84,7 @@ const INVENTED_FACT_TERMS = [
   'officials', 'police', 'court', 'survey', 'report', 'reports', 'data shows',
   'according to', 'saving', 'savings', 'years of', 'exchange',
 ];
-const HOOK_NEGATIONS = /\b(you won'?t believe|don'?t want you to know|can'?t believe)\b/gi;
+const HOOK_NEGATIONS = /\b(you won'?t believe|don'?t want you to know|can'?t believe|won'?t tell you|never believe|no one saw|nobody knows)\b/gi;
 const NEGATION_RE = /\b(not|never|no|without|denies|denied|refuses|refused|fails|failed|won'?t|can'?t|don'?t|doesn'?t|didn'?t|isn'?t|aren'?t|wasn'?t|weren'?t)\b/i;
 
 function extractNumbers(s) {
