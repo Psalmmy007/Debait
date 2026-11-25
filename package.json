@@ -9,6 +9,7 @@
     "fonts": "node scripts/copy-fonts.js",
     "build": "npm run fonts && vite build",
     "watch": "npm run fonts && vite build --watch",
+    "test": "node --test tests/*.test.js",
     "demo": "vite --config demo/vite.config.js --open",
     "dev": "vite --config vite.web.config.js",
     "build:web": "vite build --config vite.web.config.js"

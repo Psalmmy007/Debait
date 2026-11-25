@@ -18,4 +18,4 @@ export const ICON = {
 };
 
 export const LABEL = { rage: 'Rage', fear: 'Fear', envy: 'Envy', clean: 'Clean' };
-export const SOURCE = { 'on-device': 'Gemini Nano · on device', cloud: 'Gemini · cloud', mock: 'Quick estimate', none: 'AI not ready' };
+export const SOURCE = { 'on-device': 'Gemini Nano · on device', cloud: 'Gemini · cloud', mock: 'Heuristic estimate — not AI', none: 'AI unavailable' };

@@ -21,38 +21,8 @@ How to talk:
 - If you didn't catch what they said, just ask casually rather than guessing.
 - Ignore background noise, music, and your own voice coming back through the speakers.`;
 
-// Speech detection & instant barge-in:
-// - START_OF_ACTIVITY_INTERRUPTS cancels Gemini's current audio turn the instant the user speaks.
-// - High start sensitivity picks up normal/soft voices; low end sensitivity + 650 ms pause avoids
-//   cutting the user off mid-sentence while staying snappy.
-// The SDK has no option for this, so it's injected into the Live setup message on its way out.
-const REALTIME_INPUT = {
-  automaticActivityDetection: {
-    disabled: false,
-    startOfSpeechSensitivity: 'START_SENSITIVITY_HIGH',
-    endOfSpeechSensitivity: 'END_SENSITIVITY_LOW',
-    prefixPaddingMs: 150,
-    silenceDurationMs: 450,
-  },
-  activityHandling: 'START_OF_ACTIVITY_INTERRUPTS',
-};
-if (!WebSocket.prototype.__debaitPatched) {
-  const wsSend = WebSocket.prototype.send;
-  WebSocket.prototype.send = function (data) {
-    if (typeof data === 'string' && data.includes('"setup"')) {
-      try {
-        const msg = JSON.parse(data);
-        if (msg?.setup && typeof msg.setup === 'object') {
-          msg.setup.realtimeInputConfig = REALTIME_INPUT;
-          data = JSON.stringify(msg);
-        }
-      } catch { /* send as is */ }
-    }
-    return wsSend.call(this, data);
-  };
-  WebSocket.prototype.__debaitPatched = true;
-}
-
+// Speech detection & interruption behavior use Firebase AI Logic's documented Live SDK
+// connection directly (no global WebSocket.prototype monkeypatch).
 const TOOLS = [{
   functionDeclarations: [
     { name: 'page_report', description: 'Read what Debait found on the current page: how many headlines, how many are bait, and the worst examples.' },

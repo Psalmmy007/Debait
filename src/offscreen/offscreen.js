@@ -1,5 +1,5 @@
 // Hosts the engine. The service worker forwards requests here.
-import { engine } from '../engine/index.js';
+import { engine, cancelCloudRequests } from '../engine/index.js';
 import { MSG, normalizeResult } from '../engine/contract.js';
 import { startCall, endCall, inCall, setMuted, isMuted } from './call.js';
 import { setPreferredProject, preferredProject, projectSkips, applySkips } from '../engine/firebaseEngine.js';
@@ -46,6 +46,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         reply({ ok: true, ...(await engine.summarize(msg.page, { localOnly: msg.localOnly, debugToken: msg.debugToken, onText })) });
       } else if (msg.type === MSG.INIT) {
         reply({ ok: true, status: await engine.initDeviceModel() });
+      } else if (msg.type === MSG.CANCEL_CLOUD) {
+        cancelCloudRequests();
+        reply({ ok: true });
       } else {
         reply({ ok: false, error: 'unknown message' });
       }

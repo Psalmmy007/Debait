@@ -1,7 +1,7 @@
 // Debait content script: finds headlines, gets them scored, and runs the on-page UI.
-import { MSG, CACHE_VERSION, NO_SUMMARY_TEXT, hasEnoughSummaryText } from '../engine/contract.js';
+import { MSG, CACHE_VERSION, NO_SUMMARY_TEXT, hasEnoughSummaryText, isCacheEntryValid } from '../engine/contract.js';
 import { getSettings, onSettingsChange } from '../shared/storage.js';
-import { getAdapter, textOf } from './sites/index.js';
+import { getAdapter, textOf, isSensitivePage } from './sites/index.js';
 import { injectPageStyles, paintHighlights, swapToRewrite, swapToOriginal } from './ui/page.js';
 import { createOverlay, createOrb, playRipple } from './ui/overlay.js';
 import { chime } from './ui/chime.js';
@@ -194,13 +194,23 @@ async function start() {
   }
 
   let lastSummary = null;
-  let summaryInflight = null; // { url, promise } — dedupes if the panel closes and reopens mid-summary
+  let summaryInflight = null; // { url, gen, promise } — dedupes if the panel closes and reopens mid-summary
+  let summaryGen = 0;
   let summarySoFar = '';
   let onSummaryText = null; // the panel, while a summary is being written
+  function cancelSummary() {
+    summaryGen++;
+    summaryInflight = null;
+    summarySoFar = '';
+    onSummaryText = null;
+  }
   async function summarizePage(onText) {
     const url = location.href;
-    if (lastSummary?.url === url) return lastSummary;
-    if (summaryInflight?.url === url) {
+    if (isSensitivePage(document, location)) {
+      return { url, summary: 'Summaries are disabled on private or sensitive pages.', source: 'none' };
+    }
+    if (lastSummary?.url === url && (!settings.localOnly || lastSummary.source === 'on-device')) return lastSummary;
+    if (summaryInflight?.url === url && summaryInflight.gen === summaryGen) {
       onSummaryText = onText || null;
       if (summarySoFar && onText) onText(summarySoFar);
       return summaryInflight.promise;
@@ -210,21 +220,25 @@ async function start() {
       // Do not cache: dynamic feeds (X, YouTube) may finish loading headlines moments later
       return { url, summary: NO_SUMMARY_TEXT, source: 'none' };
     }
+    const gen = ++summaryGen;
     summarySoFar = '';
     onSummaryText = onText || null;
     const promise = send({ type: MSG.SUMMARY, page, stream: true })
       .then((res) => {
+        if (gen !== summaryGen || location.href !== url) return { url, summary: NO_SUMMARY_TEXT, source: 'none' };
         if (!res?.ok) throw new Error(res?.error || 'no response');
         const out = { url, summary: res.summary, source: res.source };
-        if (res.source !== 'none') lastSummary = out;
+        if (res.source !== 'none' && res.source !== 'mock') lastSummary = out;
         return out;
       })
       .finally(() => {
         if (summaryInflight?.promise === promise) summaryInflight = null;
-        summarySoFar = '';
-        onSummaryText = null;
+        if (gen === summaryGen) {
+          summarySoFar = '';
+          onSummaryText = null;
+        }
       });
-    summaryInflight = { url, promise };
+    summaryInflight = { url, gen, promise };
     return promise;
   }
 
@@ -377,7 +391,7 @@ async function start() {
       records.set(el, rec);
       mountTag(rec);
       const cached = localCache.get(text);
-      if (cached) {
+      if (isCacheEntryValid(cached, settings.localOnly)) {
         stats.hits++;
         stats.scored++;
         applyResult(rec, cached);
@@ -448,7 +462,11 @@ async function start() {
         ? 'Local only is on, and Gemini Nano did not finish on this computer. Retrying in a minute, or turn off Local only to use Gemini in the cloud.'
         : /LOCAL_ONLY/.test(err.message)
         ? 'Local only is on, but Gemini Nano is not downloaded yet. Open the Debait popup and click Turn on Debait, or turn off Local only.'
-        : 'Debait could not reach its AI. Retrying in a minute.';
+        : /OFFLINE_UNAVAILABLE/.test(err.message)
+        ? 'Offline — Gemini Nano is not ready on this device. Reconnect or click Turn on Debait when online.'
+        : /app check|401|403/i.test(err.message)
+        ? 'Cloud AI needs App Check debug token approval in the Debait popup.'
+        : 'Debait could not reach Gemini right now. Retrying shortly.';
       clearTimeout(retryTimer);
       const retryMs = isNanoOnly() ? 60000 : 5000;
       retryTimer = setTimeout(() => {
@@ -512,7 +530,7 @@ async function start() {
             continue;
           }
           const cached = localCache.get(rec.text);
-          if (cached && (!rec.result || rec.result.source === 'mock')) {
+          if (isCacheEntryValid(cached, settings.localOnly) && (!rec.result || rec.result.source === 'mock')) {
             rec.queued = false;
             queue.splice(i, 1);
             stats.hits++;
@@ -566,7 +584,7 @@ async function start() {
     rec.state = 'scored';
     rec.tag?.setResult(result);
     // "Debait automatically", or this page was debaited: new and redrawn bait headlines follow suit
-    if ((settings.autoDebait || pageDebaited) && result.kind !== 'clean' && result.source !== 'mock') {
+    if ((settings.autoDebait || pageDebaited) && result.kind !== 'clean' && result.source !== 'mock' && result.rewrite_safe !== false) {
       swapToRewrite(rec).then(() => rec.tag?.setDebaited(true, result));
       send({ type: 'debait/debaited', texts: [rec.text] }); // auto-debaited headlines count too
     }
@@ -574,7 +592,7 @@ async function start() {
 
   // ---------- debaiting ----------
   function debaitOne(rec) {
-    if (!rec?.result || rec.result.kind === 'clean' || rec.animating) return;
+    if (!rec?.result || rec.result.kind === 'clean' || rec.result.source === 'mock' || rec.result.rewrite_safe === false || rec.animating) return;
     swapToRewrite(rec).then(() => { paint(); refreshOrb(); });
     setTimeout(() => rec.tag?.setDebaited(true, rec.result), 240);
     if (rec.result.source !== 'mock') send({ type: 'debait/debaited', texts: [rec.text] });
@@ -600,7 +618,7 @@ async function start() {
     closeCard();
     orb.pulse();
     const all = [...records.values()].filter((r) => r.result);
-    const bait = all.filter((r) => r.state === 'scored' && r.result.kind !== 'clean');
+    const bait = all.filter((r) => r.state === 'scored' && r.result.kind !== 'clean' && r.result.source !== 'mock' && r.result.rewrite_safe !== false);
     const done = all.filter((r) => r.state === 'debaited');
 
     if (bait.length) {
@@ -644,7 +662,16 @@ async function start() {
     orb.setVisible(next.showOrb);
     orb.setSize(next.orbSize);
     panel.syncSettings?.(next, prev);
-    if (prev.localOnly !== next.localOnly && notice) { clearTimeout(retryTimer); notice = ''; for (const r of records.values()) if (r.failed && !r.result) { r.failed = false; r.tag?.setVisible(next.showTags); r.queued = true; queue.push(r); } flushSoon(); }
+    if (prev.localOnly !== next.localOnly) {
+      cancelSummary();
+      if (next.localOnly && lastSummary?.source !== 'on-device') lastSummary = null;
+      if (notice) {
+        clearTimeout(retryTimer);
+        notice = '';
+        for (const r of records.values()) if (r.failed && !r.result) { r.failed = false; r.tag?.setVisible(next.showTags); r.queued = true; queue.push(r); }
+        flushSoon();
+      }
+    }
     if (prev.voice && !next.voice && lastCallState !== 'error') onCallState({ state: 'ended' });
     if (prev.showTags !== next.showTags) {
       for (const r of records.values()) r.tag?.setVisible(next.showTags);

@@ -5,11 +5,27 @@
 
 const textOf = (el) => (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
 
+// Private/sensitive hosts (IDEs, webmail, workspaces, banking, chat apps) where Debait
+// stays off by default and never collects page text for summarization.
+export const PRIVATE_HOST_RE = /(^|\.)(gemini\.google\.com|chatgpt\.com|chat\.openai\.com|claude\.ai|copilot\.microsoft\.com|perplexity\.ai|chat\.deepseek\.com|github\.dev|vscode\.dev|mail\.google\.com|outlook\.live\.com|outlook\.office\.com|docs\.google\.com|drive\.google\.com|sheets\.google\.com|slides\.google\.com|notion\.so|slack\.com|discord\.com|figma\.com|linear\.app|chase\.com|bankofamerica\.com|wellsfargo\.com|paypal\.com)$/i;
+const SENSITIVE_PATH_RE = /\/(login|signin|sign-in|auth|oauth|checkout|billing|payment|account|settings|admin)\b/i;
+
+export function isPrivateHost(hostname = '') {
+  return PRIVATE_HOST_RE.test(String(hostname || '').toLowerCase());
+}
+
+export function isSensitivePage(doc = document, loc = location) {
+  if (isPrivateHost(loc?.hostname)) return true;
+  if (SENSITIVE_PATH_RE.test(String(loc?.pathname || ''))) return true;
+  if (doc?.querySelector?.('input[type="password"]')) return true;
+  return false;
+}
+
 const adapters = [
   {
-    // AI chat apps: answers and your own messages are not headlines
+    // Private/sensitive apps & AI chats: never scrape messages, code, mail, or forms
     name: 'off',
-    match: (h) => /(^|.)(gemini.google.com|chatgpt.com|chat.openai.com|claude.ai|copilot.microsoft.com|perplexity.ai|chat.deepseek.com)$/.test(h),
+    match: (h) => isPrivateHost(h),
     find: () => [],
   },
   {

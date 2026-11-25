@@ -1,5 +1,5 @@
 // Service worker: routes messages, keeps the score cache and the daily stats.
-import { MSG, CACHE_VERSION } from '../engine/contract.js';
+import { MSG, CACHE_VERSION, isCacheEntryValid } from '../engine/contract.js';
 import { getSettings, dayKey, emptyDay, SYNC_PREFIX, SYNC_DAYS, syncableDay } from '../shared/storage.js';
 
 const OFFSCREEN_URL = 'src/offscreen/index.html';
@@ -203,19 +203,34 @@ function recordDebaited(texts, count) {
 
 async function scoreTexts(texts, host) {
   const c = await loadCache();
-  const missing = [...new Set(texts.filter((t) => !c.has(t)))];
+  const { localOnly } = await getSettings();
+  // Local Only cache isolation: never serve a prior cloud-cached entry when Local Only is enabled.
+  const cachedFor = (t) => {
+    const entry = c.get(t);
+    return isCacheEntryValid(entry, localOnly) ? entry : null;
+  };
+  const missing = [...new Set(texts.filter((t) => !cachedFor(t)))];
+  let freshResults = null;
   if (missing.length) {
-    const { localOnly } = await getSettings();
     const { results } = await toEngine({ type: MSG.SCORE, texts: missing, localOnly });
     const fresh = new Map();
     missing.forEach((t, i) => {
-      fresh.set(t, results[i]);
-      if (results[i].source !== 'mock') c.set(t, results[i]); // never cache backup-engine guesses
+      const r = results[i];
+      // Verify Local Only never accepts or caches a cloud/mock result
+      if (localOnly && r?.source !== 'on-device') {
+        throw new Error('LOCAL_ONLY_SOURCE_MISMATCH: expected on-device result while Local only is on');
+      }
+      fresh.set(t, r);
+      if (r && (r.source === 'on-device' || r.source === 'cloud')) {
+        // Never overwrite a verified on-device cache entry with a cloud entry
+        const existing = c.get(t);
+        if (!existing || existing.source !== 'on-device' || r.source === 'on-device') c.set(t, r);
+      }
     });
-    var freshResults = fresh;
+    freshResults = fresh;
     saveCacheSoon();
   }
-  const out = texts.map((t) => c.get(t) || freshResults?.get(t));
+  const out = texts.map((t) => freshResults?.get(t) || cachedFor(t));
   recordStats(out, host, texts);
   return { results: out, cacheHits: texts.length - missing.length };
 }
@@ -283,7 +298,15 @@ chrome.storage.onChanged.addListener((changes, area) => {
   const now = changes.settings.newValue?.voice;
   if (now && !was) startCallFlow();
   if (!now && was) endCallFlow();
-  if (changes.settings.newValue?.localOnly && now) {
+  const wasLocal = changes.settings.oldValue?.localOnly;
+  const nowLocal = changes.settings.newValue?.localOnly;
+  if (nowLocal && !wasLocal) {
+    // Switching Local only ON immediately cancels any in-flight cloud requests.
+    chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] }).then((has) => {
+      if (has.length) chrome.runtime.sendMessage({ target: 'offscreen', type: MSG.CANCEL_CLOUD }).catch(() => {});
+    }).catch(() => {});
+  }
+  if (nowLocal && now) {
     // turning Local only on during an active cloud voice call ends the call cleanly
     chrome.storage.local.set({ settings: { ...changes.settings.newValue, voice: false } });
   }

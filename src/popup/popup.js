@@ -3,7 +3,7 @@ import { MSG } from '../engine/contract.js';
 import { getSettings, setSettings, getRecentStats } from '../shared/storage.js';
 
 const $ = (s) => document.querySelector(s);
-const SRC_LABEL = { 'on-device': 'Gemini Nano', cloud: 'Gemini Cloud', mock: 'Connecting', none: 'Not ready' };
+const SRC_LABEL = { 'on-device': 'Gemini Nano', cloud: 'Gemini Cloud', mock: 'Heuristic — not AI', none: 'Not ready' };
 
 async function renderToday() {
   const [today] = (await getRecentStats(1));

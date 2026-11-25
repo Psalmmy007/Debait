@@ -1,9 +1,11 @@
-// Firebase web app configs. Debait tries them in order: the team project first, then a
-// backup project, so one project that isn't set up (or is over quota) never breaks Debait.
-// Firebase web configs are public by design; App Check protects each project.
+// Firebase web app configs. Primary project (Team) enforces App Check.
+// Never weaken App Check or silently route user data to an unenforced project by default.
+export const ALLOW_BACKUP_FALLBACK = false;
+
 export const FIREBASE_PROJECTS = [
   {
     name: 'Team',
+    appCheckEnforced: true,
     config: {
       apiKey: 'AIzaSyAjyYbK_Tc4s3ZqSbPBYblEJefkg0-l47A',
       authDomain: 'debait-d6d5d.firebaseapp.com',
@@ -15,6 +17,7 @@ export const FIREBASE_PROJECTS = [
   },
   {
     name: 'Backup',
+    appCheckEnforced: false,
     config: {
       apiKey: 'AIzaSyDtxldc6JaRo-oA92h_xJLULyAt4m-OreU',
       authDomain: 'axi-chat-2026.firebaseapp.com',

@@ -51,6 +51,8 @@ export function openCard(layer, rec, rect, { onDebait, onRestore }) {
   const r = rec.result;
   const debaited = rec.state === 'debaited';
   const clean = r.kind === 'clean';
+  const isMock = r.source === 'mock';
+  const canRewrite = !clean && !isMock && r.rewrite_safe !== false && !!r.honest_rewrite?.trim();
   const el = document.createElement('div');
   el.className = 'card';
   el.dataset.kind = r.kind;
@@ -65,7 +67,7 @@ export function openCard(layer, rec, rect, { onDebait, onRestore }) {
   setHTML(el, `
     <div class="c-top">
       <span class="c-icon">${ICON[r.kind]}</span>
-      <div class="c-title"><b>${KIND[r.kind]}</b><span>${WHY[r.kind]}</span></div>
+      <div class="c-title"><b>${KIND[r.kind]}</b><span>${WHY[r.kind]} · Wording check, not a fact-check</span></div>
       <div class="c-ring" aria-hidden="true">
         <svg viewBox="0 0 48 48"><circle class="t" cx="24" cy="24" r="19.5"/><circle class="f" cx="24" cy="24" r="19.5" stroke-dasharray="${C}" stroke-dashoffset="${C}"/></svg>
         <b class="num">${r.score}</b>
@@ -78,16 +80,16 @@ export function openCard(layer, rec, rect, { onDebait, onRestore }) {
         <button role="tab" aria-selected="true" data-v="honest">Honest</button>
         <button role="tab" aria-selected="false" data-v="bait">Bait</button>
       </div>
-      <p class="c-alt" aria-live="polite">${esc(r.honest_rewrite)}</p>
+      <p class="c-alt" aria-live="polite">${esc(canRewrite ? r.honest_rewrite : 'No verified neutral rewrite available')}</p>
     </div>`}
     <div class="c-foot">
       <span class="c-src" data-src="${esc(r.source)}"><i></i>${esc(SOURCE[r.source] || r.source)}</span>
-      ${clean ? '' : `<div class="c-btns">
+      ${canRewrite ? `<div class="c-btns">
         <button class="btn round" data-act="share" aria-label="Share as an image" title="Share as an image">${ICON.share}</button>
         ${debaited
           ? '<button class="btn" data-act="restore">Show original</button>'
           : '<button class="btn primary" data-act="debait">Debait it</button>'}
-      </div>`}
+      </div>` : ''}
     </div>`);
 
   layer.appendChild(el);

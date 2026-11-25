@@ -19,7 +19,7 @@ const SWITCHES = [
 ];
 
 const LEGEND = [['rage', 'Rage'], ['fear', 'Fear'], ['envy', 'Envy'], ['clean', 'Clean']];
-const BY = { 'on-device': 'Gemini Nano', cloud: 'Gemini', mock: 'Quick summary' };
+const BY = { 'on-device': 'Gemini Nano', cloud: 'Gemini', mock: 'Heuristic estimate — not AI' };
 
 /**
  * @param layer       shadow-root container for the panel
@@ -80,8 +80,10 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
 
       <section class="p-card p-sum">
         <h4 class="h">In short<span data-v="sumBy"></span></h4>
-        <p class="p-sum-text wait">Reading the page…</p>
-        <button class="btn wide" data-act="summary" hidden>Try again</button>
+        <p class="p-sum-text wait">${settings.localOnly
+          ? 'Summarize this page locally on your device.'
+          : 'Click below to summarize visible page text or headlines (uses on-device AI first, or cloud unless Local only is on).'}</p>
+        <button class="btn wide" data-act="summary">Summarize this page</button>
       </section>
 
       <section class="p-card">
@@ -136,7 +138,7 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
     refresh();
     loadToday();
     loadEngine();
-    summarize(); // starts right away, so it's usually done by the time you look
+    // Explicit opt-in: do not automatically collect/upload page paragraphs until the user clicks "Summarize this page".
 
     if (!reducedMotion()) {
       el.animate(clipFrames(true), { duration: 600, easing: OUT });
@@ -251,7 +253,12 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
         ? 'Local only is on, and Gemini Nano did not finish on this computer.'
         : /LOCAL_ONLY/.test(err.message)
         ? 'Local only is on, but Gemini Nano is not ready on this computer.'
-        : 'Could not summarize this page.';
+        : /OFFLINE_UNAVAILABLE/.test(err.message)
+        ? 'Offline — Gemini Nano is not ready on this device to summarize.'
+        : /app check|401|403/i.test(err.message)
+        ? 'Cloud AI is waiting for App Check approval in the Debait popup.'
+        : 'Could not summarize this page right now.';
+      retry.textContent = 'Try again';
       retry.hidden = false;
       sec.dataset.state = 'error';
     }

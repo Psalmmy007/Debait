@@ -19,7 +19,7 @@ const CANNED = {
       { word: 'silently killing you', why: 'fear of hidden harm' },
       { word: 'common', why: 'makes it feel like it applies to you' },
     ],
-    honest_rewrite: "This common breakfast food may carry health risks, a study suggests",
+    honest_rewrite: 'Health concerns raised about this common breakfast food',
   },
   "22-year-old retires as a millionaire while you're still stuck at your 9-to-5": {
     kind: 'envy', score: 78,
@@ -27,7 +27,7 @@ const CANNED = {
       { word: 'millionaire', why: 'status envy' },
       { word: "while you're still stuck", why: 'comparison jab aimed at you' },
     ],
-    honest_rewrite: "22-year-old retires early after years of saving, while most still work 9-to-5",
+    honest_rewrite: '22-year-old retires early as a millionaire',
   },
   "the radical left's war on your car is here. they're coming for your engine next": {
     kind: 'rage', score: 94,

@@ -6,25 +6,28 @@ Debait is a Chrome extension that reads the headlines on X, YouTube and BBC News
 (Rage, Fear, Envy or Clean, with a 0–100 bait score), highlights the manipulative words, and
 rewrites bait into calm, honest headlines with one click.
 
-It runs on-device with Gemini Nano through **Firebase AI Logic hybrid inference**. If a computer has
-no local model, it falls back to the cloud and sends only the single headline text, never your
-history. A **Local only** switch turns the cloud off.
+It runs on-device with Gemini Nano through **Firebase AI Logic hybrid inference**. When a computer
+does not have Gemini Nano ready (or Nano is busy/slow online), Debait falls back to the App Check-protected
+cloud project and sends only the headline text being scored — never your browsing history. The optional
+**In short** summary runs only after you click **Summarize this page**, sending visible article paragraphs
+(or feed headlines) on supported public pages unless **Local only** is enabled. A **Local only** switch
+turns the cloud off completely and isolates cached cloud results.
 
 > Built for Google's #BuildHybridAI 2026 hackathon.
 
 ## What you see
 
-- **The orb.** A small glass sphere of moving smoke (real-time WebGL) floats on the page. It's a
-  dark storm when the page is full of bait and a calm pearl once it's clean. Drag it anywhere.
-  Click it and a ring sweeps across the page while every bait headline decodes into an honest one.
-  Click again to restore the originals. Double-click for settings.
+- **The orb.** A small glass sphere of moving smoke (real-time WebGL) floats on supported sites (X, YouTube,
+  BBC News, Google Search, and the local demo feed). Drag it anywhere. Click it to debait/restore headlines,
+  double-click for settings, or triple-click for voice call.
 - **Tags.** Each headline gets a small capsule with a symbol: Rage / Fear / Envy / Clean, with its bait score.
 - **Highlights.** Manipulative words are underlined.
-- **Ingredients card.** Click a tag to see why a headline is bait, word by word, and what actually happened.
-  Switch between the bait and honest versions, or copy a share card image.
-- **In short.** A 2–3 sentence summary of the whole page, written live in the orb panel as soon as it opens.
-- **Voice call.** Talk to Debait (Gemini Live). Ask what is on the page, what is bait, or to debait it.
-- **Popup.** Today's bait %, breakdown, switches, and which engine is running (on-device / cloud).
+- **Ingredients card.** Click a tag to see why a headline is bait, word by word, and a verified neutral rewrite
+  (wording check only — not a fact-check). Switch between bait and honest versions, or copy a share card image.
+- **In short.** An opt-in 2–3 sentence summary of the page when you click **Summarize this page** in the orb panel
+  (disabled on private/sensitive pages).
+- **Voice call.** Optional Talk to Debait live voice assistant with a dedicated mute button and bundled offline chimes.
+- **Popup.** Today's bait %, breakdown, switches, App Check debug token helper (for supervised setup), and engine status.
 - **Weekly Mind Facts.** A side panel laid out like a nutrition label for your week.
 
 ## Setup
@@ -33,6 +36,7 @@ You need [Node.js](https://nodejs.org) 20+ and Chrome 139+ on desktop.
 
 ```bash
 npm install
+npm test
 npm run build
 ```
 
@@ -67,18 +71,15 @@ inference mode itself for each request, `InferenceMode.ONLY_ON_DEVICE` (Gemini N
 `InferenceMode.ONLY_IN_CLOUD` (Gemini), instead of handing the choice to `PREFER_ON_DEVICE`.
 That gives it control over time limits, cancellation and queueing:
 
-- **One Nano prompt at a time.** Gemini Nano is single-turn, so every on-device request goes through
-  one serial queue.
-- **Online:** Nano answers when it is downloaded and free. If it is busy, missing or too slow (10 s),
-  the request goes to the cloud, so pages never wait.
-- **Offline:** the cloud is never tried. Requests queue for Nano with a long time budget; without
-  Nano, a quick offline estimate is shown (never saved or counted) and re-checked later.
-- **Local only:** the cloud is never used, whatever happens.
-- **Turning Nano on:** Chrome only downloads Gemini Nano after a click, so the popup shows
-  **Turn on Debait** whenever the model can still be downloaded.
+- **One Nano prompt at a time (pre-warmed + cloned).** Gemini Nano pre-warms a compact base session when already downloaded and clones it per headline with a minimal output schema (`{"k":"c","s":0}` for clean headlines).
+- **Online:** Nano answers when it is downloaded and free (10 s budget). If it is busy, missing, or too slow, a single authenticated request goes to the App Check-enforced primary cloud project (8 s timeout with automatic Nano failover, no speculative duplicate hedging).
+- **Offline:** the cloud is never tried. Requests queue 1×1 (viewport-first) for Nano; if Nano is not downloaded, Debait surfaces an honest offline/unavailable status instead of faking AI results with heuristics.
+- **Local only:** the cloud is never used, in-flight cloud requests are aborted immediately, and prior cloud-cached entries are strictly ignored at retrieval.
+- **Source provenance & rewrite safety:** Every AI response must carry verified `on_device` or `in_cloud` metadata, and every rewrite passes a deterministic fact-preservation gate (blocking invented numbers, studies, or polarity flips).
+- **Turning Nano on:** Chrome only downloads Gemini Nano after a click, so the popup shows **Turn on Debait** whenever the model can still be downloaded.
 
 Each result records what really ran (`on-device` or `cloud`), and the popup chip shows it.
-See `src/engine/firebaseEngine.js`.
+See `src/engine/firebaseEngine.js` and `docs/ENGINE.md`.
 
 ## Project layout
 
