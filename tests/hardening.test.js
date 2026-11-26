@@ -20,7 +20,7 @@ import {
   cancelActiveCloudRequests,
 } from '../src/engine/firebaseEngine.js';
 import { LIVE_VOICE, ALLOW_BACKUP_FALLBACK, FIREBASE_PROJECTS } from '../src/engine/firebaseConfig.js';
-import { liveProjectOrder, withConnectTimeout } from '../src/offscreen/call.js';
+import { liveProjectOrder, withConnectTimeout, canSendAudio } from '../src/offscreen/call.js';
 import { SITES, EXCLUDED_SITES } from '../manifest.config.js';
 import { isPrivateHost } from '../src/content/sites/index.js';
 
@@ -170,6 +170,18 @@ test('Network, Call, and Local resilience regressions', async () => {
   resolveLate({ close: async () => { closed = true; } });
   await new Promise((r) => setTimeout(r, 10));
   assert.equal(closed, true, 'late WebSocket session must be closed after timeout');
+
+  // Call: canSendAudio drops mic frames when socket is closed or backpressured
+  assert.equal(canSendAudio(null), false);
+  assert.equal(canSendAudio({ isClosed: true }), false);
+  assert.equal(canSendAudio({ isClosed: false, _webSocketHandler: { ws: { readyState: 3, bufferedAmount: 0 } } }), false);
+  assert.equal(canSendAudio({ isClosed: false, _webSocketHandler: { ws: { readyState: 1, bufferedAmount: 65536 } } }), false);
+  assert.equal(canSendAudio({ isClosed: false, _webSocketHandler: { ws: { readyState: 1, bufferedAmount: 1024 } } }), true);
+
+  // Voice audio: single AudioContext timeline scheduling + 100 ms mic frames
+  const voiceAudioSrc = fs.readFileSync('src/offscreen/voice-audio.js', 'utf8');
+  assert.ok(voiceAudioSrc.includes('MIC_FRAME_SEC = 0.1'), 'mic must use 100 ms frames to prevent WebSocket backpressure');
+  assert.ok(voiceAudioSrc.includes('nextPlayTime') && voiceAudioSrc.includes('activeNodes'), 'playback must schedule seamlessly on a single AudioContext timeline with instant barge-in flush');
 
   // Local: nanoItemSchema must not include maxItems (incompatible with some Chrome Prompt API builds)
   const engineSrc = fs.readFileSync('src/engine/firebaseEngine.js', 'utf8');

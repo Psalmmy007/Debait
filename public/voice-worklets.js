@@ -1,6 +1,6 @@
 // Debait voice call audio, running on the audio render thread.
 //
-// debait-mic: microphone -> 16 kHz 16-bit PCM in steady 20 ms frames.
+// debait-mic: microphone -> 16 kHz 16-bit PCM in steady 100 ms frames (zero-copy transfer).
 //   Anti-aliased (averages every input sample in each output step), keeps its fractional position
 //   across blocks so there are no clicks at block edges.
 //
@@ -12,9 +12,10 @@ class DebaitMic extends AudioWorkletProcessor {
   constructor(options) {
     super();
     const targetRate = options.processorOptions?.targetSampleRate || 16000;
-    const frameSeconds = options.processorOptions?.frameSeconds || 0.02;
+    const frameSeconds = options.processorOptions?.frameSeconds || 0.1;
     this.ratio = sampleRate / targetRate; // input samples per output sample
-    this.frame = new Int16Array(Math.round(targetRate * frameSeconds)); // steady 20 ms frames
+    this.frameLen = Math.round(targetRate * frameSeconds); // steady 100 ms frames (1600 samples @ 16 kHz)
+    this.frame = new Int16Array(this.frameLen);
     this.fill = 0;
     this.acc = 0;   // sum of input samples in the current output step
     this.n = 0;     // how many
@@ -34,9 +35,11 @@ class DebaitMic extends AudioWorkletProcessor {
         this.frame[this.fill++] = s < 0 ? s * 32768 : s * 32767;
         this.acc = 0;
         this.n = 0;
-        if (this.fill === this.frame.length) {
-          this.port.postMessage(this.frame.slice());
+        if (this.fill === this.frameLen) {
+          const out = this.frame;
+          this.frame = new Int16Array(this.frameLen);
           this.fill = 0;
+          this.port.postMessage(out, [out.buffer]);
         }
       }
     }

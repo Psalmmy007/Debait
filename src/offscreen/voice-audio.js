@@ -1,11 +1,14 @@
-// Debait's own audio pipeline for the voice call (replaces the SDK's startAudioConversation):
-// - Mic capture: 16 kHz 16-bit PCM in steady 20 ms frames via AudioWorklet (echo cancellation,
-//   noise suppression, and auto gain control explicitly enabled).
-// - Playback: 24 kHz PCM rendered off the main thread in `debait-player` AudioWorklet backed by a
-//   lock-free Float32 circular ring buffer (steady 40 ms pre-buffer, 2 ms anti-click ramps, <1 ms flush on barge-in).
+// Debait's own audio pipeline for the voice call (runs entirely inside the offscreen document):
+// - Single AudioContext for both mic capture and 24 kHz PCM playback (eliminates dual-context
+//   Windows WASAPI stalls/glitches and keeps raw PCM off Chrome message-passing).
+// - Mic capture: 16 kHz 16-bit PCM in steady 100 ms frames via `debait-mic` AudioWorklet
+//   (echoCancellation, noiseSuppression, autoGainControl enabled; zero-copy transfer).
+// - Playback: gapless AudioBufferSourceNode scheduling on the AudioContext timeline
+//   (`nextPlayTime = Math.max(ctx.currentTime, nextPlayTime)`) with instant <1 ms barge-in flush.
 const MIC_RATE = 16000;
 const SPEAKER_RATE = 24000;
-const MIC_FRAME_SEC = 0.02;      // low-latency 20 ms mic frames (320 samples @ 16 kHz)
+const MIC_FRAME_SEC = 0.1;       // steady 100 ms mic frames (1600 samples @ 16 kHz -> 10 pkt/s, no WS backpressure)
+const START_LEAD_SEC = 0.015;    // 15 ms initial lead-in prevents first-chunk underrun without audible lag
 // Light residual-echo floor while Debait speaks: keeps room noise out without blocking barge-in.
 const ECHO_GATE = 0.018;
 // Gentle lift for soft voices, paired with a compressor so louder speech stays clean.
@@ -18,10 +21,11 @@ function toBase64(bytes) {
 }
 
 /**
- * @param onMic      (base64Pcm16k) => void, 50 times a second (20 ms frames)
+ * @param onMic      (base64Pcm16k) => void, 10 times a second (100 ms frames)
  * @param onTalking  (bool) => void, when Debait starts / stops speaking
+ * @param startMuted boolean, keep mic silent until the Live session is ready
  */
-export async function openAudio({ onMic, onTalking }) {
+export async function openAudio({ onMic, onTalking, startMuted = false }) {
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: {
       channelCount: 1,
@@ -31,54 +35,53 @@ export async function openAudio({ onMic, onTalking }) {
       autoGainControl: true,
     },
   });
-  // Capture at 16 kHz when Chrome allows it (proper anti-aliasing), otherwise let the worklet resample.
-  let micCtx;
-  let outCtx;
+
+  // Single AudioContext at 24 kHz (exact speaker rate; debait-mic anti-alias resamples to 16 kHz).
+  // Falls back to hardware default sampleRate if the OS/device rejects 24 kHz.
+  let ctx;
   let src;
   try {
     try {
-      micCtx = new AudioContext({ sampleRate: MIC_RATE, latencyHint: 'interactive' });
-      src = micCtx.createMediaStreamSource(stream);
+      ctx = new AudioContext({ sampleRate: SPEAKER_RATE, latencyHint: 'interactive' });
+      src = ctx.createMediaStreamSource(stream);
     } catch {
-      await micCtx?.close().catch(() => {});
-      micCtx = new AudioContext({ latencyHint: 'interactive' });
-      src = micCtx.createMediaStreamSource(stream);
-    }
-    try {
-      outCtx = new AudioContext({ sampleRate: SPEAKER_RATE, latencyHint: 'interactive' });
-    } catch {
-      await outCtx?.close().catch(() => {});
-      outCtx = new AudioContext({ latencyHint: 'interactive' });
+      await ctx?.close().catch(() => {});
+      ctx = new AudioContext({ latencyHint: 'interactive' });
+      src = ctx.createMediaStreamSource(stream);
     }
     const url = chrome.runtime.getURL('voice-worklets.js');
-    await Promise.all([micCtx.audioWorklet.addModule(url), outCtx.audioWorklet.addModule(url)]);
-    await Promise.all([micCtx.resume(), outCtx.resume()]);
+    await ctx.audioWorklet.addModule(url);
+    await ctx.resume();
   } catch (err) {
     stream.getTracks().forEach((t) => t.stop());
-    await Promise.all([micCtx?.close(), outCtx?.close()]).catch(() => {});
+    await ctx?.close().catch(() => {});
     throw err;
   }
 
-  const mic = new AudioWorkletNode(micCtx, 'debait-mic', {
+  const mic = new AudioWorkletNode(ctx, 'debait-mic', {
     processorOptions: { targetSampleRate: MIC_RATE, frameSeconds: MIC_FRAME_SEC },
   });
-  let muted = false;
+  let muted = !!startMuted;
   let talking = false;
   let closed = false;
+  if (muted) stream.getAudioTracks().forEach((t) => { t.enabled = false; });
+
   const silence = new Int16Array(Math.round(MIC_RATE * MIC_FRAME_SEC));
   mic.port.onmessage = (e) => {
     if (muted || closed) return;
     let pcm = e.data;
+    if (!(pcm instanceof Int16Array) || !pcm.length) return;
     if (talking) {
       let sum = 0;
       for (let i = 0; i < pcm.length; i++) sum += pcm[i] * pcm[i];
       if (Math.sqrt(sum / pcm.length) / 32768 < ECHO_GATE) pcm = silence;
     }
-    onMic(toBase64(new Uint8Array(pcm.buffer)));
+    onMic(toBase64(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength)));
   };
-  const boost = micCtx.createGain();
+
+  const boost = ctx.createGain();
   boost.gain.value = MIC_BOOST;
-  const comp = micCtx.createDynamicsCompressor();
+  const comp = ctx.createDynamicsCompressor();
   comp.threshold.value = -20;
   comp.knee.value = 10;
   comp.ratio.value = 6;
@@ -86,66 +89,109 @@ export async function openAudio({ onMic, onTalking }) {
   comp.release.value = 0.2;
   src.connect(boost).connect(comp).connect(mic);
 
-  // ---------- 24 kHz PCM playback on the dedicated audio render thread ----------
-  const player = new AudioWorkletNode(outCtx, 'debait-player', {
-    outputChannelCount: [1],
-    processorOptions: { inputSampleRate: SPEAKER_RATE },
-  });
-  player.connect(outCtx.destination);
+  // ---------- 24 kHz PCM playback on the same AudioContext timeline ----------
+  let outGain = ctx.createGain();
+  outGain.gain.value = 1;
+  outGain.connect(ctx.destination);
+
+  const activeNodes = new Set();
+  let nextPlayTime = 0;
+  let quietTimer = null;
 
   function setTalking(next) {
     if (talking === next) return;
     talking = next;
-    onTalking?.(next);
+    if (!closed) onTalking?.(next);
   }
 
-  player.port.onmessage = (e) => {
-    if (!closed && e.data && typeof e.data.talking === 'boolean') {
-      setTalking(e.data.talking);
+  function clearScheduled() {
+    clearTimeout(quietTimer);
+    quietTimer = null;
+    for (const node of activeNodes) {
+      node.onended = null;
+      try { node.stop(); } catch { /* already stopped */ }
+      try { node.disconnect(); } catch { /* ignore */ }
     }
-  };
+    activeNodes.clear();
+    nextPlayTime = 0;
+  }
 
   function interrupt() {
-    if (!closed) {
-      try { player.port.postMessage('flush'); } catch { /* worklet closing */ }
+    clearScheduled();
+    // Swap output gain node cleanly so any audio tail cuts off immediately without clicks.
+    try { outGain.disconnect(); } catch { /* ignore */ }
+    if (!closed && ctx.state !== 'closed') {
+      outGain = ctx.createGain();
+      outGain.gain.value = 1;
+      outGain.connect(ctx.destination);
     }
     setTalking(false);
   }
 
+  function stopImmediate() {
+    closed = true;
+    muted = false;
+    clearScheduled();
+    mic.port.onmessage = null;
+    try { src.disconnect(); boost.disconnect(); comp.disconnect(); mic.disconnect(); } catch { /* ignore */ }
+    try { outGain.disconnect(); } catch { /* ignore */ }
+    stream.getTracks().forEach((t) => t.stop());
+  }
+
   return {
-    /** Transfers a base64 16-bit LE PCM chunk (24 kHz) zero-copy to the audio worklet ring buffer. */
+    /** Decodes base64 16-bit LE 24 kHz PCM and schedules it gaplessly on the AudioContext timeline. */
     play(b64) {
       if (closed || !b64) return;
-      if (outCtx.state === 'suspended') outCtx.resume().catch(() => {});
+      if (ctx.state === 'suspended') ctx.resume().catch(() => {});
       let bin;
       try { bin = atob(b64); } catch { return; }
       const n = bin.length >> 1;
       if (!n) return;
-      const samples = new Float32Array(n);
+
+      const buffer = ctx.createBuffer(1, n, SPEAKER_RATE);
+      const ch = buffer.getChannelData(0);
       for (let i = 0; i < n; i++) {
         let v = bin.charCodeAt(2 * i) | (bin.charCodeAt(2 * i + 1) << 8);
         if (v >= 0x8000) v -= 0x10000;
-        samples[i] = v / 32768;
+        ch[i] = v / 32768;
       }
-      player.port.postMessage(samples, [samples.buffer]);
+
+      const now = ctx.currentTime;
+      const startAt = nextPlayTime > now ? nextPlayTime : Math.max(now + START_LEAD_SEC, nextPlayTime);
+      nextPlayTime = startAt + buffer.duration;
+
+      const node = ctx.createBufferSource();
+      node.buffer = buffer;
+      node.connect(outGain);
+      activeNodes.add(node);
+      clearTimeout(quietTimer);
+      setTalking(true);
+
+      node.onended = () => {
+        activeNodes.delete(node);
+        try { node.disconnect(); } catch { /* ignore */ }
+        if (activeNodes.size === 0 && !closed) {
+          if (nextPlayTime <= ctx.currentTime + 0.02) nextPlayTime = 0;
+          clearTimeout(quietTimer);
+          quietTimer = setTimeout(() => {
+            if (activeNodes.size === 0 && !closed) setTalking(false);
+          }, 80);
+        }
+      };
+      node.start(startAt);
     },
-    /** User barged in: flush the ring buffer in < 1 ms. */
+    /** User barged in: immediately flush all queued playback nodes in < 1 ms. */
     interrupt,
+    /** Synchronously stop mic tracks and speaker playback (safe to call before awaiting close). */
+    stopImmediate,
     /** Mute/unmute the microphone immediately (disables live audio tracks and drops PCM frames). */
     setMuted(m) {
       muted = !!m;
       stream.getAudioTracks().forEach((t) => { t.enabled = !muted; });
     },
     async close() {
-      closed = true;
-      muted = false;
-      try { player.port.postMessage('flush'); } catch { /* ignore */ }
-      mic.port.onmessage = null;
-      player.port.onmessage = null;
-      try { src.disconnect(); boost.disconnect(); comp.disconnect(); mic.disconnect(); } catch { /* ignore */ }
-      try { player.disconnect(); } catch { /* ignore */ }
-      stream.getTracks().forEach((t) => t.stop());
-      await Promise.all([micCtx.close(), outCtx.close()]).catch(() => {});
+      stopImmediate();
+      if (ctx.state !== 'closed') await ctx.close().catch(() => {});
     },
   };
 }
