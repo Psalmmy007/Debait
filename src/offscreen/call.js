@@ -61,10 +61,11 @@ const state = (s, message = '', extra = {}) => chrome.runtime.sendMessage({ type
 const CONNECT_TIMEOUT = 10000;
 const WS_OPEN = 1;
 const MAX_WS_BACKPRESSURE = 32768;
+export const DEFAULT_LIVE_API_VERSION = 'v1beta';
 
 /** Builds the constrained Gemini Live WebSocket URL authenticated with a short-lived ephemeral token. */
-export function buildConstrainedWsUrl(token, apiVersion = 'v1alpha') {
-  const ver = apiVersion === 'v1beta' ? 'v1beta' : 'v1alpha';
+export function buildConstrainedWsUrl(token, apiVersion = DEFAULT_LIVE_API_VERSION) {
+  const ver = apiVersion === 'v1alpha' ? 'v1alpha' : 'v1beta';
   return `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.${ver}.GenerativeService.BidiGenerateContentConstrained?access_token=${encodeURIComponent(token)}`;
 }
 
@@ -109,6 +110,9 @@ export function classifyCallError(err, online = isOnline()) {
   if (/^TOKEN_ENDPOINT_NOT_FOUND:/i.test(msg) || code.includes('not-found') || /\b404\b/.test(msg)) {
     return 'Voice token service is not deployed on debait-d6d5d yet. Deploy mintLiveVoiceToken and try again.';
   }
+  if (/^TOKEN_RATE_LIMITED:/i.test(msg) || code.includes('resource-exhausted')) {
+    return 'Too many voice requests right now. Wait a minute and try again.';
+  }
   if (/^TOKEN_MINT_ERROR:/i.test(msg) || code.includes('failed-precondition') || code.includes('internal')) {
     return 'Could not mint a voice session token on debait-d6d5d. Check App Check and GEMINI_API_KEY in Firebase Functions.';
   }
@@ -128,7 +132,7 @@ async function mintEphemeralToken(debugToken, projectIndex, model) {
     return {
       token: data.token,
       model: data.model || model,
-      apiVersion: data.apiVersion || 'v1alpha',
+      apiVersion: data.apiVersion || DEFAULT_LIVE_API_VERSION,
     };
   } catch (err) {
     const code = String(err?.code || '').toLowerCase();
@@ -138,6 +142,9 @@ async function mintEphemeralToken(debugToken, projectIndex, model) {
     }
     if (code.includes('not-found') || /\b404\b/.test(msg)) {
       throw Object.assign(new Error(`TOKEN_ENDPOINT_NOT_FOUND: ${msg}`), { code: err?.code, fatal: true });
+    }
+    if (code.includes('resource-exhausted')) {
+      throw Object.assign(new Error(`TOKEN_RATE_LIMITED: ${msg}`), { code: err?.code, fatal: true });
     }
     if (/^TOKEN_MINT_ERROR:/i.test(msg)) throw err;
     throw Object.assign(new Error(`TOKEN_MINT_ERROR: ${msg}`), { code: err?.code });

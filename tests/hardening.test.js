@@ -271,25 +271,30 @@ test('Ephemeral Live voice token endpoint enforces App Check and maps errors acc
   assert.equal(LIVE_TOKEN_FUNCTION, 'mintLiveVoiceToken');
   assert.equal(FUNCTIONS_REGION, 'us-central1');
 
-  // Cloud Function v2 enforces App Check + Secret Manager GEMINI_API_KEY + Leda voice constraint
+  // Cloud Function v2 enforces App Check + Secret Manager GEMINI_API_KEY + Leda voice constraint + v1beta parity
   const fnSrc = fs.readFileSync('functions/index.js', 'utf8');
+  const handlerSrc = fs.readFileSync('functions/mintHandler.js', 'utf8');
   assert.ok(fnSrc.includes('enforceAppCheck: true'), 'mintLiveVoiceToken must enforce App Check');
   assert.ok(fnSrc.includes("defineSecret('GEMINI_API_KEY')"), 'must read Gemini API key from Secret Manager');
-  assert.ok(fnSrc.includes("const LIVE_VOICE = 'Leda'"), 'must preserve LIVE_VOICE = Leda');
-  assert.ok(fnSrc.includes('uses: 1'), 'ephemeral tokens must be single-use');
+  assert.ok(fnSrc.includes('maxInstances: 5'), 'must cap Cloud Function maxInstances');
+  assert.ok(handlerSrc.includes("LIVE_VOICE = 'Leda'"), 'must preserve LIVE_VOICE = Leda');
+  assert.ok(handlerSrc.includes("EPHEMERAL_API_VERSION = 'v1beta'"), 'backend must mint v1beta ephemeral tokens');
+  assert.ok(handlerSrc.includes('uses: 1'), 'ephemeral tokens must be single-use');
 
   const rc = JSON.parse(fs.readFileSync('.firebaserc', 'utf8'));
   assert.equal(rc.projects.default, 'debait-d6d5d');
 
-  // Constrained WebSocket URL uses access_token query param
-  const wsUrl = buildConstrainedWsUrl('auth_tokens/abc+123', 'v1alpha');
-  assert.ok(wsUrl.startsWith('wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained?access_token='));
+  // Constrained WebSocket URL defaults to v1beta and uses access_token query param (never key=)
+  const wsUrl = buildConstrainedWsUrl('auth_tokens/abc+123');
+  assert.ok(wsUrl.startsWith('wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained?access_token='));
+  assert.equal(wsUrl.includes('?key='), false, 'ephemeral tokens must use access_token, not key');
   assert.ok(wsUrl.includes(encodeURIComponent('auth_tokens/abc+123')));
 
-  // Accurate error classification (never misleads with generic "check your internet" on App Check/token failure)
+  // Accurate error classification (never misleads with generic "check your internet" on App Check/token/rate-limit failure)
   assert.match(classifyCallError(new Error('APP_CHECK_ERROR: invalid token'), true), /App Check/i);
   assert.match(classifyCallError({ code: 'functions/unauthenticated', message: 'Unauthenticated' }, true), /App Check/i);
   assert.match(classifyCallError(new Error('TOKEN_ENDPOINT_NOT_FOUND: 404'), true), /not deployed/i);
+  assert.match(classifyCallError({ code: 'functions/resource-exhausted', message: 'rate limit' }, true), /Too many voice requests/i);
   assert.match(classifyCallError(new Error('TOKEN_MINT_ERROR: missing secret'), true), /mint a voice session token/i);
   assert.match(classifyCallError(new Error('OFFLINE: no network'), false), /internet connection/i);
 });
