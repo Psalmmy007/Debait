@@ -1,0 +1,16 @@
+{
+  "voice": "en-US-AvaMultilingualNeural",
+  "rate": "-4%",
+  "pitch": "-1Hz",
+  "lines": [
+    { "id": "read", "text": "Every headline wants something from you." },
+    { "id": "feed", "text": "It wants you angry. Afraid. Envious." },
+    { "id": "clicks", "text": "Because every negative word buys a few more clicks." },
+    { "id": "meet", "text": "This is Debait." },
+    { "id": "reads", "text": "It reads the headlines on any page, and shows you exactly how they hook you." },
+    { "id": "click", "text": "Then, one click. The noise is gone. The news stays." },
+    { "id": "device", "text": "It runs on your device, with Gemini Nano. Private. And free." },
+    { "id": "label", "text": "Food has a label. Now, your feed does too." },
+    { "id": "end", "text": "Debait. Read the news, not the bait." }
+  ]
+}

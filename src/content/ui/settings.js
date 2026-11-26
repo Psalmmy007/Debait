@@ -1,26 +1,25 @@
-// Settings panel: double-click (or right-click) the orb.
+// The column: double-click (or right-click) the orb.
 // It opens out of the orb and folds back into it when closed.
 import { MSG } from '../../engine/contract.js';
 import { getSettings, setSettings, getRecentStats } from '../../shared/storage.js';
 import { reducedMotion } from './page.js';
 import { ICON, SOURCE } from './icons.js';
 import { setHTML } from './html.js';
+import { send } from '../ext.js';
+import { chime } from './chime.js';
 
 const OUT = 'cubic-bezier(0.16, 1, 0.3, 1)';
 
 const SWITCHES = [
-  { key: 'showTags', title: 'Show tags', hint: 'Labels and highlights on headlines' },
-  { key: 'autoDebait', title: 'Debait automatically', hint: 'Rewrite bait the moment it appears' },
-  { key: 'localOnly', title: 'Local only', hint: 'Never send headlines to the cloud' },
-  { key: 'showOrb', title: 'Show the orb', hint: 'Bring it back from the toolbar popup' },
+  { key: 'showTags', title: 'Show tags' },
+  { key: 'autoDebait', title: 'Debait automatically', hint: 'Rewrite bait as it appears' },
+  { key: 'voice', title: 'Talk to Debait', hint: 'Live voice call with Gemini' },
+  { key: 'localOnly', title: 'Local only', hint: 'Keep every headline on this device' },
+  { key: 'showOrb', title: 'Show the orb' },
 ];
 
-const LEGEND = [
-  ['rage', 'Rage', '#fff'],
-  ['fear', 'Fear', '#a1a1aa'],
-  ['envy', 'Envy', '#5f5f68'],
-  ['clean', 'Clean', 'repeating-linear-gradient(-45deg, rgba(255,255,255,.45) 0 2px, transparent 2px 4px)'],
-];
+const LEGEND = [['rage', 'Rage'], ['fear', 'Fear'], ['envy', 'Envy'], ['clean', 'Clean']];
+const BY = { 'on-device': 'Gemini Nano', cloud: 'Gemini', mock: 'Heuristic estimate — not AI' };
 
 /**
  * @param layer       shadow-root container for the panel
@@ -28,10 +27,13 @@ const LEGEND = [
  * @param onToggle    () => void   (Debait / restore the page)
  * @param orbCenter   () => {x, y}
  * @param onOpenChange (open) => void
+ * @param onSummarize (onText) => Promise<{summary, source}>  (onText gets the words as they arrive)
  */
-export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpenChange }) {
+export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpenChange, onSize, onSummarize }) {
   let el = null;
+  let opening = false;
   let closing = false;
+  const host = location.hostname.replace(/^www\./, '');
 
   const pct = (n, total) => (total ? Math.round((n / total) * 100) : 0);
 
@@ -51,54 +53,68 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
   }
 
   async function open() {
+    if (el || opening) return;
+    opening = true;
+    let settings;
+    try { settings = await getSettings(); } finally { opening = false; }
     if (el) return;
-    const settings = await getSettings();
     el = document.createElement('aside');
     el.className = 'panel';
     el.setAttribute('role', 'dialog');
-    el.setAttribute('aria-label', 'Debait settings');
+    el.setAttribute('aria-label', 'Debait');
 
     setHTML(el, `
-      <div class="p-head">
-        <div class="p-brand"><span class="p-logo"></span><div><b>Debait</b><small>Nutrition facts for your feed</small></div></div>
-        <button class="icon-btn" data-act="close" aria-label="Close settings">${ICON.close}</button>
-      </div>
-
-      <div class="p-meta">
-        <span class="chip" data-src="none"><i></i><span>Checking AI…</span></span>
-        <span class="p-site">${location.hostname.replace(/^www\./, '')}</span>
-      </div>
-
-      <section class="p-sec">
-        <h4>This page</h4>
-        <div class="p-split">
-          <div class="p-num"><b data-v="bait">0</b><span>bait</span></div>
-          <div class="p-num"><b data-v="debaited">0</b><span>debaited</span></div>
-          <div class="p-num dim"><b data-v="scanned">0</b><span>read</span></div>
+      <header class="p-head">
+        <div>
+          <h2 class="p-title">Debait</h2>
+          <p class="p-engine" data-src="none"><i></i><span>Checking the AI…</span></p>
         </div>
-        <button class="btn primary p-main" data-act="toggle">Debait this page</button>
+        <button class="p-x" data-act="close" aria-label="Close">${ICON.close}</button>
+      </header>
+
+      <section class="p-card">
+        <h4 class="h">This page<span>${host}</span></h4>
+        <div class="p-big"><b data-v="bait">0</b><span><em data-v="baitWord">bait headlines</em><span data-v="pageLine">Looking for headlines</span></span></div>
+        <button class="btn primary wide" data-act="toggle">Debait this page</button>
       </section>
 
-      <section class="p-sec">
-        <h4>Today</h4>
-        <div class="p-today"><b><span data-v="todayPct">0</span><small>%</small></b><span data-v="todayLine">of headlines were bait</span></div>
-        <div class="p-bar">${LEGEND.map(([k]) => `<span data-k="${k}"></span>`).join('')}</div>
-        <div class="p-legend">${LEGEND.map(([k, name, bg]) => `<span><i style="background:${bg}"></i>${name} <b data-v="${k}">0</b></span>`).join('')}</div>
+      <section class="p-card p-sum">
+        <h4 class="h">In short<span data-v="sumBy"></span></h4>
+        <p class="p-sum-text wait">${settings.localOnly
+          ? 'Summarize this page locally on your device.'
+          : 'Click below to summarize visible page text or headlines (uses on-device AI first, or cloud unless Local only is on).'}</p>
+        <button class="btn wide" data-act="summary">Summarize this page</button>
       </section>
 
-      <section class="p-sec">
-        <h4>Settings</h4>
+      <section class="p-card">
+        <h4 class="h">Today<span data-v="todayLine">No headlines yet</span></h4>
+        <div class="p-today"><b><span data-v="todayPct">0</span>%</b><span>of headlines were bait</span></div>
+        <div class="bar">${LEGEND.map(([k]) => `<span data-k="${k}"></span>`).join('')}</div>
+        <div class="p-legend">${LEGEND.map(([k, name]) => `<span><i class="sq" data-k="${k}"></i>${name} <b data-v="${k}">0</b></span>`).join('')}</div>
+      </section>
+
+      <h4 class="h p-out">Settings</h4>
+      <div class="group">
+        <label class="row">
+          <span>Run on ${host}</span>
+          <input type="checkbox" data-site ${settings.disabledSites.includes(host) ? '' : 'checked'} />
+          <span class="sw"></span>
+        </label>
         ${SWITCHES.map((s) => `
-          <label class="p-row">
-            <span>${s.title}<small>${s.hint}</small></span>
+          <label class="row">
+            <span>${s.title}${s.hint ? `<small>${s.hint}</small>` : ''}</span>
             <input type="checkbox" data-setting="${s.key}" ${settings[s.key] ? 'checked' : ''} />
             <span class="sw"></span>
           </label>`).join('')}
-      </section>
-
-      <button class="p-link" data-act="facts">Weekly Mind Facts ${ICON.arrow}</button>
-      <p class="p-note" hidden></p>
-      <p class="p-foot"><kbd>2×</kbd> click the orb <span aria-hidden="true">·</span> <kbd>Esc</kbd> to close</p>`);
+        <label class="p-size">
+          <span>Orb size<small data-v="orbSize">${Math.round((settings.orbSize || 1) * 100)}%</small></span>
+          <input type="range" min="0.75" max="1.6" step="0.05" value="${settings.orbSize || 1}" data-size aria-label="Orb size" />
+        </label>
+      </div>
+      <div class="group">
+        <button class="row" data-act="facts">Weekly Mind Facts ${ICON.chev}</button>
+      </div>
+      <p class="p-note" hidden></p>`);
 
     layer.appendChild(el);
 
@@ -122,20 +138,21 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
     refresh();
     loadToday();
     loadEngine();
+    // Explicit opt-in: do not automatically collect/upload page paragraphs until the user clicks "Summarize this page".
 
     if (!reducedMotion()) {
-      el.animate(clipFrames(true), { duration: 700, easing: OUT });
-      const parts = el.querySelectorAll('.p-head, .p-meta, .p-sec h4, .p-split, .p-main, .p-today, .p-bar, .p-legend, .p-row, .p-link, .p-foot');
-      parts.forEach((p, i) => {
+      el.animate(clipFrames(true), { duration: 600, easing: OUT });
+      el.querySelectorAll('.p-head, .p-card, .p-out, .group').forEach((p, i) => {
         p.animate(
-          [{ opacity: 0, transform: 'translateY(8px)', filter: 'blur(4px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }],
-          { duration: 520, delay: 60 + i * 28, easing: OUT, fill: 'backwards' },
+          [{ opacity: 0, transform: 'translateY(8px) scale(0.98)' }, { opacity: 1, transform: 'none' }],
+          { duration: 460, delay: 70 + i * 40, easing: OUT, fill: 'backwards' },
         );
       });
     }
 
     el.addEventListener('click', onClick);
     el.addEventListener('change', onChange);
+    el.addEventListener('input', onSizeInput);
     setTimeout(() => {
       document.addEventListener('pointerdown', onOutside, true);
       document.addEventListener('keydown', onKey, true);
@@ -148,7 +165,7 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
     document.removeEventListener('pointerdown', onOutside, true);
     document.removeEventListener('keydown', onKey, true);
     if (!reducedMotion()) {
-      await el.animate(clipFrames(false), { duration: 380, easing: 'cubic-bezier(0.7, 0, 0.84, 0)', fill: 'forwards' }).finished.catch(() => {});
+      await el.animate(clipFrames(false), { duration: 340, easing: 'cubic-bezier(0.7, 0, 0.84, 0)', fill: 'forwards' }).finished.catch(() => {});
     }
     el.remove();
     el = null;
@@ -172,21 +189,83 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
       onToggle();
       setTimeout(refresh, 50);
     }
+    if (act === 'summary') summarize();
     if (act === 'facts') {
-      const res = await chrome.runtime.sendMessage({ type: 'debait/openSidePanel' }).catch(() => null);
+      const res = await send({ type: 'debait/openSidePanel' });
       if (!res?.ok && el) {
         const note = el.querySelector('.p-note');
         note.hidden = false;
-        note.textContent = 'Click the Debait icon in the toolbar, then "Open Weekly Mind Facts".';
+        note.textContent = 'Click the Debait icon in the toolbar, then Weekly Mind Facts.';
       }
     }
   }
 
+  function onSizeInput(e) {
+    if (e.target.dataset?.size === undefined) return;
+    el.querySelector('[data-v="orbSize"]').textContent = `${Math.round(e.target.value * 100)}%`;
+    onSize?.(Number(e.target.value));
+  }
+
   async function onChange(e) {
+    if (e.target.dataset?.size !== undefined) {
+      await setSettings({ orbSize: Number(e.target.value) });
+      return;
+    }
+    if (e.target.dataset?.site !== undefined) {
+      const cur = await getSettings();
+      const off = new Set(cur.disabledSites);
+      if (e.target.checked) off.delete(host); else off.add(host);
+      await setSettings({ disabledSites: [...off] });
+      return;
+    }
     const key = e.target.dataset?.setting;
     if (!key) return;
+    if (key === 'voice') {
+      const cur = await getSettings();
+      const blocked = e.target.checked && (cur.localOnly || (typeof navigator !== 'undefined' && navigator.onLine === false));
+      chime(e.target.checked && !blocked ? 'start' : 'end');
+    }
     await setSettings({ [key]: e.target.checked });
     if (key === 'showOrb' && !e.target.checked) close();
+  }
+
+  async function summarize() {
+    const sec = el?.querySelector('.p-sum');
+    if (!sec || sec.dataset.state === 'loading') return;
+    const out = sec.querySelector('.p-sum-text');
+    const retry = sec.querySelector('[data-act="summary"]');
+    const by = sec.querySelector('[data-v="sumBy"]');
+    sec.dataset.state = 'loading';
+    retry.hidden = true;
+    out.className = 'p-sum-text wait';
+    out.textContent = 'Reading the page…';
+    try {
+      const { summary, source } = await onSummarize((text) => {
+        if (!el) return;
+        out.className = 'p-sum-text typing';
+        out.textContent = text;
+      });
+      if (!el) return;
+      out.className = source === 'none' ? 'p-sum-text wait' : 'p-sum-text';
+      out.textContent = summary;
+      by.textContent = BY[source] || '';
+      sec.dataset.state = 'done';
+    } catch (err) {
+      if (!el) return;
+      out.className = 'p-sum-text wait error';
+      out.textContent = /LOCAL_ONLY_(SLOW|FAILED)/.test(err.message)
+        ? 'Local only is on, and Gemini Nano did not finish on this computer.'
+        : /LOCAL_ONLY/.test(err.message)
+        ? 'Local only is on, but Gemini Nano is not ready on this computer.'
+        : /OFFLINE_UNAVAILABLE/.test(err.message)
+        ? 'Offline — Gemini Nano is not ready on this device to summarize.'
+        : /app ?check|401|403/i.test(err.message)
+        ? 'Cloud AI is waiting for App Check approval in the Debait popup.'
+        : 'Could not summarize this page right now.';
+      retry.textContent = 'Try again';
+      retry.hidden = false;
+      sec.dataset.state = 'error';
+    }
   }
 
   /** Updates the "This page" numbers and the main button. */
@@ -194,14 +273,16 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
     if (!el) return;
     const { bait, debaited, scanned } = getPage();
     el.querySelector('[data-v="bait"]').textContent = bait;
-    el.querySelector('[data-v="debaited"]').textContent = debaited;
-    el.querySelector('[data-v="scanned"]').textContent = scanned;
-    const btn = el.querySelector('.p-main');
+    el.querySelector('[data-v="baitWord"]').textContent = `bait headline${bait === 1 ? '' : 's'}`;
+    el.querySelector('[data-v="pageLine"]').textContent = scanned
+      ? `of ${scanned} read${debaited ? `, ${debaited} debaited` : ''}`
+      : 'Looking for headlines';
+    const btn = el.querySelector('[data-act="toggle"]');
     const restore = bait === 0 && debaited > 0;
     btn.classList.toggle('primary', !restore);
-    setHTML(btn, restore
+    btn.textContent = restore
       ? 'Restore originals'
-      : bait > 0 ? `Debait ${bait} headline${bait === 1 ? '' : 's'} ${ICON.arrow}` : 'Nothing to debait here');
+      : bait > 0 ? `Debait ${bait} headline${bait === 1 ? '' : 's'}` : 'Nothing to debait here';
     btn.disabled = !restore && bait === 0;
   }
 
@@ -211,23 +292,37 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
     const bait = t.rage + t.fear + t.envy;
     el.querySelector('[data-v="todayPct"]').textContent = pct(bait, t.total);
     el.querySelector('[data-v="todayLine"]').textContent = t.total
-      ? `of ${t.total.toLocaleString()} headlines were bait`
-      : 'No headlines read yet today';
-    for (const k of ['rage', 'fear', 'envy', 'clean']) {
+      ? `${t.total.toLocaleString()} headline${t.total === 1 ? '' : 's'}`
+      : 'No headlines yet';
+    for (const [k] of LEGEND) {
       el.querySelector(`[data-v="${k}"]`).textContent = t[k];
-      const bar = el.querySelector(`.p-bar [data-k="${k}"]`);
+      const bar = el.querySelector(`.bar [data-k="${k}"]`);
       requestAnimationFrame(() => { bar.style.width = `${pct(t[k], t.total)}%`; });
     }
   }
 
   async function loadEngine() {
-    const res = await chrome.runtime.sendMessage({ type: MSG.STATUS }).catch(() => null);
+    const res = await send({ type: MSG.STATUS });
     if (!el) return;
     const s = res?.status || { source: 'none' };
-    const chip = el.querySelector('.chip');
+    const chip = el.querySelector('.p-engine');
     chip.dataset.src = s.source;
     chip.querySelector('span').textContent = SOURCE[s.source] || s.source;
     chip.title = s.message || '';
+  }
+
+  function syncSettings(next, prev) {
+    if (!el || !next) return;
+    for (const input of el.querySelectorAll('[data-setting]')) {
+      input.checked = !!next[input.dataset.setting];
+    }
+    const size = el.querySelector('[data-size]');
+    if (size && next.orbSize) {
+      size.value = String(next.orbSize);
+      const label = el.querySelector('[data-v="orbSize"]');
+      if (label) label.textContent = `${Math.round(next.orbSize * 100)}%`;
+    }
+    if (prev && prev.localOnly !== next.localOnly) loadEngine();
   }
 
   return {
@@ -235,6 +330,7 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
     close,
     toggle: () => (el ? close() : open()),
     refresh,
+    syncSettings,
     isOpen: () => !!el,
   };
 }

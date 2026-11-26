@@ -6,39 +6,54 @@
   <link rel="stylesheet" href="./popup.css" />
 </head>
 <body>
-  <header>
-    <div class="brand"><div class="logo"></div><b>Debait</b></div>
-    <span class="chip" id="engine" data-src="mock"><i></i><span>Checking…</span></span>
+  <header class="top">
+    <h1 class="title">Debait</h1>
+    <span class="pill" id="engine" data-src="none"><i></i><span>Checking…</span></span>
   </header>
 
-  <section class="today">
-    <div class="kicker">Today</div>
-    <div class="big"><b id="pct">0</b><span>%</span></div>
-    <p id="sub">of your headlines were bait</p>
+  <section class="card notice" id="setup" hidden>
+    <b>One step to turn on Gemini</b>
+    <p>Send this code to your teammate. They add it in Firebase console → App Check → Apps → Manage debug tokens. Until then Debait uses its backup engine.</p>
+    <div class="token"><code id="token"></code><button class="btn" id="copyToken">Copy</button></div>
+  </section>
+
+  <section class="card notice" id="problems" hidden>
+    <b>Recent problems</b>
+    <p id="problemList"></p>
+    <div class="token"><code>Details for a bug report</code><button class="btn" id="copyProblems">Copy</button></div>
+  </section>
+
+  <section class="card today">
+    <h4 class="h">Today<span id="sub">No headlines yet</span></h4>
+    <div class="big"><b id="pct">0</b><span class="unit">%</span><span class="cap">of headlines<br />were bait</span></div>
     <div class="bar" id="bar">
       <span data-k="rage"></span><span data-k="fear"></span><span data-k="envy"></span><span data-k="clean"></span>
     </div>
     <ul class="legend" id="legend">
-      <li data-k="rage"><i></i>Rage <b>0</b></li>
-      <li data-k="fear"><i></i>Fear <b>0</b></li>
-      <li data-k="envy"><i></i>Envy <b>0</b></li>
-      <li data-k="clean"><i></i>Clean <b>0</b></li>
+      <li data-k="rage"><i class="sq"></i>Rage <b>0</b></li>
+      <li data-k="fear"><i class="sq"></i>Fear <b>0</b></li>
+      <li data-k="envy"><i class="sq"></i>Envy <b>0</b></li>
+      <li data-k="clean"><i class="sq"></i>Clean <b>0</b></li>
     </ul>
   </section>
 
   <div class="actions">
-    <button class="primary" id="debaitPage">Debait this page</button>
-    <button id="turnOn" hidden>Turn on Debait</button>
+    <button class="btn primary wide" id="debaitPage">Debait this page</button>
+    <button class="btn wide" id="turnOn" hidden>Turn on Debait</button>
   </div>
 
-  <section class="switches">
-    <label><span>Show the orb<small>Floating sphere you can drag anywhere</small></span><input type="checkbox" data-setting="showOrb" /><i></i></label>
-    <label><span>Show tags<small>Labels and highlights on headlines</small></span><input type="checkbox" data-setting="showTags" /><i></i></label>
-    <label><span>Debait automatically<small>Rewrite bait as soon as it appears</small></span><input type="checkbox" data-setting="autoDebait" /><i></i></label>
-    <label><span>Local only<small>Never send headlines to the cloud</small></span><input type="checkbox" data-setting="localOnly" /><i></i></label>
-  </section>
+  <div class="group">
+    <label class="row site"><span>Run on <b id="host">this site</b></span><input type="checkbox" id="siteOn" checked /><span class="sw"></span></label>
+    <label class="row"><span>Show tags</span><input type="checkbox" data-setting="showTags" /><span class="sw"></span></label>
+    <label class="row"><span>Debait automatically<small>Rewrite bait as it appears</small></span><input type="checkbox" data-setting="autoDebait" /><span class="sw"></span></label>
+    <label class="row"><span>Talk to Debait<small>Live voice call with Gemini</small></span><input type="checkbox" data-setting="voice" /><span class="sw"></span></label>
+    <label class="row"><span>Local only<small>Keep every headline on this device</small></span><input type="checkbox" data-setting="localOnly" /><span class="sw"></span></label>
+    <label class="row"><span>Show the orb</span><input type="checkbox" data-setting="showOrb" /><span class="sw"></span></label>
+  </div>
 
-  <button class="link" id="openFacts">Weekly Mind Facts <span aria-hidden="true">→</span></button>
+  <div class="group links">
+    <button class="row" id="openFacts">Weekly Mind Facts <svg class="chev" viewBox="0 0 8 13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 1.5 6.5 6.5l-5 5"/></svg></button>
+  </div>
 
   <script type="module" src="./popup.js"></script>
 </body>

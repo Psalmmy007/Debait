@@ -19,11 +19,9 @@ export function injectPageStyles() {
   const style = document.createElement('style');
   style.id = 'debait-page-styles';
   style.textContent = `
-    @font-face { font-family: 'Debait Inter'; src: url('${url('inter.woff2')}') format('woff2'); font-weight: 100 900; font-display: swap; }
-    @font-face { font-family: 'Debait Bricolage'; src: url('${url('bricolage.woff2')}') format('woff2'); font-weight: 200 800; font-display: swap; }
-    @font-face { font-family: 'Debait Newsreader'; src: url('${url('newsreader.woff2')}') format('woff2'); font-weight: 200 800; font-display: swap; }
-    ::highlight(debait-bait) { background-color: rgba(128, 128, 128, 0.2); color: inherit; text-decoration: underline 2px; text-decoration-color: currentColor; }
-    ::highlight(debait-hot) { background-color: rgba(128, 128, 128, 0.42); color: inherit; text-decoration: underline 2px; text-decoration-color: currentColor; }
+    @font-face { font-family: 'Debait Inter'; src: url('${url('inter.woff2')}') format('woff2'); font-weight: 100 900; font-display: swap; font-optical-sizing: auto; }
+    ::highlight(debait-bait) { background-color: rgba(120, 120, 128, 0.18); color: inherit; text-decoration: underline 1.5px; text-decoration-color: currentColor; }
+    ::highlight(debait-hot) { background-color: rgba(120, 120, 128, 0.38); color: inherit; text-decoration: underline 2px; text-decoration-color: currentColor; }
   `;
   (document.head || document.documentElement).appendChild(style);
 }
@@ -122,7 +120,14 @@ function decode(el, from, to, delay) {
 }
 
 export async function swapToRewrite(rec, { delay = 0 } = {}) {
-  if (rec.state !== 'scored') return;
+  if (
+    rec.state !== 'scored'
+    || !rec.result
+    || rec.result.kind === 'clean'
+    || rec.result.source === 'mock'
+    || rec.result.rewrite_safe === false
+    || !rec.result.honest_rewrite?.trim()
+  ) return;
   rec.original = [...rec.el.childNodes].map((n) => n.cloneNode(true));
   rec.state = 'debaited';
   const from = rec.el.textContent.replace(/\s+/g, ' ').trim();
@@ -133,6 +138,11 @@ export async function swapToRewrite(rec, { delay = 0 } = {}) {
   rec.animating = true;
   await decode(rec.el, from, rec.result.honest_rewrite, delay);
   rec.animating = false;
+  // some sites redraw their headlines while we animate (React, Preact): make sure ours stuck
+  const now = rec.el.textContent.replace(/\s+/g, ' ').trim();
+  if (rec.el.isConnected && now !== rec.result.honest_rewrite.trim()) {
+    rec.el.replaceChildren(document.createTextNode(rec.result.honest_rewrite));
+  }
 }
 
 export async function swapToOriginal(rec, { delay = 0 } = {}) {

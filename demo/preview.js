@@ -17,6 +17,7 @@ globalThis.chrome = {
         const raw = await mockEngine.scoreHeadlines(msg.texts, {});
         return { ok: true, cacheHits: 0, results: msg.texts.map((t, i) => normalizeResult(raw[i], t)) };
       }
+      if (msg.type === MSG.SUMMARY) return { ok: true, ...(await mockEngine.summarize(msg.page)) };
       if (msg.type === MSG.STATUS) return { ok: true, status: { ready: true, source: 'mock', message: 'Mock engine (preview)' } };
       return { ok: false };
     },

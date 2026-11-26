@@ -2,46 +2,62 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Weekly Mind Facts</title>
   <link rel="stylesheet" href="./sidepanel.css" />
 </head>
 <body>
-  <div class="label">
-    <h1>Mind Facts</h1>
-    <p class="period" id="period">Weekly · last 7 days</p>
-    <div class="rule thick"></div>
+  <header class="top">
+    <h1 class="title">Mind Facts</h1>
+    <p class="period" id="period">Last 7 days</p>
+  </header>
 
-    <div class="row big"><span>Headlines read</span><b id="total">0</b></div>
-    <div class="rule mid"></div>
+  <p class="sample-note">Sample week · made-up numbers, not your reading</p>
 
-    <div class="row hero"><span>Bait</span><b><em id="baitPct">0</em>%</b></div>
-    <div class="rule"></div>
+  <!-- shown when there are no real numbers yet -->
+  <section class="card empty-state">
+    <h2>Your week fills in as you browse</h2>
+    <p>Debait only counts headlines that Gemini actually checked, so these numbers are always real.</p>
+    <ol>
+      <li>Make sure Gemini is on (open the Debait popup).</li>
+      <li>Browse X, YouTube or the news as usual.</li>
+      <li>Come back here: your week fills in by itself.</li>
+    </ol>
+  </section>
 
-    <div class="kinds" id="kinds">
-      <div class="row kind" data-k="rage"><span><i></i>Rage</span><span class="meter"><s></s></span><b>0%</b></div>
-      <div class="row kind" data-k="fear"><span><i></i>Fear</span><span class="meter"><s></s></span><b>0%</b></div>
-      <div class="row kind" data-k="envy"><span><i></i>Envy</span><span class="meter"><s></s></span><b>0%</b></div>
-      <div class="row kind" data-k="clean"><span><i></i>Clean</span><span class="meter"><s></s></span><b>0%</b></div>
+  <section class="card hero">
+    <h4 class="h">Bait this week<span id="checkedLine">0 headlines checked</span></h4>
+    <div class="big"><b id="baitPct">0</b><span>%</span></div>
+    <div class="chart">
+      <div class="avg" id="avg"><span>avg</span></div>
+      <div class="days" id="days"></div>
     </div>
-    <div class="rule mid"></div>
-
-    <h2>Bait by day</h2>
-    <div class="days" id="days"></div>
     <p class="note" id="calmest"></p>
-    <div class="rule mid"></div>
+  </section>
 
-    <h2>Top bait sources</h2>
-    <ol class="sources" id="sources"></ol>
-    <div class="rule mid"></div>
-
-    <div class="row"><span>Headlines debaited</span><b id="debaited">0</b></div>
-    <div class="rule thick"></div>
-
-    <div class="tip" id="tip"></div>
-    <p class="foot">Counts stay on this device. Debait never uploads your browsing history.</p>
+  <div class="tiles">
+    <section class="card tile"><h4 class="h">Checked</h4><b id="total">0</b><span>headlines</span></section>
+    <section class="card tile"><h4 class="h">Debaited</h4><b id="debaited">0</b><span>rewritten for you</span></section>
   </div>
 
-  <button class="demo" id="seed">Load demo week</button>
+  <h4 class="h out">Kinds of bait</h4>
+  <section class="card">
+    <div class="bar" id="stack"><span data-k="rage"></span><span data-k="fear"></span><span data-k="envy"></span><span data-k="clean"></span></div>
+    <div class="kinds" id="kinds">
+      <div class="kind" data-k="rage"><span class="ico" data-icon="rage"></span><span class="name">Rage<small>Anger, fights, us against them</small></span><b>0%</b></div>
+      <div class="kind" data-k="fear"><span class="ico" data-icon="fear"></span><span class="name">Fear<small>Danger, doom, false urgency</small></span><b>0%</b></div>
+      <div class="kind" data-k="envy"><span class="ico" data-icon="envy"></span><span class="name">Envy<small>Money, status, comparison</small></span><b>0%</b></div>
+      <div class="kind" data-k="clean"><span class="ico" data-icon="clean"></span><span class="name">Clean<small>Plain and factual</small></span><b>0%</b></div>
+    </div>
+  </section>
+
+  <h4 class="h out">Top bait sources</h4>
+  <section class="group"><ol class="sources" id="sources"></ol></section>
+
+  <section class="card tip" id="tip"></section>
+
+  <p class="foot">Each headline counts once a day, and only when Gemini analysed it. Weekly totals sync through the Google account you use in Chrome, so they come back after a reinstall; headlines and browsing history never leave this device.</p>
+  <button class="btn sample" id="seed">Show a sample week</button>
   <script type="module" src="./sidepanel.js"></script>
 </body>
 </html>

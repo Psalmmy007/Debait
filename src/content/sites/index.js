@@ -5,7 +5,38 @@
 
 const textOf = (el) => (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
 
+// Private/sensitive hosts (IDEs, webmail, workspaces, banking, chat apps) where Debait
+// stays off by default and never collects page text for summarization.
+export const PRIVATE_HOST_RE = /(^|\.)(gemini\.google\.com|chatgpt\.com|chat\.openai\.com|claude\.ai|copilot\.microsoft\.com|perplexity\.ai|chat\.deepseek\.com|github\.dev|vscode\.dev|mail\.google\.com|outlook\.live\.com|outlook\.office\.com|docs\.google\.com|drive\.google\.com|sheets\.google\.com|slides\.google\.com|notion\.so|slack\.com|discord\.com|figma\.com|linear\.app|chase\.com|bankofamerica\.com|wellsfargo\.com|paypal\.com)$/i;
+const SENSITIVE_PATH_RE = /\/(login|signin|sign-in|auth|oauth|checkout|billing|payment|account|settings|admin)\b/i;
+
+export function isPrivateHost(hostname = '') {
+  return PRIVATE_HOST_RE.test(String(hostname || '').toLowerCase());
+}
+
+export function isSensitivePage(doc = document, loc = location) {
+  if (isPrivateHost(loc?.hostname)) return true;
+  if (SENSITIVE_PATH_RE.test(String(loc?.pathname || ''))) return true;
+  if (doc?.querySelector?.('input[type="password"]')) return true;
+  return false;
+}
+
 const adapters = [
+  {
+    // Private/sensitive apps & AI chats: never scrape messages, code, mail, or forms
+    name: 'off',
+    match: (h) => isPrivateHost(h),
+    find: () => [],
+  },
+  {
+    name: 'google',
+    match: (h) => /^(www.)?google.[a-z.]+$/.test(h),
+    // only the result titles and Top stories / News cards; never AI Overviews, AI Mode or your own query
+    find: (root) => (/[?&]udm=50(&|$)/.test(location.search) ? [] : root.querySelectorAll('#rso a h3, #rso g-section-with-header a [role="heading"], #rso a [role="heading"][aria-level="3"]')),
+    // Google wraps organic result <h3> links inside span.V9tjod with transform: scaleY(-1);
+    // placing the tag right after .yuRUbf keeps it upright and cleanly below the headline.
+    place: (el) => el.closest('.yuRUbf') || el,
+  },
   {
     name: 'demo',
     match: (h) => h === 'localhost' || h === '127.0.0.1',
@@ -36,6 +67,8 @@ const adapters = [
       // the title of the video being watched
       'ytd-watch-metadata h1 yt-formatted-string',
     ].join(', ')),
+    // YouTube cuts titles at two lines, which would hide a tag at the end: put it under the title
+    place: (el) => el.closest('h3, h1') || el,
   },
   {
     name: 'bbc',
@@ -47,8 +80,56 @@ const adapters = [
   },
 ];
 
+// ---------- every other website ----------
+// Finds headline-like text: article headings and headline links, skipping menus, footers,
+// dialogs, buttons and forms. Keeps the innermost match (a heading inside a link, not both).
+const SKIP = 'nav, footer, header nav, aside nav, [role="navigation"], [role="menu"], [role="menuitem"], [role="menubar"], [role="banner"] nav, [role="contentinfo"], [role="dialog"], [role="alertdialog"], [aria-modal="true"], [role="alert"], [role="status"], [role="toolbar"], [role="tablist"], [role="tab"], [role="button"], dialog, form, button, label, select, [contenteditable="true"], debait-tag, debait-root, [aria-hidden="true"], code, pre';
+const CANDIDATES = 'h1, h2, h3, h4, [role="heading"], a[href], [class*="headline" i], [class*="title" i], [data-testid*="title" i], [data-testid*="headline" i]';
+const UI_TEXT = /^(sign in|sign up|log in|log out|sign out|subscribe|unsubscribe|cookie|accept|reject|decline|dismiss|skip to|jump to|back to|go to|return to|menu|share|read more|learn more|see more|show more|view more|view all|load more|continue (on|with|to|reading|watching|as|without|using|browsing|shopping)|create (an? |your )?account|get started|get the app|open in|download (the )?app|try (it )?free|start (your )?free|manage (your )?|update (your )?|verify (your )?|confirm (your )?|reset (your )?|forgot (your )?|choose (an? |your )?|select (an? |your )?|switch to|use another|turn on|turn off|enable |disable |allow |privacy policy|terms of (service|use)|contact us|help center|your account|my account)\b/i;
+
+function looksLikeHeadline(el) {
+  if (el.closest(SKIP)) return false;
+  if (el.hasAttribute('aria-haspopup')) return false;
+  if (!el.offsetParent && getComputedStyle(el).position !== 'fixed') return false; // hidden
+  const t = textOf(el);
+  if (t.length < 22 || t.length > 220) return false;
+  if (el.children.length > 6) return false; // a container, not a headline
+  const words = t.split(' ').length;
+  if (words < 4 || words > 32) return false;
+  if (UI_TEXT.test(t)) return false;
+  return true;
+}
+
+// post text on the big social sites (their own markup, checked first)
+const SOCIAL = [
+  'shreddit-post a[slot="title"]', '[id^="post-title"]', 'h3._eYtD2XCVieq6emjKBH3m',            // Reddit
+  'div[data-ad-preview="message"]', 'div[data-ad-comet-preview="message"]',                    // Facebook
+  '[data-e2e="video-desc"]', '[data-e2e="browse-video-desc"]', '[data-e2e="search-card-desc"]', // TikTok
+  '.update-components-text', '.feed-shared-update-v2__description',                            // LinkedIn
+  'article h1', 'h1._ap3a', 'span._ap3a._aaco',                                                 // Instagram
+  'span[dir="auto"] > span[dir="auto"]',                                                       // Threads / Meta
+].join(', ');
+function looksLikePost(el) {
+  if (el.closest(SKIP)) return false;
+  const t = textOf(el);
+  return t.length >= 15 && t.length <= 320 && t.split(' ').length >= 3;
+}
+
+const generic = {
+  name: 'generic',
+  match: () => true,
+  find: (root) => {
+    const social = [...root.querySelectorAll(SOCIAL)].filter(looksLikePost);
+    const found = [...social, ...[...root.querySelectorAll(CANDIDATES)].filter(looksLikeHeadline)];
+    const set = new Set(found);
+    // drop an element if another match sits inside it (keep the innermost)
+    const inner = found.filter((el) => !found.some((o) => o !== el && el.contains(o)));
+    return inner.filter((el) => set.has(el)).slice(0, 150);
+  },
+};
+
 export function getAdapter(hostname) {
-  return adapters.find((a) => a.match(hostname)) || null;
+  return adapters.find((a) => a.match(hostname)) || generic;
 }
 
 export { textOf };

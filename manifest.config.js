@@ -1,15 +1,28 @@
 import { defineManifest } from '@crxjs/vite-plugin';
 import pkg from './package.json' with { type: 'json' };
 
-// Sites where Debait runs. localhost = the demo feed (npm run demo).
-export const SITES = [
-  'https://x.com/*',
-  'https://twitter.com/*',
-  'https://www.youtube.com/*',
-  'https://www.bbc.com/*',
-  'https://www.bbc.co.uk/*',
-  'http://localhost/*',
-  'http://127.0.0.1/*',
+// Sites where Debait runs (X, YouTube, BBC, Google, news sites, local demo),
+// explicitly excluding sensitive IDEs, webmail, workspaces, chat apps, and banking hosts.
+export const SITES = ['http://*/*', 'https://*/*'];
+export const EXCLUDED_SITES = [
+  '*://*.github.dev/*',
+  '*://*.vscode.dev/*',
+  '*://mail.google.com/*',
+  '*://docs.google.com/*',
+  '*://drive.google.com/*',
+  '*://sheets.google.com/*',
+  '*://slides.google.com/*',
+  '*://outlook.live.com/*',
+  '*://outlook.office.com/*',
+  '*://*.slack.com/*',
+  '*://discord.com/*',
+  '*://*.notion.so/*',
+  '*://*.figma.com/*',
+  '*://*.linear.app/*',
+  '*://*.chase.com/*',
+  '*://*.bankofamerica.com/*',
+  '*://*.wellsfargo.com/*',
+  '*://*.paypal.com/*',
 ];
 
 export default defineManifest({
@@ -30,10 +43,12 @@ export default defineManifest({
   side_panel: {
     default_path: 'src/sidepanel/index.html',
   },
-  permissions: ['storage', 'offscreen', 'sidePanel'],
+  permissions: ['storage', 'offscreen', 'sidePanel', 'scripting', 'alarms'],
+  host_permissions: ['http://*/*', 'https://*/*'],
   content_scripts: [
     {
       matches: SITES,
+      exclude_matches: EXCLUDED_SITES,
       js: ['src/content/main.js'],
       run_at: 'document_idle',
     },

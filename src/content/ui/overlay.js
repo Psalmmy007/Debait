@@ -8,8 +8,10 @@ import tagCss from '../styles/tag.css?inline';
 import { SPRING, reducedMotion } from './page.js';
 import { createOrbRenderer } from './orb-gl.js';
 import { setHTML, adoptCss } from './html.js';
+import { load, save } from '../ext.js';
 
-const ORB = 56;
+const ORB = 56;          // base size; the user can scale it (settings.orbSize)
+const ORB_MAX = 1.6;
 const MARGIN = 16;
 // visible width, not counting the page's scrollbar
 const viewW = () => document.documentElement.clientWidth || innerWidth;
@@ -31,6 +33,9 @@ export function createOverlay() {
         <span class="orb-body"><span class="orb-fallback"></span><canvas class="orb-gl"></canvas></span>
       </button>
       <span class="orb-badge"></span>
+      <span class="orb-mic" aria-hidden="true"></span>
+      <button class="orb-mute" type="button" aria-label="Mute microphone" aria-pressed="false" title="Mute mic"></button>
+      <div class="voice-bubble" role="status" aria-live="polite"></div>
       <span class="orb-tip"></span>
     </div>`);
   document.documentElement.appendChild(host);
@@ -46,16 +51,46 @@ export function createOverlay() {
 // ============================================================
 // ORB: drag anywhere, click = Debait page, double-click = settings
 // ============================================================
-export function createOrb(overlay, { onClick, onDoubleClick }) {
+export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick, onMuteToggle }) {
   const wrap = overlay.orbWrap;
   const orb = wrap.querySelector('.orb');
   const badge = wrap.querySelector('.orb-badge');
+  const muteBtn = wrap.querySelector('.orb-mute');
   const tip = wrap.querySelector('.orb-tip');
   const canvas = wrap.querySelector('.orb-gl');
 
-  const gl = createOrbRenderer(canvas, ORB);
+  const MIC_ON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>';
+  const MIC_OFF_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 9v2a3 3 0 0 0 5.12 2.12M15 9.34V6a3 3 0 0 0-5.94-.6"/><path d="M17 16.95A6.5 6.5 0 0 1 5.5 11m13 0a6.45 6.45 0 0 1-.46 2.4"/><path d="M12 17.5V21M3 3l18 18"/></svg>';
+
+  let isMuted = false;
+  function applyMuted(muted) {
+    if (!muteBtn) return;
+    isMuted = !!muted;
+    muteBtn.setAttribute('aria-pressed', isMuted ? 'true' : 'false');
+    muteBtn.setAttribute('aria-label', isMuted ? 'Unmute microphone' : 'Mute microphone');
+    muteBtn.title = isMuted ? 'Unmute mic' : 'Mute mic';
+    setHTML(muteBtn, isMuted ? MIC_OFF_SVG : MIC_ON_SVG);
+  }
+  applyMuted(false);
+  muteBtn?.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
+  muteBtn?.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+  muteBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    cancelClicks();
+    const next = !isMuted;
+    applyMuted(next); // 0 ms optimistic visual flip
+    onMuteToggle?.(next);
+  });
+
+  // drawn once at the largest size, so it stays sharp when scaled up
+  const gl = createOrbRenderer(canvas, Math.round(ORB * ORB_MAX));
+  let k = 1; // orb scale
+  const S = () => ORB * k;
+  let destroyed = false;
   if (gl) {
     wrap.classList.add('has-gl');
+    gl.onLostChange((lost) => wrap.classList.toggle('has-gl', !lost));
     gl.start();
   }
 
@@ -64,23 +99,23 @@ export function createOrb(overlay, { onClick, onDoubleClick }) {
   let ratio = { x: 1, y: 0.8 };
 
   const clamp = (p) => ({
-    x: Math.min(Math.max(p.x, MARGIN), viewW() - ORB - MARGIN),
-    y: Math.min(Math.max(p.y, MARGIN), innerHeight - ORB - MARGIN),
+    x: Math.min(Math.max(p.x, MARGIN), viewW() - S() - MARGIN),
+    y: Math.min(Math.max(p.y, MARGIN), innerHeight - S() - MARGIN),
   });
   const fromRatio = () => clamp({
-    x: MARGIN + ratio.x * (viewW() - ORB - 2 * MARGIN),
-    y: MARGIN + ratio.y * (innerHeight - ORB - 2 * MARGIN),
+    x: MARGIN + ratio.x * (viewW() - S() - 2 * MARGIN),
+    y: MARGIN + ratio.y * (innerHeight - S() - 2 * MARGIN),
   });
   const toRatio = () => ({
-    x: (pos.x - MARGIN) / Math.max(1, viewW() - ORB - 2 * MARGIN),
-    y: (pos.y - MARGIN) / Math.max(1, innerHeight - ORB - 2 * MARGIN),
+    x: (pos.x - MARGIN) / Math.max(1, viewW() - S() - 2 * MARGIN),
+    y: (pos.y - MARGIN) / Math.max(1, innerHeight - S() - 2 * MARGIN),
   });
   const place = () => {
-    wrap.style.transform = `translate3d(${pos.x}px, ${pos.y}px, 0)`;
+    wrap.style.transform = `translate3d(${pos.x}px, ${pos.y}px, 0) scale(${k})`;
     wrap.classList.toggle('tip-right', pos.x < 240);
   };
 
-  chrome.storage.local.get('orbPos').then(({ orbPos }) => {
+  load('orbPos').then(({ orbPos }) => {
     if (orbPos) ratio = orbPos;
     pos = fromRatio();
     place();
@@ -95,11 +130,11 @@ export function createOrb(overlay, { onClick, onDoubleClick }) {
   addEventListener('resize', () => { pos = fromRatio(); place(); });
 
   // First time only: show the label for a few seconds, so double-click isn't a hidden feature.
-  chrome.storage.local.get('orbHintSeen').then(({ orbHintSeen }) => {
+  load('orbHintSeen').then(({ orbHintSeen }) => {
     if (orbHintSeen) return;
     setTimeout(() => wrap.classList.add('hint'), 1800);
     setTimeout(() => wrap.classList.remove('hint'), 8000);
-    chrome.storage.local.set({ orbHintSeen: true });
+    save({ orbHintSeen: true });
   });
 
   // The light on the glass follows your cursor around the page.
@@ -121,9 +156,9 @@ export function createOrb(overlay, { onClick, onDoubleClick }) {
   wrap.addEventListener('pointerenter', () => gl?.setBoost(2.2));
   wrap.addEventListener('pointerleave', () => gl?.setBoost(1));
 
-  // Save battery: stop drawing when the tab is hidden.
+  // Hidden tab: pause the render loop without thrashing WebGL context loss/restoration.
   document.addEventListener('visibilitychange', () => {
-    if (!gl) return;
+    if (!gl || destroyed) return;
     if (document.hidden || wrap.hidden) gl.stop();
     else gl.start();
   });
@@ -156,6 +191,7 @@ export function createOrb(overlay, { onClick, onDoubleClick }) {
     if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 5) return;
     if (!drag.moved) {
       drag.moved = true;
+      cancelClicks();
       wrap.classList.add('dragging');
     }
     const now = performance.now();
@@ -177,7 +213,7 @@ export function createOrb(overlay, { onClick, onDoubleClick }) {
     gl?.setVelocity(Math.max(-1.5, Math.min(1.5, -drag.vx)), Math.max(-1.5, Math.min(1.5, drag.vy)));
   });
 
-  const release = (e) => {
+  const finishDrag = (e, cancelled = false) => {
     if (!drag || e.pointerId !== drag.id) return;
     const wasDrag = drag.moved;
     drag = null;
@@ -190,51 +226,78 @@ export function createOrb(overlay, { onClick, onDoubleClick }) {
       [{ transform: from }, { transform: 'scale(1.06, 0.95)', offset: 0.35 }, { transform: 'scale(0.98, 1.02)', offset: 0.7 }, { transform: 'scale(1)' }],
       { duration: 600, easing: 'ease-out' },
     );
-    if (wasDrag) {
+    if (cancelled) {
+      cancelClicks();
+    } else if (wasDrag) {
+      cancelClicks();
       ratio = toRatio();
-      chrome.storage.local.set({ orbPos: ratio });
+      save({ orbPos: ratio });
     } else {
       tap();
     }
   };
-  orb.addEventListener('pointerup', release);
-  orb.addEventListener('pointercancel', release);
+  orb.addEventListener('pointerup', (e) => finishDrag(e, false));
+  orb.addEventListener('pointercancel', (e) => finishDrag(e, true));
 
-  // One click = Debait the page, double-click = settings.
-  // A single click waits a moment to make sure it isn't the start of a double-click.
+  // 1 click = Debait the page, 2 clicks = settings, 3 clicks = talk to Debait (voice call).
+  // Waits briefly after clicks 1 & 2 to distinguish multi-clicks; fires immediately on click 3.
+  const CLICK_WINDOW = 340;
   let clickTimer = null;
+  let clicks = 0;
+  function cancelClicks() {
+    clearTimeout(clickTimer);
+    clickTimer = null;
+    clicks = 0;
+  }
   function tap() {
-    if (clickTimer) {
-      clearTimeout(clickTimer);
+    clicks++;
+    clearTimeout(clickTimer);
+    if (clicks >= 3) {
+      clicks = 0;
       clickTimer = null;
-      onDoubleClick(center());
-    } else {
-      clickTimer = setTimeout(() => {
-        clickTimer = null;
-        onClick(center());
-      }, 230);
+      onTripleClick?.(center());
+      return;
     }
+    clickTimer = setTimeout(() => {
+      const n = clicks;
+      clicks = 0;
+      clickTimer = null;
+      if (n === 2) onDoubleClick(center());
+      else if (n === 1) onClick(center());
+    }, CLICK_WINDOW);
   }
   orb.addEventListener('contextmenu', (e) => {
     e.preventDefault();
+    cancelClicks();
     onDoubleClick(center());
   });
   orb.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
+      cancelClicks();
       if (e.shiftKey) onDoubleClick(center());
       else onClick(center());
     }
   });
 
   function center() {
-    return { x: pos.x + ORB / 2, y: pos.y + ORB / 2 };
+    return { x: pos.x + S() / 2, y: pos.y + S() / 2 };
   }
 
-  const HINT = '<em><kbd>2×</kbd> click for settings</em>';
+  const HINT = '<em><kbd>2×</kbd> settings <kbd>3×</kbd> talk to Debait</em>';
   let lastCount = -1;
+  let errorUntil = 0;
   return {
+    destroy() { destroyed = true; cancelClicks(); gl?.release?.(); },
     center,
+    /** 0.75 – 1.6 times the normal size; labels next to it keep their size */
+    setSize(next) {
+      k = Math.min(ORB_MAX, Math.max(0.75, Number(next) || 1));
+      wrap.style.setProperty('--inv', String(1 / k));
+      pos = fromRatio();
+      place();
+    },
+
     setVisible(v) {
       wrap.hidden = !v;
       if (!gl) return;
@@ -242,7 +305,7 @@ export function createOrb(overlay, { onClick, onDoubleClick }) {
       else gl.stop();
     },
     /** state: idle | busy | bait | calm */
-    update({ state, bait, debaited, scanned }) {
+    update({ state, bait, debaited, scanned, notice }) {
       wrap.dataset.state = state;
       gl?.setMood(state);
       const count = state === 'calm' ? debaited : bait;
@@ -252,7 +315,17 @@ export function createOrb(overlay, { onClick, onDoubleClick }) {
         badge.animate([{ transform: 'scale(1.3)' }, { transform: 'scale(1)' }], { duration: 450, easing: SPRING });
       }
       lastCount = count;
-      if (state === 'calm') {
+      if (notice) {
+        tip.replaceChildren();
+        const b = document.createElement('span');
+        b.textContent = 'Debait is paused';
+        const sm = document.createElement('small');
+        sm.textContent = notice;
+        sm.style.whiteSpace = 'normal';
+        sm.style.maxWidth = '240px';
+        tip.append(b, sm);
+        if (!wrap.dataset.noticeShown) { wrap.dataset.noticeShown = '1'; wrap.classList.add('hint'); setTimeout(() => wrap.classList.remove('hint'), 7000); }
+      } else if (state === 'calm') {
         setHTML(tip, `Restore originals<small>${debaited} headline${debaited === 1 ? '' : 's'} debaited</small>${HINT}`);
       } else if (bait > 0) {
         setHTML(tip, `Debait this page<small>${bait} bait of ${scanned} headlines</small>${HINT}`);
@@ -263,6 +336,44 @@ export function createOrb(overlay, { onClick, onDoubleClick }) {
       }
     },
     setPanelOpen(open) { wrap.classList.toggle('panel-open', open); },
+    setMuted: applyMuted,
+    /** voice state: idle | connecting | listening | heard | speaking | error */
+    setVoice({ mode, text }) {
+      const bubble = wrap.querySelector('.voice-bubble');
+      // Don't wipe out a fresh error bubble milliseconds later when voice:false syncs back.
+      if (mode === 'idle' && Date.now() < errorUntil) return;
+      if (mode !== 'error') errorUntil = 0;
+      wrap.dataset.voice = mode;
+      gl?.setBoost(mode === 'speaking' ? 2.6 : mode === 'connecting' ? 1.6 : mode === 'listening' ? 1.4 : 1);
+      if (mode === 'idle') { clearTimeout(this._vt); bubble.classList.remove('show'); return; }
+      const label = { connecting: 'Debait', listening: 'On a call with Debait', heard: 'You said', speaking: 'Debait', error: 'Voice' }[mode];
+      bubble.replaceChildren();
+      const b = document.createElement('b');
+      b.textContent = label;
+      bubble.append(b);
+      if (mode === 'listening') {
+        const w = document.createElement('span');
+        w.className = 'wave';
+        for (let i = 0; i < 5; i++) w.append(document.createElement('i'));
+        bubble.append(w);
+      } else if (text) {
+        const p = document.createElement('span');
+        p.textContent = mode === 'heard' ? `“${text}”` : text;
+        bubble.append(p);
+      }
+      bubble.classList.add('show');
+      clearTimeout(this._vt);
+      if (mode === 'error') {
+        errorUntil = Date.now() + 4500;
+        this._vt = setTimeout(() => {
+          errorUntil = 0;
+          bubble.classList.remove('show');
+          if (wrap.dataset.voice === 'error') wrap.dataset.voice = 'idle';
+        }, 4500);
+      } else if (mode === 'heard') {
+        this._vt = setTimeout(() => bubble.classList.remove('show'), 4000);
+      }
+    },
     pulse() {
       gl?.pulse();
       if (reducedMotion()) return;
@@ -314,7 +425,7 @@ export function playRipple(origin, { undo = false } = {}) {
       delay,
       easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
       fill: 'both',
-    }).finished.then(() => el.remove());
+    }).finished.catch(() => {}).finally(() => el.remove());
   };
   ring(0, 2.5, 1);
   ring(120, 1.2, 0.7);

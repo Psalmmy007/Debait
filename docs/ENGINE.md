@@ -1,76 +1,50 @@
-# Debait engine: handoff for the Firebase side
+# Debait Engine Architecture
 
-The UI is done against a **mock engine**. Your job is to replace it with Firebase AI Logic.
-You only touch `src/engine/`. Nothing in the UI changes.
+Debait runs its AI engine inside an MV3 offscreen document (`src/offscreen/index.html`) so both
+Chrome's on-device Prompt API (Gemini Nano) and the Firebase AI Logic SDK work reliably across tabs.
 
-**Your web analyzer is still here.** `index.html`, `src/main.js` and `src/firebase.js` are
-untouched. Run it with `npm run dev` (http://localhost:5173). The extension builds separately with
-`npm run build`. To move the AI into the extension, reuse `src/firebase.js` and your prompt from
-`src/main.js` inside `src/engine/firebaseEngine.js`, mapping your fields to the shape below.
-For example, `neutralRewrite` becomes `honest_rewrite`. The extension also needs `kind`, `score`
-and exact `triggers` words for the tags and highlights.
-
-## Where the engine runs
-
-`src/offscreen/` is an offscreen document: a hidden extension page with a DOM.
-The Firebase SDK and Chrome's Prompt API (Gemini Nano) both work there.
-
-```
-content script ──► service worker (cache + stats) ──► offscreen page ──► engine
+```text
+content script (src/content/main.js)
+  └─► service worker (src/background/sw.js: mode-isolated cache + daily stats)
+        └─► offscreen page (src/offscreen/offscreen.js)
+              └─► engine (src/engine/index.js → firebaseEngine.js)
 ```
 
-The service worker already does the cache (a headline is never scored twice) and
-the daily stats. You only score the texts that reach you.
+## Hybrid inference routing (`src/engine/firebaseEngine.js`)
 
-## What to implement: `src/engine/firebaseEngine.js`
+Debait uses Firebase AI Logic (`getGenerativeModel`) with explicit `InferenceMode.ONLY_ON_DEVICE`
+and `InferenceMode.ONLY_IN_CLOUD` selection (plus pre-warmed `LanguageModel` session cloning for
+fast on-device headline scoring) so it has deterministic control over budgets, queueing, and cancellation:
 
-```js
-scoreHeadlines(texts, { localOnly })  // → Promise<ScoreResult[]>, same order as texts
-getStatus({ localOnly })              // → Promise<EngineStatus>
-initDeviceModel()                     // → Promise<EngineStatus>, after "Turn on Debait" click
+1. **Online Hybrid (`localOnly: false`, online):**
+   - Uses Gemini Nano when already downloaded (`available`), not marked slow, and free (`deviceQueue === 0`), with a `10 s` hybrid budget.
+   - Otherwise sends a single authenticated request (no speculative duplicate hedging by default) to the primary App Check-enforced Firebase project (`FIREBASE_PROJECTS[0]`, `CLOUD_MODEL = 'gemini-3.5-flash-lite'`) with an `8 s` per-request timeout.
+   - If the cloud call stalls or fails on a flaky network, it automatically fails over to Gemini Nano when available.
+2. **Local only (`localOnly: true`):**
+   - Never dispatches cloud requests; toggling `Local only` ON immediately aborts any in-flight cloud calls (`MSG.CANCEL_CLOUD`).
+   - Cache lookups strictly reject prior `source === 'cloud'` entries (`isCacheEntryValid(entry, true)`).
+   - Scores viewport headlines 1×1 with a `150 s` per-headline budget.
+3. **Offline (`navigator.onLine === false`):**
+   - Skips cloud completely and queues 1×1 for Gemini Nano when available.
+   - When Nano is unavailable offline, returns an honest `OFFLINE_UNAVAILABLE` status instead of faking AI results with heuristic guesses.
+4. **Reconnect auto-upgrade:**
+   - Listening for `online` clears transient network lockouts and re-queues pending/failed headlines once.
+
+## Source provenance & rewrite safety (`src/engine/contract.js`)
+
+- `verifyInferenceSource()` strictly requires `inferenceSource === 'on_device'` for on-device routes and `inferenceSource === 'in_cloud'` for cloud routes (never relabeling unknown metadata as `'cloud'`).
+- `normalizeResult()` enforces `BAIT_THRESHOLD = 60`, exact trigger presence in the original text, and `validateRewriteIntegrity()` (rejecting invented numbers, unsupported authority/backstory terms like `"study"` or `"years of saving"`, negation flips, or bloated rewrites). Unsafe rewrites are replaced with `"No verified neutral rewrite available"` (`rewrite_safe: false`) rather than mutating the headline.
+
+## App Check & Firebase setup
+
+- Primary project (`Team` / `debait-d6d5d`) keeps **App Check enforced**.
+- `ALLOW_BACKUP_FALLBACK` defaults to `false` so traffic is never silently routed to an unenforced monitoring-only project.
+- Because MV3 extensions cannot load remote reCAPTCHA scripts, supervised developer/judge installs register the per-install debug token shown in the Debait popup under **Firebase Console → App Check → Apps → Manage debug tokens**. Never commit or screenshot debug tokens.
+- Unprovisioned cloud calls surface an explicit App Check setup status rather than faking AI.
+
+## Testing
+
+```bash
+npm test
+npm run build
 ```
-
-Shapes are in `src/engine/contract.js`. One result looks like:
-
-```json
-{
-  "kind": "rage",
-  "score": 91,
-  "triggers": [{ "word": "DESTROYS", "why": "outrage trigger" }],
-  "honest_rewrite": "Senator disagrees with a reporter's question",
-  "source": "on-device"
-}
-```
-
-- `triggers[].word` must be the **exact words from the headline** (the UI highlights them).
-- `source` must be `"on-device"` or `"cloud"`, depending on what actually ran. The UI shows it.
-- Results go through `normalizeResult()`, so a bad field won't crash the UI.
-
-## Turning it on
-
-1. `npm install firebase` (pin the exact version).
-2. Put the web app config in `src/engine/firebaseConfig.local.js` (this file is git-ignored).
-3. In `firebaseEngine.js`:
-   ```js
-   import { initializeApp } from 'firebase/app';
-   import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
-   import { getAI, getGenerativeModel, GoogleAIBackend, InferenceMode } from 'firebase/ai';
-   ```
-   Use `InferenceMode.PREFER_ON_DEVICE`, or `ONLY_ON_DEVICE` when `localOnly` is true.
-   Use a JSON response schema for scoring.
-4. Set `USE_MOCK = false` in `src/engine/index.js`.
-5. Run `npm run build` and reload the extension at `chrome://extensions`.
-
-## Things to check
-
-- **App Check in an extension:** reCAPTCHA loads remote script, which MV3 blocks.
-  Set `self.FIREBASE_APPCHECK_DEBUG_TOKEN = true` *before* `initializeAppCheck` and register
-  the debug token printed in the offscreen page's console. Open that console from
-  chrome://extensions → Debait → "Inspect views: offscreen".
-- **Model download needs a user click.** The popup's "Turn on Debait" button sends
-  `debait/init` → `initDeviceModel()`. If Chrome refuses the download from the offscreen
-  page (no user activation), call `LanguageModel.create()` once directly in `popup.js`
-  inside the click handler. Once the model is downloaded, the offscreen page can use it.
-- **On-device is single-turn.** Send each batch (≤ 8 headlines) as one prompt that asks for a JSON array.
-- **Local only:** when `localOnly` is true, never fall back to the cloud. Return `kind: "clean"`
-  with a `source` of `"on-device"`, or throw if the model is unavailable.

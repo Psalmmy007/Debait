@@ -1,10 +1,19 @@
-// The Ingredients card: why a headline is bait, word by word, plus what actually happened.
+// The Ingredients card: why a headline is bait, word by word, what actually happened, and one action.
 import { reducedMotion } from './page.js';
 import { setHTML } from './html.js';
-import { ICON, LABEL, SOURCE } from './icons.js';
+import { ICON, SOURCE } from './icons.js';
+import { shareHeadline } from './share.js';
 
 const OUT = 'cubic-bezier(0.16, 1, 0.3, 1)';
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+const KIND = { rage: 'Rage bait', fear: 'Fear bait', envy: 'Envy bait', clean: 'Clean' };
+const WHY = {
+  rage: 'Written to make you angry',
+  fear: 'Written to make you afraid',
+  envy: 'Written to make you feel behind',
+  clean: 'Plain and factual',
+};
 
 function markTriggers(text, triggers) {
   let html = esc(text);
@@ -25,9 +34,9 @@ export function closeCard() {
   cleanup();
   if (reducedMotion()) return el.remove();
   el.animate(
-    [{ opacity: 1, transform: 'none', filter: 'blur(0)' }, { opacity: 0, transform: 'translateY(-4px) scale(0.97)', filter: 'blur(4px)' }],
-    { duration: 180, easing: 'ease-in' },
-  ).finished.then(() => el.remove());
+    [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(0.96)' }],
+    { duration: 150, easing: 'ease-in' },
+  ).finished.catch(() => {}).finally(() => el.remove());
 }
 
 /**
@@ -42,38 +51,45 @@ export function openCard(layer, rec, rect, { onDebait, onRestore }) {
   const r = rec.result;
   const debaited = rec.state === 'debaited';
   const clean = r.kind === 'clean';
+  const isMock = r.source === 'mock';
+  const canRewrite = !clean && !isMock && r.rewrite_safe !== false && !!r.honest_rewrite?.trim();
   const el = document.createElement('div');
   el.className = 'card';
   el.dataset.kind = r.kind;
   el.setAttribute('role', 'dialog');
-  el.setAttribute('aria-label', 'Debait ingredients');
+  el.setAttribute('aria-label', `${KIND[r.kind]}, bait score ${r.score} out of 100`);
 
   const rows = r.triggers.length
-    ? r.triggers.map((t) => `<li><span class="w">${esc(t.word)}</span><span class="why">${esc(t.why)}</span></li>`).join('')
-    : '<li class="none-row"><span class="none">No manipulative words found.</span></li>';
+    ? r.triggers.map((t) => `<div class="c-row"><b>${esc(t.word)}</b><span>${esc(t.why)}</span></div>`).join('')
+    : '<div class="c-row"><span class="none">No manipulative words. It sticks to the facts.</span></div>';
 
-  const C = 2 * Math.PI * 30; // gauge circumference
+  const C = 2 * Math.PI * 19.5; // ring circumference
   setHTML(el, `
-    <div class="card-head">
-      <div>
-        <div class="card-kicker">Ingredients</div>
-        <div class="card-kind"><span class="tag" data-kind="${r.kind}"><span class="ico">${ICON[r.kind]}</span><span class="label">${LABEL[r.kind]}</span></span></div>
-      </div>
-      <div class="gauge" aria-label="Bait score ${r.score} out of 100">
-        <svg viewBox="0 0 68 68"><circle class="track" cx="34" cy="34" r="30"/><circle class="fill" cx="34" cy="34" r="30" stroke-dasharray="${C}" stroke-dashoffset="${C}"/></svg>
-        <b><span class="num">${r.score}</span><small>score</small></b>
+    <div class="c-top">
+      <span class="c-icon">${ICON[r.kind]}</span>
+      <div class="c-title"><b>${KIND[r.kind]}</b><span>${WHY[r.kind]} · Wording check, not a fact-check</span></div>
+      <div class="c-ring" aria-hidden="true">
+        <svg viewBox="0 0 48 48"><circle class="t" cx="24" cy="24" r="19.5"/><circle class="f" cx="24" cy="24" r="19.5" stroke-dasharray="${C}" stroke-dashoffset="${C}"/></svg>
+        <b class="num">${r.score}</b>
       </div>
     </div>
-    <p class="card-headline">${markTriggers(rec.text, r.triggers)}</p>
-    <div class="card-section"><h4>Why it pulls you in</h4><ul class="ingredients">${rows}</ul></div>
-    ${clean ? '' : `<div class="card-section"><h4>What actually happened</h4><div class="honest">${esc(r.honest_rewrite)}</div></div>`}
-    <div class="card-foot">
-      <span class="source" data-src="${esc(r.source)}"><i></i>${esc(SOURCE[r.source] || r.source)}</span>
-      <div class="btns">
-        ${clean ? '<button class="btn" data-act="close">Close</button>' : debaited
-          ? '<button class="btn" data-act="restore">Show original</button>'
-          : `<button class="btn" data-act="close">Keep</button><button class="btn primary" data-act="debait">Debait it ${ICON.arrow}</button>`}
+    <p class="c-head">${markTriggers(rec.text, r.triggers)}</p>
+    <div class="c-sec"><h4 class="h">${clean ? 'Hooks' : 'Why it hooks you'}</h4><div class="group">${rows}</div></div>
+    ${clean ? '' : `<div class="c-sec">
+      <div class="seg" role="tablist" aria-label="Compare wording">
+        <button role="tab" aria-selected="true" data-v="honest">Honest</button>
+        <button role="tab" aria-selected="false" data-v="bait">Bait</button>
       </div>
+      <p class="c-alt" aria-live="polite">${esc(canRewrite ? r.honest_rewrite : 'No verified neutral rewrite available')}</p>
+    </div>`}
+    <div class="c-foot">
+      <span class="c-src" data-src="${esc(r.source)}"><i></i>${esc(SOURCE[r.source] || r.source)}</span>
+      ${canRewrite ? `<div class="c-btns">
+        <button class="btn round" data-act="share" aria-label="Share as an image" title="Share as an image">${ICON.share}</button>
+        ${debaited
+          ? '<button class="btn" data-act="restore">Show original</button>'
+          : '<button class="btn primary" data-act="debait">Debait it</button>'}
+      </div>` : ''}
     </div>`);
 
   layer.appendChild(el);
@@ -92,35 +108,41 @@ export function openCard(layer, rec, rect, { onDebait, onRestore }) {
   el.style.top = `${top}px`;
   el.style.transformOrigin = `${rect.left + rect.width / 2 - left}px ${el.classList.contains('flip') ? '100%' : '0'}`;
 
-  const fill = el.querySelector('.gauge .fill');
-  const num = el.querySelector('.gauge .num');
+  const fill = el.querySelector('.c-ring .f');
+  const num = el.querySelector('.c-ring .num');
   const target = C * (1 - r.score / 100);
   if (reducedMotion()) {
     fill.style.strokeDashoffset = String(target);
   } else {
-    // rises from the tag in 3D, then the details settle in one by one
     el.animate(
-      [
-        { opacity: 0, transform: 'perspective(900px) rotateX(-14deg) translateY(-6px) scale(0.94)', filter: 'blur(6px)' },
-        { opacity: 1, transform: 'perspective(900px) rotateX(0) translateY(0) scale(1)', filter: 'blur(0)' },
-      ],
-      { duration: 520, easing: OUT },
+      [{ opacity: 0, transform: 'scale(0.94)' }, { opacity: 1, transform: 'none' }],
+      { duration: 280, easing: OUT },
     );
-    el.querySelectorAll('.card-headline, .card-section h4, .ingredients li, .honest, .card-foot').forEach((p, i) => {
-      p.animate(
-        [{ opacity: 0, transform: 'translateY(6px)', filter: 'blur(3px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }],
-        { duration: 460, delay: 70 + i * 40, easing: OUT, fill: 'backwards' },
-      );
-    });
-    fill.animate([{ strokeDashoffset: C }, { strokeDashoffset: target }], { duration: 900, delay: 120, easing: OUT, fill: 'forwards' });
-    countUp(num, r.score, 900, 120);
+    fill.animate([{ strokeDashoffset: C }, { strokeDashoffset: target }], { duration: 900, delay: 80, easing: OUT, fill: 'forwards' });
+    countUp(num, r.score, 900, 80);
   }
 
   el.addEventListener('click', (e) => {
+    const tab = e.target.closest('.seg button');
+    if (tab) {
+      const bait = tab.dataset.v === 'bait';
+      el.querySelectorAll('.seg button').forEach((b) => b.setAttribute('aria-selected', String(b === tab)));
+      const alt = el.querySelector('.c-alt');
+      alt.textContent = bait ? rec.text : r.honest_rewrite;
+      alt.classList.toggle('bait', bait);
+      return;
+    }
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (act === 'debait') { closeCard(); onDebait(); }
     if (act === 'restore') { closeCard(); onRestore(); }
-    if (act === 'close') closeCard();
+    if (act === 'share') {
+      const btn = e.target.closest('[data-act="share"]');
+      btn.disabled = true;
+      shareHeadline({ bait: rec.text, honest: r.honest_rewrite, kind: r.kind, score: r.score })
+        .then((how) => { btn.title = how === 'copied' ? 'Image copied' : 'Image saved'; setHTML(btn, ICON.check); })
+        .catch(() => { btn.title = 'Could not share'; })
+        .finally(() => { btn.disabled = false; });
+    }
   });
 
   const onDown = (e) => {
