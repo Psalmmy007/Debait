@@ -98,17 +98,18 @@ export const engine = USE_MOCK ? mockEngine : {
   },
   async getStatus(opts = {}) {
     const s = await firebaseEngine.getStatus(opts);
+    const appCheckErr = gemini === 'failing' && /app ?check|401|403/i.test(lastError?.message || '');
+    const needsAppCheck = !opts.localOnly && Boolean(s.needsAppCheck || appCheckErr);
     if (gemini === 'failing' && s.source === 'cloud') {
-      const appCheck = /app ?check|401|403/i.test(lastError?.message || '');
       return {
         ...s,
         ready: false,
         source: 'none',
-        needsAppCheck: appCheck,
-        message: appCheck ? 'Cloud AI blocked until App Check debug token is registered' : `Gemini unavailable (${lastError?.message})`,
+        needsAppCheck,
+        message: needsAppCheck ? 'Cloud AI blocked until App Check debug token is registered' : `Gemini unavailable (${lastError?.message})`,
       };
     }
-    return s;
+    return { ...s, needsAppCheck };
   },
   initDeviceModel: () => firebaseEngine.initDeviceModel(),
   async summarize(page, opts = {}) {

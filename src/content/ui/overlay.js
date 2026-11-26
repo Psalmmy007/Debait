@@ -9,6 +9,7 @@ import { SPRING, reducedMotion } from './page.js';
 import { createOrbRenderer } from './orb-gl.js';
 import { setHTML, adoptCss } from './html.js';
 import { load, save } from '../ext.js';
+import { ENABLE_LIVE_VOICE } from '../../engine/firebaseConfig.js';
 
 const ORB = 56;          // base size; the user can scale it (settings.orbSize)
 const ORB_MAX = 1.6;
@@ -284,7 +285,9 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick, onMu
     return { x: pos.x + S() / 2, y: pos.y + S() / 2 };
   }
 
-  const HINT = '<em><kbd>2×</kbd> settings <kbd>3×</kbd> talk to Debait</em>';
+  const HINT = ENABLE_LIVE_VOICE
+    ? '<em><kbd>2×</kbd> settings <kbd>3×</kbd> talk to Debait</em>'
+    : '<em><kbd>2×</kbd> settings</em>';
   let lastCount = -1;
   let errorUntil = 0;
   return {

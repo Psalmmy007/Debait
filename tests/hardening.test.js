@@ -300,10 +300,16 @@ test('Voice Release Gate: LIVE_VOICE and Cloud Function stay intact while releas
   assert.equal(VOICE_GATED_MESSAGE, 'Voice requires ephemeral token backend under App Check');
   assert.equal(fs.existsSync('functions/index.js'), true, 'Cloud Function implementation must remain intact');
 
-  for (const file of ['src/offscreen/call.js', 'src/background/sw.js', 'src/content/main.js', 'src/content/ui/settings.js']) {
+  for (const file of ['src/offscreen/call.js', 'src/background/sw.js', 'src/content/main.js', 'src/content/ui/settings.js', 'src/popup/popup.js']) {
     const src = fs.readFileSync(file, 'utf8');
     assert.ok(src.includes('ENABLE_LIVE_VOICE') && src.includes('VOICE_GATED_MESSAGE'), `${file} must enforce ENABLE_LIVE_VOICE gate`);
   }
+  const overlaySrc = fs.readFileSync('src/content/ui/overlay.js', 'utf8');
+  assert.ok(overlaySrc.includes('ENABLE_LIVE_VOICE') && overlaySrc.includes("<em><kbd>2×</kbd> settings</em>"), 'orb tooltip must hide 3x talk hint when voice is gated');
+  const popupHtml = fs.readFileSync('src/popup/index.html', 'utf8');
+  assert.equal(popupHtml.includes('backup engine'), false, 'popup setup copy must not claim a backup engine fallback');
+  const engineSrc = fs.readFileSync('src/engine/firebaseEngine.js', 'utf8');
+  assert.ok(engineSrc.includes('const needsAppCheck = !localOnly && skipUntil[0] > Date.now()'), 'getStatus must surface needsAppCheck whenever primary project is App Check blocked');
 });
 
 test('P3: Local Only in-flight cancellation aborts active cloud work, blocks late cloud renders/cache/stats, and recovers cleanly when toggled OFF', async () => {

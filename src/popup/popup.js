@@ -1,5 +1,6 @@
 import '@fontsource-variable/inter/opsz.css';
 import { MSG } from '../engine/contract.js';
+import { ENABLE_LIVE_VOICE, VOICE_GATED_MESSAGE } from '../engine/firebaseConfig.js';
 import { getSettings, setSettings, getRecentStats } from '../shared/storage.js';
 
 const $ = (s) => document.querySelector(s);
@@ -31,10 +32,9 @@ async function renderEngine() {
     // missing: Chrome only downloads Gemini Nano after a user gesture, so this click is the way in.
     const needsDownload = s.device === 'downloadable' || s.device === 'downloading';
     $('#turnOn').hidden = s.ready && !needsDownload;
-    if (s.needsAppCheck && res.debugToken) {
-      $('#setup').hidden = false;
-      $('#token').textContent = res.debugToken;
-    }
+    const showSetup = Boolean(res?.debugToken && !s.localOnly && (s.needsAppCheck || s.source === 'none'));
+    $('#setup').hidden = !showSetup;
+    if (showSetup) $('#token').textContent = res.debugToken;
   } catch {
     chip.dataset.src = 'none';
     chip.querySelector('span').textContent = 'Not ready';
@@ -44,8 +44,16 @@ async function renderEngine() {
 async function renderSwitches() {
   const settings = await getSettings();
   for (const input of document.querySelectorAll('[data-setting]')) {
-    input.checked = !!settings[input.dataset.setting];
-    input.addEventListener('change', () => setSettings({ [input.dataset.setting]: input.checked }).then(renderEngine));
+    const key = input.dataset.setting;
+    if (key === 'voice' && !ENABLE_LIVE_VOICE) {
+      input.checked = false;
+      const hint = input.closest('.row')?.querySelector('small');
+      if (hint) hint.textContent = VOICE_GATED_MESSAGE;
+      input.addEventListener('change', () => { input.checked = false; });
+      continue;
+    }
+    input.checked = !!settings[key];
+    input.addEventListener('change', () => setSettings({ [key]: input.checked }).then(renderEngine));
   }
 }
 

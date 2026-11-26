@@ -885,7 +885,8 @@ export const firebaseEngine = {
   async getStatus({ localOnly }) {
     const device = await deviceAvailability();
     const online = isOnline();
-    const base = { localOnly, device, online };
+    const needsAppCheck = !localOnly && skipUntil[0] > Date.now();
+    const base = { localOnly, device, online, needsAppCheck };
     if (device === 'available' && !localOnly && online && deviceSlow()) return { ...base, ready: true, source: 'cloud', message: `Gemini in the cloud: Gemini Nano is too slow on this computer (${projectName()} project)` };
     if (device === 'available') return { ...base, ready: true, source: 'on-device', message: online ? 'Gemini Nano, on this device' : 'Gemini Nano, on this device (offline)' };
     if (localOnly) return { ...base, ready: false, source: 'none', message: device === 'unavailable' ? 'This computer cannot run Gemini Nano' : 'Gemini Nano needs to download: click Turn on Debait' };
