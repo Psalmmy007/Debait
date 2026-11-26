@@ -1,12 +1,21 @@
 // Minimal App-Check-protected Firebase Cloud Function (v2 onCall) for debait-d6d5d.
-// Mints single-use, short-lived ephemeral Gemini Live tokens with per-caller rate limiting
-// so browser clients never hold a long-lived Gemini API key and cannot run up unbounded costs.
+// Mints single-use, short-lived ephemeral Gemini Live tokens with an atomic Firestore-backed
+// per-caller (5/min) + global (30/min) rate limiter so browser clients never hold a long-lived
+// Gemini API key and cannot bypass limits across concurrent requests or instances.
+import { initializeApp, getApps } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { defineSecret } from 'firebase-functions/params';
 import * as logger from 'firebase-functions/logger';
 import { GoogleGenAI } from '@google/genai';
-import { createMintHandler } from './mintHandler.js';
+import {
+  createMintHandler,
+  createAtomicRateLimiter,
+  createFirestoreRateLimitStore,
+} from './mintHandler.js';
 
+if (!getApps().length) initializeApp();
+const db = getFirestore();
 const geminiApiKey = defineSecret('GEMINI_API_KEY');
 
 const handleMint = createMintHandler({
@@ -14,6 +23,7 @@ const handleMint = createMintHandler({
   createClient: (opts) => new GoogleGenAI(opts),
   HttpsErrorCtor: HttpsError,
   logger,
+  rateLimiter: createAtomicRateLimiter(createFirestoreRateLimitStore(db)),
 });
 
 export const mintLiveVoiceToken = onCall(

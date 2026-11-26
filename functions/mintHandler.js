@@ -1,4 +1,7 @@
-// Core handler for mintLiveVoiceToken (dependency-injected so unit tests run with mocked @google/genai).
+// Core handler for mintLiveVoiceToken (dependency-injected so unit tests run with mocked
+// @google/genai and a shared transactional store without requiring live Firestore).
+import { createHash } from 'node:crypto';
+
 export const ALLOWED_LIVE_MODELS = [
   'gemini-2.5-flash-native-audio-latest',
   'gemini-3.1-flash-live-preview',
@@ -8,58 +11,164 @@ export const LIVE_VOICE = 'Leda';
 export const EPHEMERAL_API_VERSION = 'v1beta';
 export const SESSION_TTL_MS = 30 * 60 * 1000;      // 30 min max live call duration
 export const HANDSHAKE_WINDOW_MS = 60 * 1000;      // 60 s window to open the WebSocket
+export const RATE_LIMIT_COLLECTION = '_rateLimits';
+export const GLOBAL_BUCKET_ID = 'global_mint_live_voice';
 export const RATE_LIMIT_MAX = 5;                   // max 5 tokens per minute per caller
+export const GLOBAL_RATE_LIMIT_MAX = 30;           // global safety cap: max 30 tokens/min total
 export const RATE_LIMIT_WINDOW_MS = 60 * 1000;
-const MAX_TRACKED_CALLERS = 5000;
 
-export function getCallerKey(request) {
-  const appId = request?.app?.appId || 'no-app';
-  const uid = request?.auth?.uid;
-  if (uid) return `${appId}:uid:${uid}`;
-  const fwd = request?.rawRequest?.headers?.['x-forwarded-for'];
-  const rawIp = typeof fwd === 'string' && fwd.trim()
-    ? fwd.split(',')[0].trim()
-    : request?.rawRequest?.ip || 'unknown';
-  return `${appId}:ip:${rawIp}`;
+/**
+ * Extracts the trusted client IP without falling for spoofed leftmost x-forwarded-for values.
+ * Behind Google Cloud Load Balancer / Cloud Run, the rightmost x-forwarded-for entry is appended
+ * by Google's trusted proxy; fall back to rawRequest.ip when no proxy header is present.
+ */
+export function getTrustedClientIp(rawRequest) {
+  const headers = rawRequest?.headers || {};
+  const fwd = headers['x-forwarded-for'] ?? headers['X-Forwarded-For'];
+  const headerStr = Array.isArray(fwd) ? fwd.join(',') : typeof fwd === 'string' ? fwd : '';
+  const parts = headerStr.split(',').map((s) => s.trim()).filter(Boolean);
+  if (parts.length > 0) return parts[parts.length - 1];
+  return String(rawRequest?.ip || 'unknown').trim() || 'unknown';
 }
 
-export function createRateLimiter({
-  maxRequests = RATE_LIMIT_MAX,
+/**
+ * Builds a deterministic, Firestore-safe SHA-256 caller document ID.
+ * Prioritizes authenticated Firebase Auth uid when present; otherwise binds to
+ * App Check appId + trusted rightmost proxy IP.
+ */
+export function getCallerDocId(request) {
+  const appId = request?.app?.appId || 'no-app';
+  const uid = request?.auth?.uid;
+  const rawKey = uid
+    ? `${appId}:uid:${uid}`
+    : `${appId}:ip:${getTrustedClientIp(request?.rawRequest)}`;
+  const hash = createHash('sha256').update(rawKey).digest('hex');
+  return `caller_${hash}`;
+}
+
+/** Wraps a Firestore instance in the minimal atomic transaction interface used by the limiter. */
+export function createFirestoreRateLimitStore(db, collectionName = RATE_LIMIT_COLLECTION) {
+  const col = db.collection(collectionName);
+  return {
+    runTransaction(fn) {
+      return db.runTransaction(async (fsTx) => fn({
+        async get(docId) {
+          const snap = await fsTx.get(col.doc(docId));
+          return snap.exists ? snap.data() : null;
+        },
+        set(docId, data) {
+          fsTx.set(col.doc(docId), data);
+        },
+      }));
+    },
+  };
+}
+
+/**
+ * Shared in-memory transactional store for unit tests (simulates Firestore runTransaction
+ * serializable isolation across concurrent Promise.all calls and multiple handler instances).
+ */
+export function createMemoryTransactionStore() {
+  const docs = new Map();
+  let lock = Promise.resolve();
+  return {
+    docs,
+    runTransaction(fn) {
+      const prev = lock;
+      let release;
+      lock = new Promise((r) => { release = r; });
+      return prev.then(async () => {
+        const staged = new Map();
+        const tx = {
+          async get(docId) {
+            await Promise.resolve(); // yield microtask so concurrent callers race realistically
+            if (staged.has(docId)) return structuredClone(staged.get(docId));
+            return docs.has(docId) ? structuredClone(docs.get(docId)) : null;
+          },
+          set(docId, data) {
+            staged.set(docId, structuredClone(data));
+          },
+        };
+        try {
+          const result = await fn(tx);
+          for (const [k, v] of staged) docs.set(k, v);
+          return result;
+        } finally {
+          release();
+        }
+      });
+    },
+  };
+}
+
+/**
+ * Atomic sliding-window rate limiter enforcing BOTH per-caller (5/min) and global (30/min) caps
+ * inside a single transaction so concurrent requests and multiple instances cannot bypass limits.
+ */
+export function createAtomicRateLimiter(store, {
+  callerMax = RATE_LIMIT_MAX,
+  globalMax = GLOBAL_RATE_LIMIT_MAX,
   windowMs = RATE_LIMIT_WINDOW_MS,
   now = () => Date.now(),
 } = {}) {
-  const buckets = new Map();
-  return function checkLimit(key) {
-    const t = now();
-    const cutoff = t - windowMs;
-    const prev = buckets.get(key) || [];
-    const recent = prev.filter((ts) => ts > cutoff);
-    if (recent.length >= maxRequests) {
-      buckets.set(key, recent);
-      return { allowed: false, remaining: 0, retryAfterMs: Math.max(1000, recent[0] + windowMs - t) };
-    }
-    recent.push(t);
-    buckets.set(key, recent);
-    // Keep warm-container memory bounded even under spoofed/rotating caller keys.
-    if (buckets.size > MAX_TRACKED_CALLERS) {
-      for (const [k, list] of buckets) {
-        if (!list.some((ts) => ts > cutoff)) buckets.delete(k);
-        if (buckets.size <= MAX_TRACKED_CALLERS) break;
+  if (!store || typeof store.runTransaction !== 'function') {
+    throw new Error('createAtomicRateLimiter requires a transactional store with runTransaction()');
+  }
+  return async function checkLimit(callerDocId) {
+    return store.runTransaction(async (tx) => {
+      const t = now();
+      const cutoff = t - windowMs;
+      const [callerDoc, globalDoc] = await Promise.all([
+        tx.get(callerDocId),
+        tx.get(GLOBAL_BUCKET_ID),
+      ]);
+
+      const callerRecent = Array.isArray(callerDoc?.timestamps)
+        ? callerDoc.timestamps.filter((ts) => typeof ts === 'number' && ts > cutoff)
+        : [];
+      const globalRecent = Array.isArray(globalDoc?.timestamps)
+        ? globalDoc.timestamps.filter((ts) => typeof ts === 'number' && ts > cutoff)
+        : [];
+
+      if (globalRecent.length >= globalMax) {
+        return {
+          allowed: false,
+          scope: 'global',
+          remaining: 0,
+          retryAfterMs: Math.max(1000, globalRecent[0] + windowMs - t),
+        };
       }
-      if (buckets.size > MAX_TRACKED_CALLERS) {
-        const oldestKey = buckets.keys().next().value;
-        if (oldestKey !== undefined) buckets.delete(oldestKey);
+      if (callerRecent.length >= callerMax) {
+        return {
+          allowed: false,
+          scope: 'caller',
+          remaining: 0,
+          retryAfterMs: Math.max(1000, callerRecent[0] + windowMs - t),
+        };
       }
-    }
-    return { allowed: true, remaining: maxRequests - recent.length, retryAfterMs: 0 };
+
+      callerRecent.push(t);
+      globalRecent.push(t);
+      const expiresAt = new Date(t + windowMs * 2);
+      tx.set(callerDocId, { timestamps: callerRecent, updatedAt: t, expiresAt });
+      tx.set(GLOBAL_BUCKET_ID, { timestamps: globalRecent, updatedAt: t, expiresAt });
+
+      return {
+        allowed: true,
+        scope: 'ok',
+        remaining: callerMax - callerRecent.length,
+        globalRemaining: globalMax - globalRecent.length,
+        retryAfterMs: 0,
+      };
+    });
   };
 }
 
 /**
  * Builds the callable request handler for mintLiveVoiceToken.
  * Platform-level `enforceAppCheck: true` runs before this handler; we also defend in depth
- * on `request.app`, validate input, enforce per-caller sliding-window rate limits, and lock
- * the minted ephemeral token to allowlisted Live models, AUDIO modality, and LIVE_VOICE = 'Leda'.
+ * on `request.app`, validate input, enforce atomic shared per-caller + global rate limits, and
+ * lock the minted ephemeral token to allowlisted Live models, AUDIO modality, and LIVE_VOICE = 'Leda'.
  */
 export function createMintHandler({
   getApiKey,
@@ -67,7 +176,8 @@ export function createMintHandler({
   HttpsErrorCtor,
   logger = { error: () => {} },
   now = () => Date.now(),
-  rateLimiter = createRateLimiter({ now }),
+  rateLimitStore = createMemoryTransactionStore(),
+  rateLimiter = createAtomicRateLimiter(rateLimitStore, { now }),
 }) {
   return async function handleMintLiveVoiceToken(request) {
     if (!request?.app?.appId) {
@@ -87,12 +197,14 @@ export function createMintHandler({
       model = data.model.trim();
     }
 
-    const callerKey = getCallerKey(request);
-    const limit = rateLimiter(callerKey);
+    const callerDocId = getCallerDocId(request);
+    const limit = await rateLimiter(callerDocId);
     if (!limit.allowed) {
       throw new HttpsErrorCtor(
         'resource-exhausted',
-        'Too many voice session token requests. Please wait a minute and try again.',
+        limit.scope === 'global'
+          ? 'Voice service is busy right now. Please try again in a minute.'
+          : 'Too many voice session token requests. Please wait a minute and try again.',
       );
     }
 
