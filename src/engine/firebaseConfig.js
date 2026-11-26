@@ -41,3 +41,7 @@ export const CLOUD_MODEL = 'gemini-3.5-flash-lite';
 export const LIVE_MODELS = ['gemini-2.5-flash-native-audio-latest', 'gemini-3.1-flash-live-preview', 'gemini-2.5-flash-native-audio-preview-09-2025'];
 // youthful, smooth, expressive female voice (Chirp 3 HD; 'Zephyr' is the bright/clear backup)
 export const LIVE_VOICE = 'Leda';
+
+// App-Check-protected Cloud Function (v2 onCall) on debait-d6d5d that mints short-lived ephemeral Live tokens.
+export const FUNCTIONS_REGION = 'us-central1';
+export const LIVE_TOKEN_FUNCTION = 'mintLiveVoiceToken';

@@ -52,18 +52,20 @@ dist/manifest.json  4.20 kB │ gzip: 1.15 kB
 
 ---
 
-## 3. App Check & Voice Call Blocker (Decision Required)
+## 3. App Check & Ephemeral Live Voice Token Flow
 
 - **Primary project (`debait-d6d5d` / Team):** App Check **enforced** (`appCheckEnforced: true`).
 - **Backup project (`axi-chat-2026`):** **Disabled** (`ALLOW_BACKUP_FALLBACK = false`) across `projectOrder()`, `liveProjectOrder()`, `setPreferredProject()`, and `getAi()`.
-- **Flagged Gemini Live Voice Blocker (`src/offscreen/call.js`):**
-  - The "Talk to Debait" voice feature (`LIVE_VOICE = 'Leda'`) is kept intact (NOT disabled).
-  - **Known technical constraint:** Browser `WebSocket` APIs cannot attach custom `X-Firebase-AppCheck` HTTP headers to WebSocket upgrade handshakes. Previously, Live voice connected by falling back to the unprotected `Backup` project (`axi-chat-2026`, `appCheckEnforced: false`).
-  - Now that `ALLOW_BACKUP_FALLBACK = false`, `liveProjectOrder()` routes Live calls exclusively to `debait-d6d5d` (`appCheckEnforced: true`). If `debait-d6d5d` enforces App Check on Firebase AI Logic WebSocket connections without query-param token acceptance, **Live Voice will reject connections with an App Check error** (HTTP headline scoring & summaries will work normally once the per-install debug token is registered).
-  - **Options for your decision:**
-    1. Keep strict App Check on `debait-d6d5d` and test whether Firebase AI Logic's Live SDK passes the App Check debug token for `debait-d6d5d` once registered in Firebase Console; or
-    2. Use a small authenticated backend/Cloud Function to mint short-lived ephemeral Gemini Live tokens for `debait-d6d5d` (preserving App Check protection without using an unprotected backup project); or
-    3. Explicitly accept/document a supervised demo policy if Live WebSockets require a separate App-Check-compatible configuration.
+- **App-Check-Protected Live Voice (`functions/index.js` → `mintLiveVoiceToken` & `src/offscreen/call.js`):**
+  - Because browser `WebSocket` APIs cannot attach custom `X-Firebase-AppCheck` HTTP headers to upgrade handshakes, `src/offscreen/call.js` now calls the App-Check-enforced v2 callable function `mintLiveVoiceToken` (`enforceAppCheck: true`, `region: 'us-central1'`) on `debait-d6d5d` via `firebase/functions` (`httpsCallable` automatically sends the `X-Firebase-AppCheck` header).
+  - `mintLiveVoiceToken` reads `GEMINI_API_KEY` from Cloud Secret Manager (`defineSecret('GEMINI_API_KEY')`) and mints a single-use (`uses: 1`), short-lived ephemeral token constrained to `LIVE_MODELS`, `AUDIO` modality, and `LIVE_VOICE = 'Leda'`.
+  - `src/offscreen/call.js` connects directly to `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained?access_token=...` and surfaces explicit App Check / undeployed-function / token-mint errors instead of a generic network error.
+  - **Deploy steps on `debait-d6d5d`:**
+    ```bash
+    cd functions && npm install && cd ..
+    firebase functions:secrets:set GEMINI_API_KEY --project debait-d6d5d
+    firebase deploy --only functions:mintLiveVoiceToken --project debait-d6d5d
+    ```
 
 ---
 

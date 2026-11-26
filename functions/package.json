@@ -1,0 +1,14 @@
+{
+  "name": "debait-functions",
+  "private": true,
+  "type": "module",
+  "description": "App-Check-protected Cloud Function to mint short-lived ephemeral Gemini Live tokens for Debait (debait-d6d5d).",
+  "engines": {
+    "node": "22"
+  },
+  "main": "index.js",
+  "dependencies": {
+    "@google/genai": "^1.0.0",
+    "firebase-functions": "^6.3.2"
+  }
+}

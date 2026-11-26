@@ -27,6 +27,7 @@ export { sameWords };
 // App Check debug token. The extension makes its own (shown in the popup with a Copy button);
 // register it once in each project: Firebase console > App Check > Apps > Manage debug tokens.
 // The same token works for every project it's registered in.
+const apps = [];
 const ais = [];
 let preferred = 0; // the project that answered last; tried first next time
 const skipUntil = []; // a project that rejected us is skipped for a while instead of failing every request
@@ -350,11 +351,11 @@ export function projectOrder() {
   return live.length ? live : order;
 }
 
-export function getAi(debugToken, i = preferredProject()) {
+export function getFirebaseApp(debugToken, i = preferredProject()) {
   if (!isProjectAllowed(i)) {
     throw new Error('PROJECT_NOT_ALLOWED: backup project fallback is disabled for release builds');
   }
-  if (ais[i]) return ais[i];
+  if (apps[i]) return apps[i];
   self.FIREBASE_APPCHECK_DEBUG_TOKEN = debugToken || true;
   const { name, config } = FIREBASE_PROJECTS[i];
   const app = initializeApp(config, `debait-${name.toLowerCase()}`);
@@ -364,7 +365,16 @@ export function getAi(debugToken, i = preferredProject()) {
     // refresh errors while offline or when an unregistered project is skipped).
     isTokenAutoRefreshEnabled: false,
   });
-  ais[i] = getAI(app, { backend: new GoogleAIBackend() });
+  apps[i] = app;
+  return app;
+}
+
+export function getAi(debugToken, i = preferredProject()) {
+  if (!isProjectAllowed(i)) {
+    throw new Error('PROJECT_NOT_ALLOWED: backup project fallback is disabled for release builds');
+  }
+  if (ais[i]) return ais[i];
+  ais[i] = getAI(getFirebaseApp(debugToken, i), { backend: new GoogleAIBackend() });
   return ais[i];
 }
 

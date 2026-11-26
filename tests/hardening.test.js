@@ -23,8 +23,8 @@ import {
   getAi,
   cancelActiveCloudRequests,
 } from '../src/engine/firebaseEngine.js';
-import { LIVE_VOICE, ALLOW_BACKUP_FALLBACK, FIREBASE_PROJECTS } from '../src/engine/firebaseConfig.js';
-import { liveProjectOrder, withConnectTimeout } from '../src/offscreen/call.js';
+import { LIVE_VOICE, ALLOW_BACKUP_FALLBACK, FIREBASE_PROJECTS, LIVE_TOKEN_FUNCTION, FUNCTIONS_REGION } from '../src/engine/firebaseConfig.js';
+import { liveProjectOrder, withConnectTimeout, buildConstrainedWsUrl, classifyCallError } from '../src/offscreen/call.js';
 import manifest, { SITES, EXCLUDED_SITES } from '../manifest.config.js';
 import { isPrivateHost, isSensitivePage, getAdapter } from '../src/content/sites/index.js';
 
@@ -262,4 +262,32 @@ test('Network, Call, and Local resilience regressions', async () => {
   assert.ok(sitesSrc.includes("el.closest('.yuRUbf')"), 'Google adapter must place tags outside scaleY(-1) link wrappers');
   const tagSrc = fs.readFileSync('src/content/ui/tag.js', 'utf8');
   assert.ok(tagSrc.includes('hasVerticalFlip') && tagSrc.includes('scaleY(-1)'), 'tag.js must counter-flip if mounted inside a vertically flipped ancestor');
+});
+
+test('Ephemeral Live voice token endpoint enforces App Check and maps errors accurately', () => {
+  assert.equal(LIVE_VOICE, 'Leda');
+  assert.equal(LIVE_TOKEN_FUNCTION, 'mintLiveVoiceToken');
+  assert.equal(FUNCTIONS_REGION, 'us-central1');
+
+  // Cloud Function v2 enforces App Check + Secret Manager GEMINI_API_KEY + Leda voice constraint
+  const fnSrc = fs.readFileSync('functions/index.js', 'utf8');
+  assert.ok(fnSrc.includes('enforceAppCheck: true'), 'mintLiveVoiceToken must enforce App Check');
+  assert.ok(fnSrc.includes("defineSecret('GEMINI_API_KEY')"), 'must read Gemini API key from Secret Manager');
+  assert.ok(fnSrc.includes("const LIVE_VOICE = 'Leda'"), 'must preserve LIVE_VOICE = Leda');
+  assert.ok(fnSrc.includes('uses: 1'), 'ephemeral tokens must be single-use');
+
+  const rc = JSON.parse(fs.readFileSync('.firebaserc', 'utf8'));
+  assert.equal(rc.projects.default, 'debait-d6d5d');
+
+  // Constrained WebSocket URL uses access_token query param
+  const wsUrl = buildConstrainedWsUrl('auth_tokens/abc+123', 'v1alpha');
+  assert.ok(wsUrl.startsWith('wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained?access_token='));
+  assert.ok(wsUrl.includes(encodeURIComponent('auth_tokens/abc+123')));
+
+  // Accurate error classification (never misleads with generic "check your internet" on App Check/token failure)
+  assert.match(classifyCallError(new Error('APP_CHECK_ERROR: invalid token'), true), /App Check/i);
+  assert.match(classifyCallError({ code: 'functions/unauthenticated', message: 'Unauthenticated' }, true), /App Check/i);
+  assert.match(classifyCallError(new Error('TOKEN_ENDPOINT_NOT_FOUND: 404'), true), /not deployed/i);
+  assert.match(classifyCallError(new Error('TOKEN_MINT_ERROR: missing secret'), true), /mint a voice session token/i);
+  assert.match(classifyCallError(new Error('OFFLINE: no network'), false), /internet connection/i);
 });
