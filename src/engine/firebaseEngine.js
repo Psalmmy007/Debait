@@ -327,9 +327,13 @@ async function streamOnce(m, request, signal, onFirst, onText, expectedMode) {
 }
 
 export const projectCount = () => FIREBASE_PROJECTS.length;
-export const projectName = (i = preferred) => FIREBASE_PROJECTS[i]?.name || 'Team';
-export const preferredProject = () => preferred;
-export const setPreferredProject = (i) => { preferred = i; };
+export function isProjectAllowed(i) {
+  const p = FIREBASE_PROJECTS[i];
+  return Boolean(p && (p.appCheckEnforced !== false || ALLOW_BACKUP_FALLBACK));
+}
+export const preferredProject = () => (isProjectAllowed(preferred) ? preferred : 0);
+export const projectName = (i = preferredProject()) => FIREBASE_PROJECTS[i]?.name || 'Team';
+export const setPreferredProject = (i) => { preferred = isProjectAllowed(i) ? i : 0; };
 
 // Speculative duplicate hedging is disabled by default to avoid duplicate inference/billing.
 export const ENABLE_HEDGING = false;
@@ -337,16 +341,19 @@ export const ENABLE_HEDGING = false;
 /** Projects permitted for requests: primary App Check-enforced project only unless backup is explicitly enabled. */
 export function projectOrder() {
   const allowed = FIREBASE_PROJECTS
-    .map((p, i) => ({ p, i }))
-    .filter(({ p }) => p.appCheckEnforced !== false || ALLOW_BACKUP_FALLBACK)
-    .map(({ i }) => i);
+    .map((_, i) => i)
+    .filter((i) => isProjectAllowed(i));
   const all = allowed.length ? allowed : [0];
-  const order = all.includes(preferred) ? [preferred, ...all.filter((i) => i !== preferred)] : all;
+  const pref = preferredProject();
+  const order = all.includes(pref) ? [pref, ...all.filter((i) => i !== pref)] : all;
   const live = order.filter((i) => !(skipUntil[i] > Date.now()));
   return live.length ? live : order;
 }
 
-export function getAi(debugToken, i = preferred) {
+export function getAi(debugToken, i = preferredProject()) {
+  if (!isProjectAllowed(i)) {
+    throw new Error('PROJECT_NOT_ALLOWED: backup project fallback is disabled for release builds');
+  }
   if (ais[i]) return ais[i];
   self.FIREBASE_APPCHECK_DEBUG_TOKEN = debugToken || true;
   const { name, config } = FIREBASE_PROJECTS[i];
@@ -626,10 +633,11 @@ async function fixUnchangedRewrites(out, texts, { mode, localOnly, debugToken, s
     const request = rewritePrompt(bad.map((i) => ({ text: texts[i], triggers: Array.isArray(out[i].triggers) ? out[i].triggers : [] })));
     // Online hybrid: if Nano is busy or slow, don't wait for a second on-device pass when Cloud can answer fast.
     const useNano = mode === ON_DEVICE && (localOnly || !isOnline() || (!deviceSlow() && deviceQueue === 0));
+    const targetProject = projectOrder()[0];
     const res = useNano
-      ? await onDevice(signal, budgetFor(localOnly), slowErrorFor(localOnly), (s) => rewriteModel(ON_DEVICE, debugToken, preferred, s).generateContent(request, { signal: s }))
+      ? await onDevice(signal, budgetFor(localOnly), slowErrorFor(localOnly), (s) => rewriteModel(ON_DEVICE, debugToken, targetProject, s).generateContent(request, { signal: s }))
       : await withCloudTimeout(signal, (cs) => {
-        const m = rewriteModel(IN_CLOUD, debugToken, preferred);
+        const m = rewriteModel(IN_CLOUD, debugToken, targetProject);
         return ENABLE_HEDGING
           ? hedged((s) => m.generateContent(request, { signal: anySignal(s, cs) }), 4000)
           : m.generateContent(request, { signal: cs });
@@ -720,7 +728,7 @@ async function scoreWithNano(texts, { localOnly, offline, debugToken, signal, bu
   const request = prompt(texts);
   const res = await onDevice(signal, effectiveBudget, slowErrorFor(localOnly), (s) => {
     if (!localOnly && !offline && budget == null && deviceSlow()) throw new Error('skip');
-    return model(ON_DEVICE, debugToken, preferred, s).generateContent(request, { signal: s });
+    return model(ON_DEVICE, debugToken, preferredProject(), s).generateContent(request, { signal: s });
   });
   const list = resultList(res);
   if (!list) throw unreadable('Gemini Nano');
@@ -741,7 +749,7 @@ export const firebaseEngine = {
       // Nano gets a budget to start writing; once it writes, it may finish
       try {
         const out = await onDevice(signal, budgetFor(localOnly), slowErrorFor(localOnly),
-          (s, started) => streamOnce(summaryModel(ON_DEVICE, debugToken, preferred, s), request, s, started, streamOut, ON_DEVICE));
+          (s, started) => streamOnce(summaryModel(ON_DEVICE, debugToken, preferredProject(), s), request, s, started, streamOut, ON_DEVICE));
         if (!out.text) throw new Error('empty summary');
         if (isSummaryRefusal(out.text)) return { summary: NO_SUMMARY_TEXT, source: 'none' };
         return { summary: out.text, source: out.source };
@@ -774,7 +782,7 @@ export const firebaseEngine = {
     // Cloud failed or timed out on a flaky network: fail over to Gemini Nano if available.
     if (!triedDevice && !signal?.aborted && (await deviceAvailability()) === 'available') {
       const out = await onDevice(signal, LOCAL_BUDGET, offlineSlow(),
-        (s, started) => streamOnce(summaryModel(ON_DEVICE, debugToken, preferred, s), request, s, started, streamOut, ON_DEVICE));
+        (s, started) => streamOnce(summaryModel(ON_DEVICE, debugToken, preferredProject(), s), request, s, started, streamOut, ON_DEVICE));
       if (!out.text) throw new Error('empty summary');
       if (isSummaryRefusal(out.text)) return { summary: NO_SUMMARY_TEXT, source: 'none' };
       return { summary: out.text, source: out.source };

@@ -16,13 +16,17 @@ import {
   verifyInferenceSource,
   expandNanoItem,
   ENABLE_HEDGING,
+  isProjectAllowed,
   projectOrder,
+  preferredProject,
+  setPreferredProject,
+  getAi,
   cancelActiveCloudRequests,
 } from '../src/engine/firebaseEngine.js';
 import { LIVE_VOICE, ALLOW_BACKUP_FALLBACK, FIREBASE_PROJECTS } from '../src/engine/firebaseConfig.js';
 import { liveProjectOrder, withConnectTimeout } from '../src/offscreen/call.js';
-import { SITES, EXCLUDED_SITES } from '../manifest.config.js';
-import { isPrivateHost } from '../src/content/sites/index.js';
+import manifest, { SITES, EXCLUDED_SITES } from '../manifest.config.js';
+import { isPrivateHost, isSensitivePage, getAdapter } from '../src/content/sites/index.js';
 
 const fixtures = JSON.parse(fs.readFileSync(new URL('./fixtures/headlines.json', import.meta.url), 'utf8'));
 
@@ -39,11 +43,25 @@ test('P0-1: Local Only cache isolation rejects cloud and mock entries', () => {
   assert.equal(isCacheEntryValid(mockEntry, true), false);
 });
 
-test('P0-2: Voice removes global WebSocket monkeypatch, tries enforced Team first, keeps LIVE_VOICE', () => {
+test('P0-2: Release disables unprotected backup project across scoring, summaries, and voice while keeping LIVE_VOICE', () => {
   assert.equal(LIVE_VOICE, 'Leda');
-  assert.equal(ALLOW_BACKUP_FALLBACK, true);
+  assert.equal(ALLOW_BACKUP_FALLBACK, false, 'release builds must disable unprotected backup fallback');
+  assert.equal(FIREBASE_PROJECTS[0].projectId || FIREBASE_PROJECTS[0].config.projectId, 'debait-d6d5d');
   assert.equal(FIREBASE_PROJECTS[0].appCheckEnforced, true);
-  assert.equal(projectOrder()[0], 0, 'projectOrder must always try App Check-enforced Team project first');
+  assert.equal(FIREBASE_PROJECTS[1].appCheckEnforced, false);
+
+  // Project policy enforcement: only App Check-enforced primary project (0) is permitted
+  assert.equal(isProjectAllowed(0), true);
+  assert.equal(isProjectAllowed(1), false, 'unprotected backup project must be disallowed');
+  assert.deepEqual(projectOrder(), [0], 'projectOrder must never route to unprotected backup project');
+  assert.deepEqual(liveProjectOrder([0, 1]), [0], 'liveProjectOrder must never route voice to unprotected backup project');
+  assert.deepEqual(liveProjectOrder([1]), [0], 'liveProjectOrder must fall back to permitted primary project only');
+
+  // Stale engineMemory.prefer = 1 from older sessions must be sanitized back to 0
+  setPreferredProject(1);
+  assert.equal(preferredProject(), 0, 'setPreferredProject(1) must be rejected when backup is disabled');
+  assert.throws(() => getAi('test-token', 1), /PROJECT_NOT_ALLOWED/, 'getAi must refuse to initialize disabled backup project');
+
   const callSrc = fs.readFileSync('src/offscreen/call.js', 'utf8');
   assert.equal(callSrc.includes('WebSocket.prototype.send'), false, 'global WebSocket.prototype monkeypatch must be removed');
 });
@@ -120,17 +138,76 @@ test('P1-7: Hedging disabled by default and cloud cancellation helper exists', (
   cancelActiveCloudRequests(); // safe no-op when empty
 });
 
-test('P1-9: Manifest excludes private/IDE hosts and Trusted Types are protected', () => {
-  assert.ok(SITES.includes('https://*/*'));
-  assert.ok(EXCLUDED_SITES.includes('*://*.github.dev/*'), 'must exclude github.dev');
-  assert.ok(EXCLUDED_SITES.includes('*://mail.google.com/*'), 'must exclude Gmail');
-  assert.equal(isPrivateHost('fantastic-space-123.github.dev'), true);
-  assert.equal(isPrivateHost('mail.google.com'), true);
-  assert.equal(isPrivateHost('www.bbc.com'), false);
-  assert.equal(isPrivateHost('www.youtube.com'), false);
-  assert.equal(isPrivateHost('x.com'), false);
+test('P1-9: Broad news/web support preserved while excluding webmail, banking, code hosts, workspaces, and localhost dev tools + Trusted Types/CSP safe', () => {
+  // Broad web matching retained for general news & search testing
+  assert.ok(SITES.includes('https://*/*') && SITES.includes('http://*/*'));
+  // Every exclude_matches entry must be a valid MV3 match pattern (no port numbers)
+  for (const pat of EXCLUDED_SITES) {
+    assert.match(pat, /^(\*|https?):\/\/[^/:]+\/.*$/, `Invalid MV3 match pattern: ${pat}`);
+  }
+  // Manifest must not weaken extension CSP
+  assert.equal(manifest.content_security_policy, undefined);
+
+  // Spot-check required sensitive categories in exclude_matches
+  for (const required of [
+    '*://mail.google.com/*',
+    '*://outlook.live.com/*',
+    '*://mail.yahoo.com/*',
+    '*://*.chase.com/*',
+    '*://*.paypal.com/*',
+    '*://github.com/*',
+    '*://*.github.dev/*',
+    '*://gitlab.com/*',
+    '*://replit.com/*',
+    '*://*.vscode.dev/*',
+    '*://docs.google.com/*',
+    '*://*.notion.so/*',
+    '*://*.slack.com/*',
+    '*://discord.com/*',
+    '*://localhost/admin*',
+  ]) {
+    assert.ok(EXCLUDED_SITES.includes(required), `EXCLUDED_SITES missing ${required}`);
+  }
+
+  // Content-script private-host guards block sensitive apps across all categories
+  for (const blocked of [
+    'mail.google.com',
+    'outlook.live.com',
+    'mail.yahoo.com',
+    'mail.proton.me',
+    'www.chase.com',
+    'www.paypal.com',
+    'dashboard.stripe.com',
+    'github.com',
+    'fantastic-space-123.github.dev',
+    'gitlab.com',
+    'replit.com',
+    'vscode.dev',
+    'docs.google.com',
+    'www.notion.so',
+    'app.slack.com',
+    'discord.com',
+    'api.localhost',
+    'console.firebase.google.com',
+  ]) {
+    assert.equal(isPrivateHost(blocked), true, `Expected ${blocked} to be blocked as private`);
+    assert.equal(getAdapter(blocked).name, 'off', `Expected adapter for ${blocked} to be off`);
+  }
+
+  // Localhost dev tools blocked by default unless explicitly opted-in as Debait demo page
+  assert.equal(isSensitivePage({ querySelector: () => null }, { hostname: 'localhost', pathname: '/dashboard' }), true);
+  assert.equal(isSensitivePage({ querySelector: (s) => (s === '[data-debait-headline]' ? {} : null) }, { hostname: 'localhost', pathname: '/' }), false);
+
+  // General news sites, search engines, and social feeds remain allowed
+  for (const allowed of ['www.bbc.com', 'www.reuters.com', 'www.nytimes.com', 'www.theguardian.com', 'www.google.com', 'www.youtube.com', 'x.com']) {
+    assert.equal(isPrivateHost(allowed), false, `Expected general web/news host ${allowed} to stay allowed`);
+    assert.notEqual(getAdapter(allowed).name, 'off');
+  }
+
+  // Trusted Types and Shadow DOM CSS compatibility without weakening host CSP
   const htmlSrc = fs.readFileSync('src/content/ui/html.js', 'utf8');
   assert.ok(htmlSrc.includes('defaultPolicy') && htmlSrc.includes('try {\n    el.innerHTML'));
+  assert.ok(htmlSrc.includes('CSSStyleSheet') && !htmlSrc.includes('eval('));
 });
 
 test('Nano compact expansion integrates cleanly with strict rewrite-safety normalization', () => {
@@ -156,11 +233,9 @@ test('P2-11: AudioWorklet ring buffer, optimistic mute, and WebGL restoreContext
 });
 
 test('Network, Call, and Local resilience regressions', async () => {
-  // Call: prefers Live-compatible non-App-Check project first without breaking HTTP projectOrder()
-  assert.equal(projectOrder()[0], 0);
-  const liveOrder = liveProjectOrder([0, 1]);
-  assert.equal(liveOrder[0], 1, 'Live WebSocket order must try non-App-Check-enforced project first');
-  assert.deepEqual(liveOrder, [1, 0]);
+  // Release policy: both HTTP projectOrder() and Live liveProjectOrder() permit only primary App Check project (0)
+  assert.deepEqual(projectOrder(), [0]);
+  assert.deepEqual(liveProjectOrder([0, 1]), [0]);
 
   // Call: withConnectTimeout closes late-resolving WebSocket sessions
   let closed = false;

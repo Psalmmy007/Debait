@@ -1,6 +1,7 @@
-// Firebase web app configs. Primary project (Team) enforces App Check and is always tried first.
-// Backup project is tried only if Team rejects an unregistered per-install debug token (or Live WebSocket).
-export const ALLOW_BACKUP_FALLBACK = true;
+// Firebase web app configs. Primary project (Team / debait-d6d5d) enforces App Check and is
+// the ONLY project permitted in release builds. Unprotected backup fallback is disabled so
+// headline analysis, summaries, and voice never silently bypass App Check authentication.
+export const ALLOW_BACKUP_FALLBACK = false;
 
 export const FIREBASE_PROJECTS = [
   {

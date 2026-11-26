@@ -4,7 +4,7 @@
 // The model can act on the page you're looking at through tools (debait, restore, report, explain).
 import { getLiveGenerativeModel, ResponseModality, Schema } from 'firebase/ai';
 import { openAudio } from './voice-audio.js';
-import { getAi, projectOrder, projectName, isOnline } from '../engine/firebaseEngine.js';
+import { getAi, isProjectAllowed, projectOrder, projectName, isOnline } from '../engine/firebaseEngine.js';
 import { FIREBASE_PROJECTS, LIVE_MODELS, LIVE_VOICE } from '../engine/firebaseConfig.js';
 
 const SYSTEM = `You are Debait — a chill, sharp, easygoing friend who lives inside the Debait Chrome extension.
@@ -75,11 +75,14 @@ let picked = null; // { i, model } that connected, reused when reconnecting
 const liveSkip = new Set();
 const CONNECT_TIMEOUT = 10000;
 
-// Browsers cannot attach X-Firebase-AppCheck headers to WebSocket handshakes, so try allowed
-// projects without enforced App Check first for Live calls (HTTP scoring still tries Team first).
+// Enforce project policy first so Live calls never silently route to a disabled backup project.
+// Among permitted projects, prefer any non-App-Check-enforced project because browsers cannot
+// attach X-Firebase-AppCheck headers to WebSocket handshakes.
 export function liveProjectOrder(order = projectOrder()) {
-  const noAppCheck = order.filter((i) => FIREBASE_PROJECTS[i]?.appCheckEnforced === false);
-  const rest = order.filter((i) => FIREBASE_PROJECTS[i]?.appCheckEnforced !== false);
+  const allowed = order.filter((i) => isProjectAllowed(i));
+  const permitted = allowed.length ? allowed : projectOrder();
+  const noAppCheck = permitted.filter((i) => FIREBASE_PROJECTS[i]?.appCheckEnforced === false);
+  const rest = permitted.filter((i) => FIREBASE_PROJECTS[i]?.appCheckEnforced !== false);
   return [...noAppCheck, ...rest];
 }
 
@@ -101,12 +104,14 @@ export function withConnectTimeout(promise, ms = CONNECT_TIMEOUT) {
 
 async function connect(debugToken, handle, gen) {
   if (!isOnline()) throw new Error('OFFLINE: Talk to Debait needs an internet connection.');
-  if (picked) {
+  if (picked && isProjectAllowed(picked.i)) {
     try {
       const s = await withConnectTimeout(open(debugToken, picked.i, picked.model, handle));
       if (!active || gen !== callGen) { s.close().catch(() => {}); return null; }
       return s;
     } catch { picked = null; }
+  } else {
+    picked = null;
   }
   let lastErr = null;
   const baseOrder = liveProjectOrder(projectOrder());

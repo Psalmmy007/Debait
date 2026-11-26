@@ -5,18 +5,26 @@
 
 const textOf = (el) => (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
 
-// Private/sensitive hosts (IDEs, webmail, workspaces, banking, chat apps) where Debait
-// stays off by default and never collects page text for summarization.
-export const PRIVATE_HOST_RE = /(^|\.)(gemini\.google\.com|chatgpt\.com|chat\.openai\.com|claude\.ai|copilot\.microsoft\.com|perplexity\.ai|chat\.deepseek\.com|github\.dev|vscode\.dev|mail\.google\.com|outlook\.live\.com|outlook\.office\.com|docs\.google\.com|drive\.google\.com|sheets\.google\.com|slides\.google\.com|notion\.so|slack\.com|discord\.com|figma\.com|linear\.app|chase\.com|bankofamerica\.com|wellsfargo\.com|paypal\.com)$/i;
-const SENSITIVE_PATH_RE = /\/(login|signin|sign-in|auth|oauth|checkout|billing|payment|account|settings|admin)\b/i;
+// Private/sensitive hosts (webmail, banking/financial portals, cloud IDEs/code hosts,
+// cloud consoles, private workspaces, and AI chats) where Debait stays off by default
+// and never collects page text for scoring or summarization.
+export const PRIVATE_HOST_RE = /(^|\.)(gemini\.google\.com|chatgpt\.com|chat\.openai\.com|claude\.ai|copilot\.microsoft\.com|perplexity\.ai|chat\.deepseek\.com|github\.com|github\.dev|gitlab\.com|bitbucket\.org|replit\.com|vscode\.dev|codesandbox\.io|stackblitz\.com|console\.firebase\.google\.com|console\.cloud\.google\.com|console\.aws\.amazon\.com|portal\.azure\.com|mail\.google\.com|outlook\.live\.com|outlook\.office\.com|outlook\.office365\.com|mail\.yahoo\.com|mail\.proton\.me|mail\.protonmail\.com|fastmail\.com|docs\.google\.com|drive\.google\.com|sheets\.google\.com|slides\.google\.com|calendar\.google\.com|meet\.google\.com|notion\.so|notion\.site|slack\.com|discord\.com|figma\.com|linear\.app|atlassian\.net|chase\.com|bankofamerica\.com|wellsfargo\.com|citi\.com|citibank\.com|capitalone\.com|paypal\.com|dashboard\.stripe\.com|wise\.com|venmo\.com|cash\.app|robinhood\.com|coinbase\.com|fidelity\.com|schwab\.com|vanguard\.com|barclays\.co\.uk|hsbc\.com|hsbc\.co\.uk|chromewebstore\.google\.com)$/i;
+const SUBDOMAIN_LOCALHOST_RE = /\.localhost$/i;
+const SENSITIVE_PATH_RE = /\/(login|signin|sign-in|auth|oauth|checkout|billing|payment|account|settings|admin|devtools|graphql|graphiql|swagger|api-docs|phpmyadmin|pgadmin)\b/i;
 
 export function isPrivateHost(hostname = '') {
-  return PRIVATE_HOST_RE.test(String(hostname || '').toLowerCase());
+  const h = String(hostname || '').toLowerCase();
+  return PRIVATE_HOST_RE.test(h) || SUBDOMAIN_LOCALHOST_RE.test(h);
 }
 
 export function isSensitivePage(doc = document, loc = location) {
-  if (isPrivateHost(loc?.hostname)) return true;
-  if (SENSITIVE_PATH_RE.test(String(loc?.pathname || ''))) return true;
+  const host = String(loc?.hostname || '').toLowerCase();
+  const path = String(loc?.pathname || '');
+  if (isPrivateHost(host)) return true;
+  if (host === 'www.icloud.com' && /^\/mail\b/i.test(path)) return true;
+  if (SENSITIVE_PATH_RE.test(path)) return true;
+  // Block localhost dev tools unless the page explicitly opts in as the Debait demo fixture.
+  if ((host === 'localhost' || host === '127.0.0.1') && !doc?.querySelector?.('[data-debait-headline]')) return true;
   if (doc?.querySelector?.('input[type="password"]')) return true;
   return false;
 }
