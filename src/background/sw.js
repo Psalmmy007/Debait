@@ -1,5 +1,6 @@
 // Service worker: routes messages, keeps the score cache and the daily stats.
-import { MSG, CACHE_VERSION, isCacheEntryValid } from '../engine/contract.js';
+import { MSG, CACHE_VERSION, isCacheEntryValid, isResultAllowedInMode } from '../engine/contract.js';
+import { ENABLE_LIVE_VOICE, VOICE_GATED_MESSAGE } from '../engine/firebaseConfig.js';
 import { isPrivateHost } from '../content/sites/index.js';
 import { getSettings, dayKey, emptyDay, SYNC_PREFIX, SYNC_DAYS, syncableDay } from '../shared/storage.js';
 
@@ -236,23 +237,35 @@ function recordDebaited(texts, count) {
   });
 }
 
+let modeEpoch = 0;
+let swLocalOnly = false;
+getSettings().then((s) => { swLocalOnly = !!s.localOnly; }).catch(() => {});
+
 async function scoreTexts(texts, host) {
   const c = await loadCache();
+  const startEpoch = modeEpoch;
   const { localOnly } = await getSettings();
   // Local Only cache isolation: never serve a prior cloud-cached entry when Local Only is enabled.
-  const cachedFor = (t) => {
+  const cachedFor = (t, local = localOnly) => {
     const entry = c.get(t);
-    return isCacheEntryValid(entry, localOnly) ? entry : null;
+    return isCacheEntryValid(entry, local) ? entry : null;
   };
   const missing = [...new Set(texts.filter((t) => !cachedFor(t)))];
   let freshResults = null;
   if (missing.length) {
     const { results } = await toEngine({ type: MSG.SCORE, texts: missing, localOnly });
+    // Re-check current Local Only setting after awaiting engine: drop late cloud responses so they
+    // never enter caches, mutate stats, or render after Local Only was toggled ON mid-flight.
+    const { localOnly: nowLocalOnly } = await getSettings();
+    const switchedToLocal = nowLocalOnly && (!localOnly || modeEpoch !== startEpoch);
+    if (switchedToLocal && results.some((r) => !isResultAllowedInMode(r, true))) {
+      throw new Error('LOCAL_ONLY_SWITCH: discarded late cloud response after Local only was enabled');
+    }
     const fresh = new Map();
     missing.forEach((t, i) => {
       const r = results[i];
       // Verify Local Only never accepts or caches a cloud/mock result
-      if (localOnly && r?.source !== 'on-device') {
+      if (nowLocalOnly && !isResultAllowedInMode(r, true)) {
         throw new Error('LOCAL_ONLY_SOURCE_MISMATCH: expected on-device result while Local only is on');
       }
       fresh.set(t, r);
@@ -265,7 +278,11 @@ async function scoreTexts(texts, host) {
     freshResults = fresh;
     saveCacheSoon();
   }
-  const out = texts.map((t) => freshResults?.get(t) || cachedFor(t));
+  const { localOnly: finalLocalOnly } = await getSettings();
+  const out = texts.map((t) => freshResults?.get(t) || cachedFor(t, finalLocalOnly));
+  if (finalLocalOnly && out.some((r) => !isResultAllowedInMode(r, true))) {
+    throw new Error('LOCAL_ONLY_SWITCH: discarded late cloud response after Local only was enabled');
+  }
   recordStats(out, host, texts);
   return { results: out, cacheHits: texts.length - missing.length };
 }
@@ -289,6 +306,11 @@ async function broadcastCallState(state, message = '', extra = {}) {
 const swOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
 async function checkCallAllowed() {
   const s = await getSettings();
+  if (!ENABLE_LIVE_VOICE) {
+    await broadcastCallState('error', VOICE_GATED_MESSAGE);
+    if (s.voice) await chrome.storage.local.set({ settings: { ...s, voice: false } });
+    return false;
+  }
   if (!swOnline()) {
     await broadcastCallState('error', 'Talk to Debait needs an internet connection.');
     if (s.voice) await chrome.storage.local.set({ settings: { ...s, voice: false } });
@@ -338,6 +360,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (!now && was) endCallFlow().catch(() => {});
   const wasLocal = changes.settings.oldValue?.localOnly;
   const nowLocal = changes.settings.newValue?.localOnly;
+  if (wasLocal !== nowLocal) {
+    modeEpoch++;
+    swLocalOnly = !!nowLocal;
+  }
   if (nowLocal && !wasLocal) {
     // Switching Local only ON immediately cancels any in-flight cloud requests.
     chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'] }).then((has) => {
@@ -370,8 +396,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       } else if (msg.type === MSG.INIT) {
         sendResponse(await toEngine({ type: MSG.INIT }));
       } else if (msg.type === MSG.SUMMARY) {
+        const startEpoch = modeEpoch;
         const { localOnly } = await getSettings();
-        sendResponse(await toEngine({ type: MSG.SUMMARY, page: msg.page, localOnly, stream: !!msg.stream, tabId: sender.tab?.id }));
+        const res = await toEngine({ type: MSG.SUMMARY, page: msg.page, localOnly, stream: !!msg.stream, tabId: sender.tab?.id });
+        const { localOnly: nowLocalOnly } = await getSettings();
+        if (nowLocalOnly && (!localOnly || modeEpoch !== startEpoch) && res?.source && res.source !== 'on-device' && res.source !== 'none') {
+          throw new Error('LOCAL_ONLY_SWITCH: discarded late cloud summary after Local only was enabled');
+        }
+        sendResponse(res);
       } else if (msg.type === 'debait/tool') {
         // Gemini wants to act on the page: run it in the active tab
         const res = await toActiveTab({ type: 'debait/tool', name: msg.name, args: msg.args });
@@ -421,8 +453,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: true });
       } else if (msg.type === 'debait/record-hits') {
         // Content script resolved cached headlines in 0 ms: still count them in daily stats.
+        const { localOnly } = await getSettings();
         const host = sender.tab?.url ? new URL(sender.tab.url).hostname.replace(/^www\./, '') : '';
-        const items = Array.isArray(msg.items) ? msg.items : [];
+        const items = (Array.isArray(msg.items) ? msg.items : []).filter((x) => isResultAllowedInMode(x?.result, localOnly));
         if (items.length) recordStats(items.map((x) => x.result), host, items.map((x) => x.text));
         sendResponse({ ok: true });
       } else if (msg.type === 'debait/openSidePanel') {

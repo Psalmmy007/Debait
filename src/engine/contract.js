@@ -66,6 +66,16 @@ export function isCacheEntryValid(entry, localOnly = false) {
   return true;
 }
 
+/**
+ * Guards against late in-flight cloud responses after Local Only is toggled ON:
+ * while currentLocalOnly is true, only verified 'on-device' results may render, cache, or mutate stats.
+ */
+export function isResultAllowedInMode(result, currentLocalOnly = false) {
+  if (!result || typeof result !== 'object') return false;
+  if (currentLocalOnly) return result.source === 'on-device';
+  return result.source === 'on-device' || result.source === 'cloud' || result.source === 'mock';
+}
+
 /** True only when there is enough real article text or feed headlines to summarize. */
 export function hasEnoughSummaryText(page) {
   if (!page) return false;

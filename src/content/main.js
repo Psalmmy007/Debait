@@ -1,5 +1,6 @@
 // Debait content script: finds headlines, gets them scored, and runs the on-page UI.
-import { MSG, CACHE_VERSION, NO_SUMMARY_TEXT, hasEnoughSummaryText, isCacheEntryValid } from '../engine/contract.js';
+import { MSG, CACHE_VERSION, NO_SUMMARY_TEXT, hasEnoughSummaryText, isCacheEntryValid, isResultAllowedInMode } from '../engine/contract.js';
+import { ENABLE_LIVE_VOICE, VOICE_GATED_MESSAGE } from '../engine/firebaseConfig.js';
 import { getSettings, onSettingsChange } from '../shared/storage.js';
 import { getAdapter, textOf, isSensitivePage } from './sites/index.js';
 import { injectPageStyles, paintHighlights, swapToRewrite, swapToOriginal } from './ui/page.js';
@@ -116,6 +117,7 @@ async function start() {
   const records = new Map();
   const queue = [];
   let inflight = 0;
+  let modeGen = 0;     // increments on every Local only toggle to discard stale in-flight cloud responses
   let stats = { hits: 0, scored: 0 };
   let notice = '';     // why scoring is paused, shown on the orb
   let retryTimer = null;
@@ -139,6 +141,10 @@ async function start() {
         panel.close();
         const s = await getSettings();
         const next = !s.voice;
+        if (next && !ENABLE_LIVE_VOICE) {
+          onCallState({ state: 'error', message: VOICE_GATED_MESSAGE });
+          return;
+        }
         if (next && typeof navigator !== 'undefined' && navigator.onLine === false) {
           chime('end');
           onCallState({ state: 'error', message: 'Talk to Debait needs an internet connection.' });
@@ -227,6 +233,9 @@ async function start() {
       .then((res) => {
         if (gen !== summaryGen || location.href !== url) return { url, summary: NO_SUMMARY_TEXT, source: 'none' };
         if (!res?.ok) throw new Error(res?.error || 'no response');
+        if (settings.localOnly && res.source && res.source !== 'on-device' && res.source !== 'none') {
+          throw new Error('LOCAL_ONLY_SWITCH: discarded late cloud summary');
+        }
         const out = { url, summary: res.summary, source: res.source };
         if (res.source !== 'none' && res.source !== 'mock') lastSummary = out;
         return out;
@@ -441,12 +450,22 @@ async function start() {
 
   async function scoreBatch(batch) {
     if (!alive || extensionGone()) return;
+    const gen = modeGen;
     inflight++;
     refreshOrb();
     try {
       const res = await send({ type: MSG.SCORE, texts: batch.map((r) => r.text) });
-      if (!alive) return;
+      if (!alive || gen !== modeGen) return;
       if (!res?.ok) throw new Error(res?.error || 'no response');
+      if (settings.localOnly && res.results.some((r) => !isResultAllowedInMode(r, true))) {
+        // Defense in depth: discard any late cloud response after Local only turned on.
+        batch.forEach((rec) => {
+          rec.queued = false;
+          if (!rec.result && rec.el?.isConnected) { rec.queued = true; queue.push(rec); }
+        });
+        flushSoon();
+        return;
+      }
       notice = '';
       stats.hits += res.cacheHits;
       stats.scored += batch.length;
@@ -454,7 +473,7 @@ async function start() {
       if (res.results.some((r) => r?.source === 'mock')) upgradeSoon();
       console.debug(`[Debait] scored ${batch.length} (cache hits so far: ${stats.hits}/${stats.scored})`);
     } catch (err) {
-      if (!alive) return;
+      if (!alive || gen !== modeGen || /LOCAL_ONLY_SWITCH/i.test(String(err?.message || ''))) return;
       console.debug('[Debait] scoring failed:', err.message); // the orb tells the user; not an extension error
       // keep the records (no rescan loop), hide the waiting pills, tell the user why, retry in a minute
       batch.forEach((rec) => { rec.queued = false; rec.failed = true; rec.tag?.setVisible(false); });
@@ -470,6 +489,7 @@ async function start() {
       clearTimeout(retryTimer);
       const retryMs = isNanoOnly() ? 60000 : 6000;
       retryTimer = setTimeout(() => {
+        if (!alive || gen !== modeGen) return;
         notice = '';
         for (const r of records.values()) if (r.failed && !r.result) { r.failed = false; r.tag?.setVisible(settings.showTags); r.queued = true; queue.push(r); }
         flushSoon();
@@ -561,6 +581,7 @@ async function start() {
 
   function applyResult(rec, result) {
     if (!records.has(rec.el) || !result) return;
+    if (!isResultAllowedInMode(result, settings.localOnly)) return;
     rec.queued = false;
     if (result.source !== 'mock') {
       viewIo.unobserve(rec.el);
@@ -663,16 +684,21 @@ async function start() {
     orb.setSize(next.orbSize);
     panel.syncSettings?.(next, prev);
     if (prev.localOnly !== next.localOnly) {
+      modeGen++;
       cancelSummary();
       if (next.localOnly && lastSummary?.source !== 'on-device') lastSummary = null;
       clearTimeout(retryTimer);
+      clearTimeout(upgradeTimer);
+      upgradeTimer = null;
       notice = '';
+      queue.length = 0;
       let requeued = 0;
       for (const r of records.values()) {
+        r.queued = false;
         if (r.failed && !r.result) {
           r.failed = false;
           r.tag?.setVisible(next.showTags);
-          if (!r.queued) { r.queued = true; queue.push(r); requeued++; }
+          if (r.el?.isConnected) { r.queued = true; queue.push(r); requeued++; }
         } else if (next.localOnly && r.state === 'scored' && r.result?.source === 'cloud') {
           const cached = localCache.get(r.text);
           if (isCacheEntryValid(cached, true)) {
@@ -683,7 +709,18 @@ async function start() {
             r.tag?.remove();
             mountTag(r);
             viewIo.observe(r.el);
-            if (!r.queued) { r.queued = true; queue.push(r); requeued++; }
+            if (r.el?.isConnected) { r.queued = true; queue.push(r); requeued++; }
+          }
+        } else if (!next.localOnly && !r.result && r.el?.isConnected) {
+          // Recover any headlines left pending/deprioritized while Local only was active.
+          const cached = localCache.get(r.text);
+          if (isCacheEntryValid(cached, false)) {
+            applyResult(r, cached);
+          } else {
+            r.tag?.setVisible(next.showTags);
+            r.queued = true;
+            queue.push(r);
+            requeued++;
           }
         }
       }

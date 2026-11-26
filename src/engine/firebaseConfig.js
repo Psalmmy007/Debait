@@ -45,3 +45,9 @@ export const LIVE_VOICE = 'Leda';
 // App-Check-protected Cloud Function (v2 onCall) on debait-d6d5d that mints short-lived ephemeral Live tokens.
 export const FUNCTIONS_REGION = 'us-central1';
 export const LIVE_TOKEN_FUNCTION = 'mintLiveVoiceToken';
+
+// Release gate: keep the full LIVE_VOICE ('Leda') + ephemeral token backend intact in the repo,
+// but gate the live voice trigger until mintLiveVoiceToken is deployed on debait-d6d5d so judges
+// never hit an undeployed function error. Flip to true after deploying functions:mintLiveVoiceToken.
+export const ENABLE_LIVE_VOICE = false;
+export const VOICE_GATED_MESSAGE = 'Voice requires ephemeral token backend under App Check';

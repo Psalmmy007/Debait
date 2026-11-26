@@ -7,6 +7,7 @@ import {
   NO_SAFE_REWRITE,
   NO_SUMMARY_TEXT,
   isCacheEntryValid,
+  isResultAllowedInMode,
   validateRewriteIntegrity,
   normalizeResult,
   hasEnoughSummaryText,
@@ -21,9 +22,10 @@ import {
   preferredProject,
   setPreferredProject,
   getAi,
+  withCloudTimeout,
   cancelActiveCloudRequests,
 } from '../src/engine/firebaseEngine.js';
-import { LIVE_VOICE, ALLOW_BACKUP_FALLBACK, FIREBASE_PROJECTS, LIVE_TOKEN_FUNCTION, FUNCTIONS_REGION } from '../src/engine/firebaseConfig.js';
+import { LIVE_VOICE, ALLOW_BACKUP_FALLBACK, FIREBASE_PROJECTS, LIVE_TOKEN_FUNCTION, FUNCTIONS_REGION, ENABLE_LIVE_VOICE, VOICE_GATED_MESSAGE } from '../src/engine/firebaseConfig.js';
 import { liveProjectOrder, withConnectTimeout, buildConstrainedWsUrl, classifyCallError } from '../src/offscreen/call.js';
 import manifest, { SITES, EXCLUDED_SITES } from '../manifest.config.js';
 import { isPrivateHost, isSensitivePage, getAdapter } from '../src/content/sites/index.js';
@@ -290,4 +292,57 @@ test('Ephemeral Live voice token endpoint enforces App Check and maps errors acc
   assert.match(classifyCallError(new Error('TOKEN_ENDPOINT_NOT_FOUND: 404'), true), /not deployed/i);
   assert.match(classifyCallError(new Error('TOKEN_MINT_ERROR: missing secret'), true), /mint a voice session token/i);
   assert.match(classifyCallError(new Error('OFFLINE: no network'), false), /internet connection/i);
+});
+
+test('Voice Release Gate: LIVE_VOICE and Cloud Function stay intact while release trigger is honestly gated', () => {
+  assert.equal(LIVE_VOICE, 'Leda');
+  assert.equal(ENABLE_LIVE_VOICE, false, 'release build must gate live voice until ephemeral token backend is deployed');
+  assert.equal(VOICE_GATED_MESSAGE, 'Voice requires ephemeral token backend under App Check');
+  assert.equal(fs.existsSync('functions/index.js'), true, 'Cloud Function implementation must remain intact');
+
+  for (const file of ['src/offscreen/call.js', 'src/background/sw.js', 'src/content/main.js', 'src/content/ui/settings.js']) {
+    const src = fs.readFileSync(file, 'utf8');
+    assert.ok(src.includes('ENABLE_LIVE_VOICE') && src.includes('VOICE_GATED_MESSAGE'), `${file} must enforce ENABLE_LIVE_VOICE gate`);
+  }
+});
+
+test('P3: Local Only in-flight cancellation aborts active cloud work, blocks late cloud renders/cache/stats, and recovers cleanly when toggled OFF', async () => {
+  const cloudRes = { kind: 'rage', score: 84, triggers: [{ word: 'SHOCKING', why: 'hype' }], honest_rewrite: 'Report released', source: 'cloud' };
+  const localRes = { ...cloudRes, source: 'on-device' };
+  const mockRes = { ...cloudRes, source: 'mock' };
+
+  // Mode guard rejects late cloud/mock responses once Local Only is ON, accepts on-device, and re-allows cloud when OFF
+  assert.equal(isResultAllowedInMode(cloudRes, true), false);
+  assert.equal(isResultAllowedInMode(mockRes, true), false);
+  assert.equal(isResultAllowedInMode(localRes, true), true);
+  assert.equal(isResultAllowedInMode(cloudRes, false), true);
+  assert.equal(isResultAllowedInMode(localRes, false), true);
+
+  // Live async cancellation test: toggling Local Only ON aborts an in-flight cloud request immediately
+  let observedAbortReason = null;
+  let startedResolve;
+  const started = new Promise((r) => { startedResolve = r; });
+  const inflight = withCloudTimeout(undefined, (signal) => new Promise((_resolve, reject) => {
+    startedResolve();
+    signal.addEventListener('abort', () => {
+      observedAbortReason = String(signal.reason?.message || signal.reason);
+      reject(signal.reason);
+    }, { once: true });
+  }), 5000);
+  await started;
+  cancelActiveCloudRequests();
+  await assert.rejects(() => inflight, /LOCAL_ONLY_SWITCH/);
+  assert.match(observedAbortReason, /LOCAL_ONLY_SWITCH/);
+
+  // Verify service worker re-checks localOnly & modeEpoch after awaiting toEngine() for scoring, summary, and hit stats
+  const swSrc = fs.readFileSync('src/background/sw.js', 'utf8');
+  assert.ok(swSrc.includes('modeEpoch') && swSrc.includes('switchedToLocal'), 'sw.js must discard late cloud scoring after Local Only toggle');
+  assert.ok(swSrc.includes('discarded late cloud summary'), 'sw.js must discard late cloud summaries after Local Only toggle');
+  assert.ok(swSrc.includes('isResultAllowedInMode(x?.result, localOnly)'), 'sw.js must filter debait/record-hits by current Local Only mode');
+
+  // Verify content script invalidates in-flight score batches, retries, summaries, and DOM renders via modeGen + recovers when toggled OFF
+  const mainSrc = fs.readFileSync('src/content/main.js', 'utf8');
+  assert.ok(mainSrc.includes('let modeGen = 0') && mainSrc.includes('gen !== modeGen'), 'main.js must invalidate in-flight batches and retries via modeGen');
+  assert.ok(mainSrc.includes('if (!isResultAllowedInMode(result, settings.localOnly)) return;'), 'applyResult must block late cloud DOM render & localCache write');
+  assert.ok(mainSrc.includes('!next.localOnly && !r.result && r.el?.isConnected'), 'toggling Local Only OFF must cleanly recover pending headlines');
 });

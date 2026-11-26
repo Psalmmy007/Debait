@@ -5,7 +5,7 @@
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { openAudio } from './voice-audio.js';
 import { getFirebaseApp, isProjectAllowed, projectOrder, projectName, isOnline } from '../engine/firebaseEngine.js';
-import { FIREBASE_PROJECTS, LIVE_MODELS, LIVE_VOICE, FUNCTIONS_REGION, LIVE_TOKEN_FUNCTION } from '../engine/firebaseConfig.js';
+import { FIREBASE_PROJECTS, LIVE_MODELS, LIVE_VOICE, FUNCTIONS_REGION, LIVE_TOKEN_FUNCTION, ENABLE_LIVE_VOICE, VOICE_GATED_MESSAGE } from '../engine/firebaseConfig.js';
 
 const SYSTEM = `You are Debait — a chill, sharp, easygoing friend who lives inside the Debait Chrome extension.
 Never break character. Never say you are a large language model, never mention Google or Gemini, and never refer to any underlying API or model.
@@ -449,6 +449,10 @@ async function keepAlive(gen) {
 }
 
 export async function startCall(debugToken) {
+  if (!ENABLE_LIVE_VOICE) {
+    state('error', VOICE_GATED_MESSAGE, { muted: false });
+    return;
+  }
   if (active) return;
   if (!isOnline()) {
     state('error', 'Talk to Debait needs an internet connection.');

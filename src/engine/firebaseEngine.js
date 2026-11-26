@@ -233,22 +233,28 @@ export function cancelActiveCloudRequests() {
 }
 
 /** Tight per-request timeout on cloud calls so flaky networks fail over to Nano instead of hanging. */
-function withCloudTimeout(signal, run, ms = CLOUD_BUDGET) {
+export function withCloudTimeout(signal, run, ms = CLOUD_BUDGET) {
   if (signal?.aborted) return Promise.reject(signal.reason || new DOMException('Aborted', 'AbortError'));
   const ctrl = new AbortController();
   activeCloudControllers.add(ctrl);
   let timer;
+  let onAbort;
   const limit = new Promise((_, reject) => {
+    onAbort = () => reject(ctrl.signal.reason || new DOMException('Aborted', 'AbortError'));
+    ctrl.signal.addEventListener('abort', onAbort, { once: true });
     timer = setTimeout(() => {
-      const err = new Error('Cloud request timed out');
-      ctrl.abort(err);
-      reject(err);
+      ctrl.abort(new Error('Cloud request timed out'));
     }, ms);
   });
-  const work = Promise.resolve().then(() => run(anySignal(signal, ctrl.signal)));
+  const work = Promise.resolve().then(() => {
+    const combined = anySignal(signal, ctrl.signal);
+    combined?.throwIfAborted?.();
+    return run(combined);
+  });
   work.catch(() => {});
   return Promise.race([work, limit]).finally(() => {
     clearTimeout(timer);
+    ctrl.signal.removeEventListener('abort', onAbort);
     activeCloudControllers.delete(ctrl);
   });
 }

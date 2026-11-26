@@ -1,6 +1,7 @@
 // The column: double-click (or right-click) the orb.
 // It opens out of the orb and folds back into it when closed.
 import { MSG } from '../../engine/contract.js';
+import { ENABLE_LIVE_VOICE, VOICE_GATED_MESSAGE } from '../../engine/firebaseConfig.js';
 import { getSettings, setSettings, getRecentStats } from '../../shared/storage.js';
 import { reducedMotion } from './page.js';
 import { ICON, SOURCE } from './icons.js';
@@ -13,7 +14,7 @@ const OUT = 'cubic-bezier(0.16, 1, 0.3, 1)';
 const SWITCHES = [
   { key: 'showTags', title: 'Show tags' },
   { key: 'autoDebait', title: 'Debait automatically', hint: 'Rewrite bait as it appears' },
-  { key: 'voice', title: 'Talk to Debait', hint: 'Live voice call with Gemini' },
+  { key: 'voice', title: 'Talk to Debait', hint: ENABLE_LIVE_VOICE ? 'Live voice call with Gemini' : VOICE_GATED_MESSAGE },
   { key: 'localOnly', title: 'Local only', hint: 'Keep every headline on this device' },
   { key: 'showOrb', title: 'Show the orb' },
 ];
@@ -221,6 +222,15 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
     const key = e.target.dataset?.setting;
     if (!key) return;
     if (key === 'voice') {
+      if (e.target.checked && !ENABLE_LIVE_VOICE) {
+        e.target.checked = false;
+        const note = el?.querySelector('.p-note');
+        if (note) {
+          note.hidden = false;
+          note.textContent = VOICE_GATED_MESSAGE;
+        }
+        return;
+      }
       const cur = await getSettings();
       const blocked = e.target.checked && (cur.localOnly || (typeof navigator !== 'undefined' && navigator.onLine === false));
       chime(e.target.checked && !blocked ? 'start' : 'end');
