@@ -10,6 +10,9 @@ import {
   RATE_LIMIT_MAX,
   GLOBAL_RATE_LIMIT_MAX,
   RATE_LIMIT_WINDOW_MS,
+  DEFAULT_TRUSTED_PROXY_HOPS,
+  getTrustedProxyHops,
+  isInternalProxyIp,
   getTrustedClientIp,
   getCallerDocId,
   createMintHandler,
@@ -191,43 +194,101 @@ test('mintLiveVoiceToken: multi-instance enforcement shares atomic per-caller li
   assert.equal((await instanceA(callerReq)).token, 'auth_tokens/ok');
 });
 
-test('mintLiveVoiceToken: header spoofing resistance uses rightmost x-forwarded-for, SHA-256 doc IDs, and prioritizes auth.uid', async () => {
+test('mintLiveVoiceToken: proxy-hop caller ID handles 1-hop Cloud Run GFE, 2-hop GCLB, internal proxy stripping, auth.uid priority, and leftmost spoofing', async () => {
   const fixedNow = Date.parse('2026-11-26T15:00:00.000Z');
-  const sharedStore = createMemoryTransactionStore();
-  const handler = createMintHandler({
+
+  // Env parsing & internal proxy IP detection
+  assert.equal(DEFAULT_TRUSTED_PROXY_HOPS, 1);
+  assert.equal(getTrustedProxyHops({}), 1);
+  assert.equal(getTrustedProxyHops({ TRUSTED_PROXY_HOPS: '2' }), 2);
+  assert.equal(isInternalProxyIp('10.128.0.5'), true);
+  assert.equal(isInternalProxyIp('169.254.1.1'), true);
+  assert.equal(isInternalProxyIp('127.0.0.1'), true);
+  assert.equal(isInternalProxyIp('::1'), true);
+  assert.equal(isInternalProxyIp('::ffff:10.0.0.2'), true);
+  assert.equal(isInternalProxyIp('198.51.100.42'), false);
+
+  // 1-hop (direct Cloud Run / GFE): rightmost external IP wins, trailing internal proxy IPs skipped
+  assert.equal(
+    getTrustedClientIp({ headers: { 'x-forwarded-for': '1.2.3.4, 5.6.7.8, 198.51.100.42' }, ip: '10.0.0.1' }, 1),
+    '198.51.100.42',
+  );
+  assert.equal(
+    getTrustedClientIp({ headers: { 'x-forwarded-for': '1.2.3.4, 198.51.100.42, 10.128.0.9, ::1' }, ip: '10.0.0.1' }, 1),
+    '198.51.100.42',
+  );
+  assert.equal(getTrustedClientIp({ headers: {}, ip: '203.0.113.9' }, 1), '203.0.113.9');
+
+  // 2-hop (external GCLB + Cloud Run): 2nd-from-right external IP is real client, NOT the shared GCLB VIP
+  const gclbVip = '34.117.10.20';
+  assert.equal(
+    getTrustedClientIp({ headers: { 'x-forwarded-for': `9.9.9.1, 198.51.100.11, ${gclbVip}` } }, 2),
+    '198.51.100.11',
+  );
+  assert.equal(
+    getTrustedClientIp({ headers: { 'x-forwarded-for': `198.51.100.22, ${gclbVip}, 169.254.1.1` } }, 2),
+    '198.51.100.22',
+  );
+
+  // Caller doc IDs are SHA-256 hashed (never raw IP) and prioritize auth.uid
+  const docId = getCallerDocId(makeReq({ rawRequest: { headers: { 'x-forwarded-for': '9.9.9.9, 198.51.100.42' } } }), 1);
+  assert.match(docId, /^caller_[0-9a-f]{64}$/);
+  assert.equal(docId.includes('198.51.100.42'), false);
+  const uidDoc1 = getCallerDocId(makeReq({ auth: { uid: 'user-abc' }, rawRequest: { ip: '1.1.1.1', headers: {} } }), 1);
+  const uidDoc2 = getCallerDocId(makeReq({ auth: { uid: 'user-abc' }, rawRequest: { ip: '2.2.2.2', headers: {} } }), 2);
+  assert.equal(uidDoc1, uidDoc2, 'auth.uid must take priority over IP regardless of proxy hops');
+
+  // 1-hop spoofing test: rotating leftmost XFF while rightmost trusted IP stays identical hits the same bucket
+  const store1 = createMemoryTransactionStore();
+  const handler1Hop = createMintHandler({
     getApiKey: () => 'fake-key',
     HttpsErrorCtor: MockHttpsError,
     now: () => fixedNow,
-    rateLimitStore: sharedStore,
+    trustedProxyHops: 1,
+    rateLimitStore: store1,
     createClient: mockCreateClient,
   });
-
-  // Rightmost trusted proxy IP extraction
-  assert.equal(getTrustedClientIp({ headers: { 'x-forwarded-for': '1.2.3.4, 5.6.7.8, 198.51.100.42' }, ip: '10.0.0.1' }), '198.51.100.42');
-  assert.equal(getTrustedClientIp({ headers: {}, ip: '203.0.113.9' }), '203.0.113.9');
-
-  // Caller doc IDs are SHA-256 hashed (never raw IP) and prioritize auth.uid
-  const docId = getCallerDocId(makeReq({ rawRequest: { headers: { 'x-forwarded-for': '9.9.9.9, 198.51.100.42' } } }));
-  assert.match(docId, /^caller_[0-9a-f]{64}$/);
-  assert.equal(docId.includes('198.51.100.42'), false);
-  const uidDoc1 = getCallerDocId(makeReq({ auth: { uid: 'user-abc' }, rawRequest: { ip: '1.1.1.1', headers: {} } }));
-  const uidDoc2 = getCallerDocId(makeReq({ auth: { uid: 'user-abc' }, rawRequest: { ip: '2.2.2.2', headers: {} } }));
-  assert.equal(uidDoc1, uidDoc2, 'auth.uid must take priority over IP');
-
-  // Rotating spoofed leftmost x-forwarded-for IPs while rightmost proxy IP stays identical hits the same bucket
   for (let i = 0; i < RATE_LIMIT_MAX; i++) {
-    const res = await handler(makeReq({
-      rawRequest: { headers: { 'x-forwarded-for': `203.0.113.${i + 1}, 198.51.100.42` }, ip: '10.0.0.1' },
+    const res = await handler1Hop(makeReq({
+      rawRequest: { headers: { 'x-forwarded-for': `203.0.113.${i + 1}, 198.51.100.42, 10.128.0.5` }, ip: '10.0.0.1' },
     }));
     assert.equal(res.token, 'auth_tokens/ok');
   }
-
   await assert.rejects(
-    () => handler(makeReq({
-      rawRequest: { headers: { 'x-forwarded-for': '203.0.113.250, 198.51.100.42' }, ip: '10.0.0.1' },
+    () => handler1Hop(makeReq({
+      rawRequest: { headers: { 'x-forwarded-for': '203.0.113.250, 198.51.100.42, 10.128.0.5' }, ip: '10.0.0.1' },
     })),
     (err) => err instanceof MockHttpsError && err.code === 'resource-exhausted',
   );
+
+  // 2-hop GCLB test: different clients behind same GCLB VIP get separate buckets, while leftmost spoofing is blocked
+  const store2 = createMemoryTransactionStore();
+  const handler2Hop = createMintHandler({
+    getApiKey: () => 'fake-key',
+    HttpsErrorCtor: MockHttpsError,
+    now: () => fixedNow,
+    trustedProxyHops: 2,
+    rateLimitStore: store2,
+    createClient: mockCreateClient,
+  });
+  for (let i = 0; i < RATE_LIMIT_MAX; i++) {
+    const res = await handler2Hop(makeReq({
+      rawRequest: { headers: { 'x-forwarded-for': `198.18.0.${i + 1}, 198.51.100.11, ${gclbVip}` }, ip: '10.0.0.1' },
+    }));
+    assert.equal(res.token, 'auth_tokens/ok');
+  }
+  // 6th spoofed request from Client A behind GCLB is rate-limited
+  await assert.rejects(
+    () => handler2Hop(makeReq({
+      rawRequest: { headers: { 'x-forwarded-for': `198.18.0.99, 198.51.100.11, ${gclbVip}` }, ip: '10.0.0.1' },
+    })),
+    (err) => err instanceof MockHttpsError && err.code === 'resource-exhausted',
+  );
+  // Client B behind the exact same GCLB VIP is NOT grouped with Client A and succeeds
+  const clientBRes = await handler2Hop(makeReq({
+    rawRequest: { headers: { 'x-forwarded-for': `198.51.100.22, ${gclbVip}` }, ip: '10.0.0.1' },
+  }));
+  assert.equal(clientBRes.token, 'auth_tokens/ok');
 });
 
 test('mintLiveVoiceToken: enforces global 30/min safety cap across distinct callers', async () => {
@@ -291,4 +352,25 @@ test('mintLiveVoiceToken: handles upstream errors, empty responses, and producti
   assert.ok(fnPkg.dependencies['firebase-admin'], 'functions/package.json must include firebase-admin');
   const fnIdx = fs.readFileSync('functions/index.js', 'utf8');
   assert.ok(fnIdx.includes('createFirestoreRateLimitStore') && fnIdx.includes('enforceAppCheck: true') && fnIdx.includes('maxInstances: 5'));
+});
+
+test('Firestore security rules explicitly deny client access to /_rateLimits/{doc} and are wired in firebase.json', () => {
+  assert.equal(fs.existsSync('firestore.rules'), true, 'firestore.rules must exist');
+
+  const fbCfg = JSON.parse(fs.readFileSync('firebase.json', 'utf8'));
+  assert.equal(fbCfg.firestore?.rules, 'firestore.rules', 'firebase.json must point to firestore.rules');
+  assert.equal(Array.isArray(fbCfg.functions) && fbCfg.functions[0]?.source, 'functions', 'firebase.json must preserve functions config');
+
+  const rules = fs.readFileSync('firestore.rules', 'utf8');
+  assert.match(rules, /rules_version\s*=\s*'2'/);
+  assert.match(
+    rules,
+    /match\s+\/_rateLimits\/\{doc\}\s*\{[\s\S]*?allow\s+read\s*,\s*write\s*:\s*if\s+false\s*;/,
+    'firestore.rules must explicitly deny client read/write on /_rateLimits/{doc}',
+  );
+  assert.match(
+    rules,
+    /match\s+\/\{document=\*\*\}\s*\{[\s\S]*?allow\s+read\s*,\s*write\s*:\s*if\s+false\s*;/,
+    'firestore.rules must preserve default-deny fallback for other client documents',
+  );
 });

@@ -16,32 +16,64 @@ export const GLOBAL_BUCKET_ID = 'global_mint_live_voice';
 export const RATE_LIMIT_MAX = 5;                   // max 5 tokens per minute per caller
 export const GLOBAL_RATE_LIMIT_MAX = 30;           // global safety cap: max 30 tokens/min total
 export const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+export const DEFAULT_TRUSTED_PROXY_HOPS = 1;       // 1 = direct Cloud Run GFE; 2 = external GCLB + Cloud Run
+
+/** Reads TRUSTED_PROXY_HOPS from env (defaults to 1 for direct Cloud Run / GFE). */
+export function getTrustedProxyHops(env = process.env) {
+  const parsed = Number.parseInt(env?.TRUSTED_PROXY_HOPS ?? '', 10);
+  return Number.isFinite(parsed) && parsed >= 1 ? parsed : DEFAULT_TRUSTED_PROXY_HOPS;
+}
+
+/** True for loopback, RFC1918 private, link-local, or CGNAT internal proxy IPs. */
+export function isInternalProxyIp(ip) {
+  if (!ip || typeof ip !== 'string') return false;
+  const norm = ip.trim().replace(/^::ffff:/i, '').toLowerCase();
+  if (!norm) return false;
+  if (norm === '::1' || norm === 'localhost') return true;
+  if (/^f[cd][0-9a-f]{0,2}:/i.test(norm) || /^fe[89ab][0-9a-f]:/i.test(norm)) return true;
+  if (/^(127\.|10\.|192\.168\.|169\.254\.|0\.)/.test(norm)) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(norm)) return true;
+  if (/^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(norm)) return true;
+  return false;
+}
 
 /**
- * Extracts the trusted client IP without falling for spoofed leftmost x-forwarded-for values.
- * Behind Google Cloud Load Balancer / Cloud Run, the rightmost x-forwarded-for entry is appended
- * by Google's trusted proxy; fall back to rawRequest.ip when no proxy header is present.
+ * Extracts the trusted client IP for Firebase Functions v2 (Cloud Run) without trusting
+ * client-spoofable leftmost x-forwarded-for entries:
+ * - Direct Cloud Run / Google Front End (TRUSTED_PROXY_HOPS=1): GFE appends the real client IP
+ *   as the rightmost external entry (`spoofed, <clientIp>`).
+ * - Behind an external Google Cloud Load Balancer (TRUSTED_PROXY_HOPS=2): GCLB appends both the
+ *   client IP and the external forwarding-rule VIP (`spoofed, <clientIp>, <gclbVip>`), so the
+ *   2nd entry from the right is the real client IP (avoiding grouping all callers under the LB IP).
+ * - Trailing internal/loopback/private proxy hops are stripped from the right first so internal
+ *   Google/VPC proxy IPs are never mistaken for the caller.
  */
-export function getTrustedClientIp(rawRequest) {
+export function getTrustedClientIp(rawRequest, trustedProxyHops = getTrustedProxyHops()) {
   const headers = rawRequest?.headers || {};
   const fwd = headers['x-forwarded-for'] ?? headers['X-Forwarded-For'];
   const headerStr = Array.isArray(fwd) ? fwd.join(',') : typeof fwd === 'string' ? fwd : '';
   const parts = headerStr.split(',').map((s) => s.trim()).filter(Boolean);
-  if (parts.length > 0) return parts[parts.length - 1];
+  if (parts.length > 0) {
+    let end = parts.length;
+    while (end > 1 && isInternalProxyIp(parts[end - 1])) end--;
+    const hops = Number.isFinite(trustedProxyHops) && trustedProxyHops >= 1 ? Math.floor(trustedProxyHops) : DEFAULT_TRUSTED_PROXY_HOPS;
+    const idx = Math.max(0, end - hops);
+    return parts[idx];
+  }
   return String(rawRequest?.ip || 'unknown').trim() || 'unknown';
 }
 
 /**
  * Builds a deterministic, Firestore-safe SHA-256 caller document ID.
  * Prioritizes authenticated Firebase Auth uid when present; otherwise binds to
- * App Check appId + trusted rightmost proxy IP.
+ * App Check appId + trusted client IP (accounting for Cloud Run / GCLB proxy hops).
  */
-export function getCallerDocId(request) {
+export function getCallerDocId(request, trustedProxyHops = getTrustedProxyHops()) {
   const appId = request?.app?.appId || 'no-app';
   const uid = request?.auth?.uid;
   const rawKey = uid
     ? `${appId}:uid:${uid}`
-    : `${appId}:ip:${getTrustedClientIp(request?.rawRequest)}`;
+    : `${appId}:ip:${getTrustedClientIp(request?.rawRequest, trustedProxyHops)}`;
   const hash = createHash('sha256').update(rawKey).digest('hex');
   return `caller_${hash}`;
 }
@@ -176,6 +208,7 @@ export function createMintHandler({
   HttpsErrorCtor,
   logger = { error: () => {} },
   now = () => Date.now(),
+  trustedProxyHops = getTrustedProxyHops(),
   rateLimitStore = createMemoryTransactionStore(),
   rateLimiter = createAtomicRateLimiter(rateLimitStore, { now }),
 }) {
@@ -197,7 +230,7 @@ export function createMintHandler({
       model = data.model.trim();
     }
 
-    const callerDocId = getCallerDocId(request);
+    const callerDocId = getCallerDocId(request, trustedProxyHops);
     const limit = await rateLimiter(callerDocId);
     if (!limit.allowed) {
       throw new HttpsErrorCtor(
