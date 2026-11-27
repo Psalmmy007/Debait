@@ -65,3 +65,13 @@ Automated tests prove policy decisions and requested resource cleanup, not physi
 release, browser WebSocket teardown, or actual SDK network behavior. Already transmitted data
 cannot be recalled. A timeout does not itself cancel the underlying Firebase request; late results
 are ignored, and enabling Local Only destroys its offscreen execution context.
+
+## Ephemeral Live token backend (review-only, voice gated)
+
+`functions/index.js` and `functions/mintHandler.js` implement an App-Check-enforced Cloud Function
+(`mintLiveVoiceToken`) that mints single-use `v1beta` ephemeral Gemini Live tokens using
+`GEMINI_API_KEY` from Firebase Secret Manager, with an atomic Firestore transactional rate limiter
+(`_rateLimits`, 5/min per caller, 30/min global cap) and Cloud Run/GFE/GCLB proxy-hop caller
+identity (`TRUSTED_PROXY_HOPS`). `firestore.rules` explicitly denies client access to
+`/_rateLimits/{doc}` (verify live project rules before any rules deployment). Live voice stays
+disabled in the extension release build (`ENABLE_LIVE_VOICE = false`, `VOICE_ENABLED = false`).

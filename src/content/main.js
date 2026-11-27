@@ -31,7 +31,8 @@ const report = (err) => {
 };
 mark('loaded', chrome.runtime?.getManifest?.().version || 'yes');
 
-if (adapter && !window.__debaitLoaded && !(isPreviewPage && chrome.runtime?.id)) {
+const isLocalDevTool = adapter?.name === 'demo' && !document.querySelector('[data-debait-headline]');
+if (adapter && adapter.name !== 'off' && !isLocalDevTool && !window.__debaitLoaded && !(isPreviewPage && chrome.runtime?.id)) {
   window.__debaitLoaded = true;
   start().then(() => mark('started', Date.now()), report);
 }

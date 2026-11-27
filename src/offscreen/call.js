@@ -4,10 +4,59 @@
 // The model can act on the page you're looking at through tools (debait, restore, report, explain).
 import { getLiveGenerativeModel, ResponseModality, Schema } from 'firebase/ai';
 import { getAi } from '../engine/firebaseEngine.js';
-import { LIVE_MODELS, LIVE_VOICE } from '../engine/firebaseConfig.js';
+import { LIVE_MODELS, LIVE_VOICE, ENABLE_LIVE_VOICE, VOICE_GATED_MESSAGE } from '../engine/firebaseConfig.js';
 import { createVoiceSession } from './voiceSession.js';
 import { startVoiceAudio } from './voice-audio.js';
 import { createLiveConnector } from './liveConnector.js';
+
+export const DEFAULT_LIVE_API_VERSION = 'v1beta';
+
+/** Builds the constrained Gemini Live WebSocket URL authenticated with a short-lived ephemeral token. */
+export function buildConstrainedWsUrl(token, apiVersion = DEFAULT_LIVE_API_VERSION) {
+  const ver = apiVersion === 'v1alpha' ? 'v1alpha' : 'v1beta';
+  return `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.${ver}.GenerativeService.BidiGenerateContentConstrained?access_token=${encodeURIComponent(token)}`;
+}
+
+/** Ensures a late-resolving WebSocket session is closed if the connect timeout already fired. */
+export function withConnectTimeout(promise, ms = 10000) {
+  let timer;
+  let timedOut = false;
+  const limit = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      timedOut = true;
+      reject(new Error('connection timed out'));
+    }, ms);
+  });
+  Promise.resolve(promise).then((s) => {
+    if (timedOut) s?.close?.().catch?.(() => {});
+  }, () => {});
+  return Promise.race([promise, limit]).finally(() => clearTimeout(timer));
+}
+
+/** Classifies Live call startup failures into accurate, actionable user messages. */
+export function classifyCallError(err, online = (typeof navigator === 'undefined' || navigator.onLine !== false)) {
+  const code = String(err?.code || '').toLowerCase();
+  const msg = String(err?.message || err || '');
+  if (!online || /^OFFLINE:/i.test(msg)) {
+    return 'Voice requires an internet connection.';
+  }
+  if (/NotAllowedError|PermissionDeniedError|permission/i.test(msg)) {
+    return 'Microphone access is blocked. Allow it in Chrome and try again.';
+  }
+  if (/^APP_CHECK_ERROR:/i.test(msg) || code.includes('unauthenticated') || /app ?check|401|403/i.test(msg)) {
+    return 'Voice blocked by App Check: register the debug token from the Debait popup in Firebase Console (debait-d6d5d).';
+  }
+  if (/^TOKEN_ENDPOINT_NOT_FOUND:/i.test(msg) || code.includes('not-found') || /\b404\b/.test(msg)) {
+    return 'Voice token service is not deployed on debait-d6d5d yet. Deploy mintLiveVoiceToken and try again.';
+  }
+  if (/^TOKEN_RATE_LIMITED:/i.test(msg) || code.includes('resource-exhausted')) {
+    return 'Too many voice requests right now. Wait a minute and try again.';
+  }
+  if (/^TOKEN_MINT_ERROR:/i.test(msg) || code.includes('failed-precondition') || code.includes('internal')) {
+    return 'Could not mint a voice session token on debait-d6d5d. Check App Check and GEMINI_API_KEY in Firebase Functions.';
+  }
+  return 'Could not connect the voice call. Check your internet and try again.';
+}
 
 const SYSTEM = `You are Debait, a warm, calm voice assistant built into a Chrome extension.
 Debait spots bait headlines (written to make people angry, scared or envious), labels them Rage, Fear, Envy or Clean,
@@ -68,6 +117,7 @@ const connect = createLiveConnector({
 
 const voice = createVoiceSession({
   isAllowed: async () => {
+    if (!ENABLE_LIVE_VOICE) return false;
     const policy = await chrome.runtime.sendMessage({ type: 'debait/voice-allowed' });
     return policy?.ok === true && policy.allowed === true;
   },
@@ -78,4 +128,11 @@ const voice = createVoiceSession({
   state,
 });
 
-export const { startCall, endCall, inCall } = voice;
+export async function startCall(...args) {
+  if (!ENABLE_LIVE_VOICE) {
+    state('error', VOICE_GATED_MESSAGE);
+    throw new Error(VOICE_GATED_MESSAGE);
+  }
+  return voice.startCall(...args);
+}
+export const { endCall, inCall } = voice;

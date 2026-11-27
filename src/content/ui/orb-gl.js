@@ -219,12 +219,44 @@ export function createOrbRenderer(canvas, size = 56, { dpr: forcedDpr, preserve 
     draw(now);
   }
 
-  canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); lost = true; });
-  canvas.addEventListener('webglcontextrestored', () => { lost = !init(); });
+  // Chrome allows only about 16 WebGL contexts per process.
+  // release() frees ours on teardown; resume() only restores when we lost it and Chrome allowed restoration.
+  const loser = gl.getExtension('WEBGL_lose_context');
+  let lostByUs = false;
+  let canRestore = false;
+  let onLostChange = null;
+  canvas.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault();
+    lost = true;
+    if (lostByUs) canRestore = true;
+    else onLostChange?.(true);
+  });
+  canvas.addEventListener('webglcontextrestored', () => {
+    lost = !init();
+    lostByUs = false;
+    canRestore = false;
+    onLostChange?.(lost);
+  });
 
   return {
     start() { running = true; if (reduced) { draw(performance.now()); return; } if (!raf) raf = requestAnimationFrame(frame); },
     stop() { running = false; cancelAnimationFrame(raf); raf = 0; },
+    release() {
+      running = false;
+      cancelAnimationFrame(raf);
+      raf = 0;
+      if (lost || lostByUs || !loser || gl.isContextLost()) return;
+      lostByUs = true;
+      canRestore = false;
+      try { loser.loseContext(); } catch { lostByUs = false; }
+    },
+    resume() {
+      if (!lostByUs || !canRestore || !loser || !gl.isContextLost()) return;
+      canRestore = false;
+      try { loser.restoreContext(); } catch { lostByUs = false; }
+    },
+    /** cb(lost) when the context is taken away by Chrome or comes back */
+    onLostChange(cb) { onLostChange = cb; },
     /** Draws a single frame right now (used by the demo lab and for reduced motion). */
     drawOnce() { if (!lost) draw(performance.now()); },
     setMood(name) { Object.assign(tgt, MOODS[name] || MOODS.idle); if (reduced) { Object.assign(cur, tgt); draw(performance.now()); } },

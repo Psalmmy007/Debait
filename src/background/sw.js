@@ -10,6 +10,7 @@ import { quotaConfig } from '../shared/quotaConfig.js';
 import { createRequestGate } from './requestGate.js';
 import { createEvaluationService, evaluationError, EVALUATION_PAGE } from './evaluation.js';
 import { MSG, normalizeResult } from '../engine/contract.js';
+import { isPrivateHost } from '../content/sites/index.js';
 import { getSettings, dayKey, emptyDay } from '../shared/storage.js';
 import { DEMO_MODE } from '../engine/mode.js';
 import { QUALITY_POLICY_VERSION } from '../engine/qualityPolicy.js';
@@ -44,11 +45,29 @@ chrome.alarms?.create('debait-build-check', { periodInMinutes: 0.5 });
 chrome.alarms?.onAlarm.addListener((a) => { if (a.name === 'debait-build-check') checkBuild(); });
 
 // ---------- put Debait into tabs that were already open (after install, update or reload) ----------
-chrome.runtime.onInstalled.addListener(async () => {
-  const files = chrome.runtime.getManifest().content_scripts?.[0]?.js || [];
-  const tabs = await chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] });
-  for (const t of tabs) chrome.scripting.executeScript({ target: { tabId: t.id }, files }).catch(() => {});
-});
+async function injectOpenTabs() {
+  try {
+    const files = chrome.runtime.getManifest().content_scripts?.[0]?.js || [];
+    const tabs = await chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] });
+    for (const t of tabs) {
+      if (!t.id || !t.url) continue;
+      let u;
+      try { u = new URL(t.url); } catch { continue; }
+      const host = u.hostname.toLowerCase();
+      if (isPrivateHost(host)) continue;
+      if (host === 'www.icloud.com' && /^\/mail\b/i.test(u.pathname)) continue;
+      if (host === 'localhost' || host === '127.0.0.1') continue;
+      chrome.scripting.executeScript({ target: { tabId: t.id }, files }).catch(() => {});
+    }
+  } catch { /* ignore startup query failures */ }
+}
+chrome.runtime.onInstalled.addListener(() => { injectOpenTabs(); });
+chrome.storage.session?.get('debaitTabsInjected').then((res) => {
+  if (!res?.debaitTabsInjected) {
+    chrome.storage.session.set({ debaitTabsInjected: true }).catch(() => {});
+    injectOpenTabs();
+  }
+}).catch(() => {});
 const CACHE_MAX = 3000;
 const requestGate = createRequestGate({
   ...quotaConfig(import.meta.env),

@@ -1,7 +1,7 @@
 // Some sites (YouTube) enforce Trusted Types: assigning a plain string to innerHTML throws.
 // Every HTML insertion in the content script goes through setHTML, which wraps the string in a
-// Trusted Types policy when the page has the API. Our templates are our own strings (any text that
-// comes from a page or the AI is escaped before it gets here), so the policy passes them through.
+// Trusted Types policy when the page allows it. On pages whose CSP forbids our policy name
+// (e.g. strict IDE/Codespaces hosts), we avoid throwing unhandled CSP/TypeErrors.
 let policy;
 
 function trusted(str) {
@@ -12,14 +12,19 @@ function trusted(str) {
         policy = globalThis.trustedTypes.createPolicy('debait', { createHTML: (s) => s });
       }
     } catch {
-      // the page doesn't allow our policy name; fall back to plain strings
+      // Page CSP disallows the 'debait' TrustedTypePolicy name; use defaultPolicy if available.
+      policy = globalThis.trustedTypes?.defaultPolicy || null;
     }
   }
-  return policy ? policy.createHTML(str) : str;
+  return policy?.createHTML ? policy.createHTML(str) : str;
 }
 
 export function setHTML(el, str) {
-  el.innerHTML = trusted(str);
+  try {
+    el.innerHTML = trusted(str);
+  } catch {
+    // Host enforces strict Trusted Types without permitting our policy: degrade safely with no crash.
+  }
 }
 
 // Styles for our shadow roots. A constructed stylesheet is parsed once and shared by every
