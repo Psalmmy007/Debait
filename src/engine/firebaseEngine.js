@@ -3,22 +3,29 @@
 import { initializeApp, SDK_VERSION } from 'firebase/app';
 import { initializeAppCheck, CustomProvider, getToken } from 'firebase/app-check';
 import { getAI, getGenerativeModel, GoogleAIBackend, InferenceMode, Schema } from 'firebase/ai';
-import { firebaseConfig, CLOUD_MODEL } from './firebaseConfig.js';
+import { firebaseConfig, CLOUD_MODEL, APP_CHECK_TOKEN_URL } from './firebaseConfig.js';
 
 import { createFirebaseAccess, installationFromWorker } from './authPolicy.js';
+import { createProductionAppCheckProvider } from './appCheckProvider.js';
 import { aiError } from './errors.js';
 import { createHeadlineEngine } from './inference.js';
 import { deviceAvailability } from './device.js';
 import { assistanceCloudSchemas, assistanceDeviceSchemas } from './assistance.js';
 import { headlinePrompt } from './qualityPolicy.js';
 
-// Production intentionally has no default issuer: an authenticated server-side
-// attestation/token service must be provisioned and reviewed before connecting one.
+// Production uses the server-side Firebase Admin App Check custom-token issuer (issueAppCheckToken)
+// so release builds enforce App Check without shipping debug tokens or service-account credentials.
+const productionProvider = createProductionAppCheckProvider({
+  endpoint: import.meta.env?.VITE_DEBAIT_APP_CHECK_URL || APP_CHECK_TOKEN_URL,
+  appId: firebaseConfig.appId,
+});
+
 const access = createFirebaseAccess({
   sdk: { initializeApp, initializeAppCheck, CustomProvider, getToken, getAI, GoogleAIBackend },
   config: firebaseConfig,
   env: import.meta.env,
   globals: globalThis,
+  productionProvider,
   getInstallation: () => installationFromWorker(),
 });
 export async function getAi(debugToken) {

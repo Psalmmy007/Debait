@@ -37,6 +37,12 @@ export const LIVE_VOICE = 'Leda';
 export const FUNCTIONS_REGION = 'us-central1';
 export const LIVE_TOKEN_FUNCTION = 'mintLiveVoiceToken';
 
+// Production App Check custom-token issuer endpoint on debait-d6d5d (Firebase Functions v2 onRequest).
+// Mints short-lived App Check tokens server-side using Firebase Admin SDK so the extension bundle
+// never embeds debug tokens or service-account credentials.
+export const APP_CHECK_TOKEN_FUNCTION = 'issueAppCheckToken';
+export const APP_CHECK_TOKEN_URL = `https://${FUNCTIONS_REGION}-${firebaseConfig.projectId}.cloudfunctions.net/${APP_CHECK_TOKEN_FUNCTION}`;
+
 // Release gate: keep the full LIVE_VOICE ('Leda') + ephemeral token backend intact in the repo,
 // but gate the live voice trigger until mintLiveVoiceToken is deployed and verified on debait-d6d5d.
 export const ENABLE_LIVE_VOICE = false;

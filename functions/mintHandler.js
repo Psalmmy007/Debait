@@ -141,6 +141,7 @@ export function createAtomicRateLimiter(store, {
   callerMax = RATE_LIMIT_MAX,
   globalMax = GLOBAL_RATE_LIMIT_MAX,
   windowMs = RATE_LIMIT_WINDOW_MS,
+  globalBucketId = GLOBAL_BUCKET_ID,
   now = () => Date.now(),
 } = {}) {
   if (!store || typeof store.runTransaction !== 'function') {
@@ -152,7 +153,7 @@ export function createAtomicRateLimiter(store, {
       const cutoff = t - windowMs;
       const [callerDoc, globalDoc] = await Promise.all([
         tx.get(callerDocId),
-        tx.get(GLOBAL_BUCKET_ID),
+        tx.get(globalBucketId),
       ]);
 
       const callerRecent = Array.isArray(callerDoc?.timestamps)
@@ -183,7 +184,7 @@ export function createAtomicRateLimiter(store, {
       globalRecent.push(t);
       const expiresAt = new Date(t + windowMs * 2);
       tx.set(callerDocId, { timestamps: callerRecent, updatedAt: t, expiresAt });
-      tx.set(GLOBAL_BUCKET_ID, { timestamps: globalRecent, updatedAt: t, expiresAt });
+      tx.set(globalBucketId, { timestamps: globalRecent, updatedAt: t, expiresAt });
 
       return {
         allowed: true,
