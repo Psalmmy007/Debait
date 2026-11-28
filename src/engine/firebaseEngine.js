@@ -3,22 +3,28 @@
 import { initializeApp, SDK_VERSION } from 'firebase/app';
 import { initializeAppCheck, CustomProvider, getToken } from 'firebase/app-check';
 import { getAI, getGenerativeModel, GoogleAIBackend, InferenceMode, Schema } from 'firebase/ai';
-import { firebaseConfig, CLOUD_MODEL } from './firebaseConfig.js';
+import { firebaseConfig, CLOUD_MODEL, APP_CHECK_ATTEST_URL } from './firebaseConfig.js';
 
 import { createFirebaseAccess, installationFromWorker } from './authPolicy.js';
+import { createProductionAppCheckProvider } from './appCheckProvider.js';
 import { aiError } from './errors.js';
 import { createHeadlineEngine } from './inference.js';
 import { deviceAvailability } from './device.js';
 import { assistanceCloudSchemas, assistanceDeviceSchemas } from './assistance.js';
 import { headlinePrompt } from './qualityPolicy.js';
 
-// Production intentionally has no default issuer: an authenticated server-side
-// attestation/token service must be provisioned and reviewed before connecting one.
+// Production uses Firebase's official ReCaptchaEnterpriseProvider on Firebase Hosting
+// (attest.html) embedded lazily inside the MV3 offscreen document—zero debug tokens or secrets.
+const productionProvider = createProductionAppCheckProvider({
+  attestUrl: import.meta.env?.VITE_DEBAIT_APP_CHECK_ATTEST_URL || APP_CHECK_ATTEST_URL,
+});
+
 const access = createFirebaseAccess({
   sdk: { initializeApp, initializeAppCheck, CustomProvider, getToken, getAI, GoogleAIBackend },
   config: firebaseConfig,
   env: import.meta.env,
   globals: globalThis,
+  productionProvider,
   getInstallation: () => installationFromWorker(),
 });
 export async function getAi(debugToken) {

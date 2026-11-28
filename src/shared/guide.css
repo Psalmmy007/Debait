@@ -1,14 +1,14 @@
-/* Shared, inline education uses the existing grouped-surface design. */
-.ingredients-guide { margin-top: 14px; padding: 14px; border-radius: 14px; background: var(--group, var(--fill-2)); color: var(--label); font: 400 13px/1.5 var(--font); }
+/* Shared, inline education in strictly black and white. */
+.ingredients-guide { margin-top: 12px; padding: 12px 14px; border-radius: 14px; background: var(--surface, var(--fill-2)); box-shadow: var(--card-shadow, none); color: var(--label); font: 400 13px/1.5 var(--font); }
 .ingredients-guide summary { cursor: pointer; font-weight: 600; }
-.ingredients-guide summary:focus-visible { outline: 2px solid #0071e3; outline-offset: 3px; border-radius: 4px; }
-.ingredients-guide p { margin: 8px 0; overflow-wrap: anywhere; }
+.ingredients-guide summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; border-radius: 4px; }
+.ingredients-guide p { margin: 8px 0; overflow-wrap: anywhere; color: var(--label-2); }
 .ingredient-entry { border-top: 0.5px solid var(--sep); padding: 10px 0; }
 .ingredient-entry:first-of-type { margin-top: 10px; }
 .ingredient-entry:last-child { padding-bottom: 0; }
-.ingredient-icon { display: inline-block; width: 22px; }
-[data-ingredient='rage'] .ingredient-icon { color: var(--rage); }
-[data-ingredient='fear'] .ingredient-icon { color: var(--fear); }
-[data-ingredient='envy'] .ingredient-icon { color: var(--envy); }
-[data-ingredient='clean'] .ingredient-icon { color: var(--clean); }
+.ingredient-icon { display: inline-block; width: 22px; color: var(--label); }
+[data-ingredient='rage'] .ingredient-icon { color: var(--k-rage, var(--label)); }
+[data-ingredient='fear'] .ingredient-icon { color: var(--k-fear, var(--label-2)); }
+[data-ingredient='envy'] .ingredient-icon { color: var(--k-envy, var(--label-2)); }
+[data-ingredient='clean'] .ingredient-icon { color: var(--label-2); }
 .ingredient-icon svg { display: inline-block; width: 12px; height: 12px; vertical-align: middle; }

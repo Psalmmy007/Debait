@@ -83,3 +83,11 @@ test('a DOM headline already equal to the proposal is not counted as another rew
     el: { textContent: 'This trend may last 5 years', get childNodes() { throw new Error('must not mutate'); } } };
   assert.equal(await swapToRewrite(record), false); assert.equal(record.state, 'scored');
 });
+
+test('panel CTA stays enabled when bait is detected even if rewritable is 0, and switches to Restore originals after debaiting', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const src = await readFile(new URL('../src/content/ui/settings.js', import.meta.url), 'utf8');
+  assert.ok(src.includes('const actionable = rewritable || bait;'));
+  assert.ok(src.includes('const restore = actionable === 0 && debaited > 0;'));
+  assert.ok(src.includes('btn.disabled = busy || (!restore && !pending && !actionable);'));
+});

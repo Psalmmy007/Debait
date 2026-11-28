@@ -1,5 +1,6 @@
 // Mock engine: fakes the AI so the UI can be built and demoed without Firebase.
 // Same contract as the real engine (see contract.js). Swap it out in engine/index.js.
+import { NO_SUMMARY_TEXT, hasEnoughSummaryText } from './contract.js';
 
 // Hand-written results for the demo feed, so the demo always looks great.
 const CANNED = {
@@ -18,7 +19,7 @@ const CANNED = {
       { word: 'silently killing you', why: 'fear of hidden harm' },
       { word: 'common', why: 'makes it feel like it applies to you' },
     ],
-    honest_rewrite: "This common breakfast food may carry health risks, a study suggests",
+    honest_rewrite: 'Health concerns raised about this common breakfast food',
   },
   "22-year-old retires as a millionaire while you're still stuck at your 9-to-5": {
     kind: 'envy', score: 78,
@@ -26,7 +27,7 @@ const CANNED = {
       { word: 'millionaire', why: 'status envy' },
       { word: "while you're still stuck", why: 'comparison jab aimed at you' },
     ],
-    honest_rewrite: "22-year-old retires early after years of saving, while most still work 9-to-5",
+    honest_rewrite: '22-year-old retires early as a millionaire',
   },
   "the radical left's war on your car is here. they're coming for your engine next": {
     kind: 'rage', score: 94,
@@ -171,6 +172,10 @@ function heuristic(text) {
     .trim();
   if (!rewrite) rewrite = text;
   rewrite = rewrite.charAt(0).toUpperCase() + rewrite.slice(1);
+  // only call it bait if we can show a calmer wording; otherwise debaiting would change nothing
+  if (rewrite.replace(/[^\p{L}\p{N}]+/gu, ' ').trim() === text.replace(/[^\p{L}\p{N}]+/gu, ' ').trim()) {
+    return { kind: 'clean', score: Math.min(18, raw), triggers: [], honest_rewrite: text };
+  }
 
   return { kind, score: Math.min(97, 30 + raw), triggers, honest_rewrite: rewrite };
 }
@@ -192,4 +197,18 @@ export const mockEngine = {
   async initDeviceModel() {
     return { ready: true, source: 'mock', localOnly: false, message: 'Mock engine (no AI yet)' };
   },
+};
+
+/** Offline backup: the first sentences of the article, or the page's top headlines. */
+mockEngine.summarize = async function summarize(page) {
+  if (!hasEnoughSummaryText(page)) return { summary: NO_SUMMARY_TEXT, source: 'none' };
+  const { title, text, headlines, kind } = page;
+  if (kind === 'article') {
+    const sentences = (text.match(/[^.!?]+[.!?]+/g) || []).map((x) => x.trim()).filter((x) => x.length > 40);
+    return { summary: sentences.slice(0, 3).join(' ') || title, source: 'mock' };
+  }
+  // the calm version of each headline, so the summary never repeats the bait
+  const calm = (h) => (CANNED[h.trim().toLowerCase()] || heuristic(h)).honest_rewrite || h;
+  const top = headlines.slice(0, 3).map((h) => calm(h).replace(/[.!?]*$/, '.'));
+  return { summary: top.length ? `Top stories on this page: ${top.join(' ')}` : title, source: 'mock' };
 };

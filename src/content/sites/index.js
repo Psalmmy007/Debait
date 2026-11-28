@@ -5,7 +5,46 @@
 
 const textOf = (el) => (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
 
+// Private/sensitive hosts (webmail, banking/financial portals, cloud IDEs/code hosts,
+// cloud consoles, private workspaces, and AI chats) where Debait stays off by default
+// and never collects page text for scoring or summarization.
+export const PRIVATE_HOST_RE = /(^|\.)(gemini\.google\.com|chatgpt\.com|chat\.openai\.com|claude\.ai|copilot\.microsoft\.com|perplexity\.ai|chat\.deepseek\.com|github\.com|github\.dev|gitlab\.com|bitbucket\.org|replit\.com|vscode\.dev|codesandbox\.io|stackblitz\.com|console\.firebase\.google\.com|console\.cloud\.google\.com|console\.aws\.amazon\.com|portal\.azure\.com|mail\.google\.com|outlook\.live\.com|outlook\.office\.com|outlook\.office365\.com|mail\.yahoo\.com|mail\.proton\.me|mail\.protonmail\.com|fastmail\.com|docs\.google\.com|drive\.google\.com|sheets\.google\.com|slides\.google\.com|calendar\.google\.com|meet\.google\.com|notion\.so|notion\.site|slack\.com|discord\.com|figma\.com|linear\.app|atlassian\.net|chase\.com|bankofamerica\.com|wellsfargo\.com|citi\.com|citibank\.com|capitalone\.com|paypal\.com|dashboard\.stripe\.com|wise\.com|venmo\.com|cash\.app|robinhood\.com|coinbase\.com|fidelity\.com|schwab\.com|vanguard\.com|barclays\.co\.uk|hsbc\.com|hsbc\.co\.uk|chromewebstore\.google\.com)$/i;
+const SUBDOMAIN_LOCALHOST_RE = /\.localhost$/i;
+const SENSITIVE_PATH_RE = /\/(login|signin|sign-in|auth|oauth|checkout|billing|payment|account|settings|admin|devtools|graphql|graphiql|swagger|api-docs|phpmyadmin|pgadmin)\b/i;
+
+export function isPrivateHost(hostname = '') {
+  const h = String(hostname || '').toLowerCase();
+  return PRIVATE_HOST_RE.test(h) || SUBDOMAIN_LOCALHOST_RE.test(h);
+}
+
+export function isSensitivePage(doc = document, loc = location) {
+  const host = String(loc?.hostname || '').toLowerCase();
+  const path = String(loc?.pathname || '');
+  if (isPrivateHost(host)) return true;
+  if (host === 'www.icloud.com' && /^\/mail\b/i.test(path)) return true;
+  if (SENSITIVE_PATH_RE.test(path)) return true;
+  // Block localhost dev tools unless the page explicitly opts in as the Debait demo fixture.
+  if ((host === 'localhost' || host === '127.0.0.1') && !doc?.querySelector?.('[data-debait-headline]')) return true;
+  if (doc?.querySelector?.('input[type="password"]')) return true;
+  return false;
+}
+
 const adapters = [
+  {
+    // Private/sensitive apps & AI chats: never scrape messages, code, mail, or forms
+    name: 'off',
+    match: (h) => isPrivateHost(h),
+    find: () => [],
+  },
+  {
+    name: 'google',
+    match: (h) => /^(www.)?google.[a-z.]+$/.test(h),
+    // only the result titles and Top stories / News cards; never AI Overviews, AI Mode or your own query
+    find: (root) => (/[?&]udm=50(&|$)/.test(location.search) ? [] : root.querySelectorAll('#rso a h3, #rso g-section-with-header a [role="heading"], #rso a [role="heading"][aria-level="3"]')),
+    // Google wraps organic result <h3> links inside span.V9tjod with transform: scaleY(-1);
+    // placing the tag right after .yuRUbf keeps it upright and cleanly below the headline.
+    place: (el) => el.closest('.yuRUbf') || el,
+  },
   {
     name: 'demo',
     match: (h) => h === 'localhost' || h === '127.0.0.1',
@@ -51,19 +90,21 @@ const adapters = [
 
 // ---------- every other website ----------
 // Finds headline-like text: article headings and headline links, skipping menus, footers,
-// buttons and forms. Keeps the innermost match (a heading inside a link, not both).
-const SKIP = 'nav, footer, header nav, aside nav, [role="navigation"], [role="menu"], [role="banner"] nav, form, button, [contenteditable="true"], debait-tag, debait-root, [aria-hidden="true"], code, pre';
+// dialogs, buttons and forms. Keeps the innermost match (a heading inside a link, not both).
+const SKIP = 'nav, footer, header nav, aside nav, [role="navigation"], [role="menu"], [role="menuitem"], [role="menubar"], [role="banner"] nav, [role="contentinfo"], [role="dialog"], [role="alertdialog"], [aria-modal="true"], [role="alert"], [role="status"], [role="toolbar"], [role="tablist"], [role="tab"], [role="button"], dialog, form, button, label, select, [contenteditable="true"], debait-tag, debait-root, [aria-hidden="true"], code, pre';
 const CANDIDATES = 'h1, h2, h3, h4, [role="heading"], a[href], [class*="headline" i], [class*="title" i], [data-testid*="title" i], [data-testid*="headline" i]';
+const UI_TEXT = /^(sign in|sign up|log in|log out|sign out|subscribe|unsubscribe|cookie|accept|reject|decline|dismiss|skip to|jump to|back to|go to|return to|menu|share|read more|learn more|see more|show more|view more|view all|load more|continue (on|with|to|reading|watching|as|without|using|browsing|shopping)|create (an? |your )?account|get started|get the app|open in|download (the )?app|try (it )?free|start (your )?free|manage (your )?|update (your )?|verify (your )?|confirm (your )?|reset (your )?|forgot (your )?|choose (an? |your )?|select (an? |your )?|switch to|use another|turn on|turn off|enable |disable |allow |privacy policy|terms of (service|use)|contact us|help center|your account|my account)\b/i;
 
 function looksLikeHeadline(el) {
   if (el.closest(SKIP)) return false;
+  if (el.hasAttribute('aria-haspopup')) return false;
   if (!el.offsetParent && getComputedStyle(el).position !== 'fixed') return false; // hidden
   const t = textOf(el);
   if (t.length < 22 || t.length > 220) return false;
   if (el.children.length > 6) return false; // a container, not a headline
   const words = t.split(' ').length;
   if (words < 4 || words > 32) return false;
-  if (/^(sign in|log in|subscribe|cookie|accept|skip to|menu|share|read more)/i.test(t)) return false;
+  if (UI_TEXT.test(t)) return false;
   return true;
 }
 
@@ -97,6 +138,32 @@ const generic = {
 
 export function getAdapter(hostname) {
   return adapters.find((a) => a.match(hostname)) || generic;
+}
+
+/**
+ * Enforces 1 headline per nested DOM hierarchy and per placement anchor:
+ * - Removes duplicate element references.
+ * - Drops outer containers when a nested descendant is also matched (keeps innermost).
+ * - Keeps at most one headline per resolved placement anchor (e.g. Google's `.yuRUbf`).
+ */
+export function dedupeHeadlines(elements, place) {
+  const unique = [];
+  const seenEl = new Set();
+  for (const el of elements || []) {
+    if (!el || seenEl.has(el)) continue;
+    seenEl.add(el);
+    unique.push(el);
+  }
+  const innermost = unique.filter((el) => !unique.some((other) => other !== el && el.contains?.(other)));
+  const seenAnchors = new Set();
+  const out = [];
+  for (const el of innermost) {
+    const anchor = place?.(el) || el;
+    if (seenAnchors.has(anchor)) continue;
+    seenAnchors.add(anchor);
+    out.push(el);
+  }
+  return out;
 }
 
 export { textOf };

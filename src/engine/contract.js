@@ -36,6 +36,12 @@ import { rewriteDecision } from './qualityPolicy.js';
  */
 
 export const KINDS = ['rage', 'fear', 'envy', 'clean'];
+// Minimum manipulation score (0-100) for high-confidence bait threshold helpers.
+export const BAIT_THRESHOLD = 60;
+// Shared score cache version enforcing Local Only source isolation and rewrite-integrity guards.
+export const CACHE_VERSION = 6;
+export const NO_SUMMARY_TEXT = 'Not enough text on this page to summarize.';
+export const NO_SAFE_REWRITE = 'No verified neutral rewrite available';
 
 // Message types used between content script, service worker and offscreen page.
 export const MSG = {
@@ -44,6 +50,105 @@ export const MSG = {
   STATUS: 'debait/status',
   INIT: 'debait/init',
 };
+
+const normSpace = (s) => String(s || '').replace(/\s+/g, ' ').trim();
+const normWords = (s) => String(s || '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+export const sameWords = (a, b) => normWords(a) === normWords(b);
+
+/**
+ * Enforces Local Only cache isolation:
+ * - Never serves heuristic/mock entries from cache.
+ * - When localOnly is true, ONLY accepts verified 'on-device' entries (never 'cloud').
+ */
+export function isCacheEntryValid(entry, localOnly = false) {
+  if (!entry || typeof entry !== 'object') return false;
+  if (entry.source !== 'on-device' && entry.source !== 'cloud') return false;
+  if (localOnly && entry.source !== 'on-device') return false;
+  return true;
+}
+
+/**
+ * Guards against late in-flight cloud responses after Local Only is toggled ON:
+ * while currentLocalOnly is true, only verified 'on-device' results may render, cache, or mutate stats.
+ */
+export function isResultAllowedInMode(result, currentLocalOnly = false) {
+  if (!result || typeof result !== 'object') return false;
+  if (currentLocalOnly) return result.source === 'on-device';
+  return result.source === 'on-device' || result.source === 'cloud' || result.source === 'mock';
+}
+
+/** True only when there is enough real article text or feed headlines to summarize. */
+export function hasEnoughSummaryText(page) {
+  if (!page) return false;
+  if (page.kind === 'article') return normSpace(page.text).length >= 300;
+  return Array.isArray(page.headlines)
+    && page.headlines.filter((h) => normSpace(h).length >= 12).length >= 3;
+}
+
+const REFUSAL_RE = /^(i'?m sorry|i am sorry|sorry[,!.]?\s+(but\s+)?(i|there|you)|as an ai|i (can'?t|cannot|am unable to) (summarize|provide a summary)|unable to summarize|there (is|was) no (article|text|content|web page|information)|you (did not|didn'?t|have not|haven'?t) provide|please provide (the |an? )?(article|text|web page|content|headlines)|no (article|text|content|web page) (was )?provided)/i;
+/** Catches chatty AI refusals so they are never shown in summary output. */
+export const isSummaryRefusal = (text) => REFUSAL_RE.test(normSpace(text));
+
+const INVENTED_FACT_TERMS = [
+  'study', 'studies', 'research', 'researchers', 'scientists', 'experts',
+  'officials', 'police', 'court', 'survey', 'report', 'reports', 'data shows',
+  'according to', 'saving', 'savings', 'years of', 'exchange',
+];
+const HOOK_NEGATIONS = /\b(you won'?t believe|don'?t want you to know|can'?t believe|won'?t tell you|never believe|no one saw|nobody knows)\b/gi;
+const NEGATION_RE = /\b(not|never|no|without|denies|denied|refuses|refused|fails|failed|won'?t|can'?t|don'?t|doesn'?t|didn'?t|isn'?t|aren'?t|wasn'?t|weren'?t)\b/i;
+
+function extractNumbers(s) {
+  return [...String(s || '').matchAll(/\b\d+(?:[.,]\d+)?%?\b/g)].map((m) => m[0].replace(/,/g, ''));
+}
+
+/**
+ * Deterministic fact-preservation gate: rejects rewrites that invent numbers, introduce
+ * unsupported authority/backstory terms, flip negation polarity, or bloat excessively.
+ */
+export function validateRewriteIntegrity(original, rewrite) {
+  const orig = normSpace(original);
+  const rew = normSpace(rewrite);
+  if (!orig || !rew || sameWords(orig, rew)) return { ok: false, reason: 'unchanged' };
+  if (rew.length > Math.max(Math.round(orig.length * 1.5) + 20, 60)) {
+    return { ok: false, reason: 'too_long' };
+  }
+  const origLow = orig.toLowerCase();
+  const rewLow = rew.toLowerCase();
+
+  const origNums = new Set(extractNumbers(orig));
+  for (const num of extractNumbers(rew)) {
+    if (!origNums.has(num)) return { ok: false, reason: `invented_number:${num}` };
+  }
+
+  for (const term of INVENTED_FACT_TERMS) {
+    const re = new RegExp(`\\b${term.replace(/\s+/g, '\\s+')}\\b`, 'i');
+    if (re.test(rewLow) && !re.test(origLow)) {
+      return { ok: false, reason: `invented_term:${term}` };
+    }
+  }
+
+  const origCore = origLow.replace(HOOK_NEGATIONS, '');
+  const origNeg = NEGATION_RE.test(origCore);
+  const rewNeg = NEGATION_RE.test(rewLow);
+  if (origNeg !== rewNeg) return { ok: false, reason: 'negation_flip' };
+
+  return { ok: true, reason: '' };
+}
+
+/** Keeps only triggers whose exact word/phrase actually appears in the headline text. */
+export function filterTriggers(triggers, text) {
+  if (!Array.isArray(triggers)) return [];
+  const haystack = normSpace(text).toLowerCase();
+  if (!haystack) return [];
+  return triggers
+    .filter((t) => {
+      if (!t || typeof t.word !== 'string') return false;
+      const w = normSpace(t.word);
+      return w.length >= 2 && haystack.includes(w.toLowerCase());
+    })
+    .map((t) => ({ word: t.word.trim(), why: typeof t.why === 'string' ? t.why.trim() : '' }))
+    .slice(0, 6);
+}
 
 function invalidClassification(message) {
   return Object.assign(new Error(`${message} No classification was produced.`), { code: 'debait/invalid-classification' });

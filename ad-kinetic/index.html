@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Debait — Kinetic Promo Ad (24s · 60fps · 120 BPM)</title>
+  <link rel="stylesheet" href="./ad.css" />
+</head>
+<body>
+  <div id="stage">
+    <!-- ==================== SCENE 1 (0:00–0:03): Clean White Kinetic Open ==================== -->
+    <section class="scene" id="s1">
+      <div class="s1-halo"></div>
+      <div class="hud-corners light">
+        <span class="c tl"></span><span class="c tr"></span>
+        <span class="c bl"></span><span class="c br"></span>
+      </div>
+      <div class="s1-meta">
+        <span class="s1-dot"></span><span>SIGNAL CHECK</span><span class="s1-sep">/</span><span id="s1-tc">00:00:00</span>
+      </div>
+      <div class="s1-stack">
+        <div class="s1-line" id="s1-l1">
+          <span class="mask"><span class="word" id="s1-w0">Every</span></span>
+          <span class="mask"><span class="word" id="s1-w1">headline</span></span>
+        </div>
+        <div class="s1-line s1-line-2" id="s1-l2">
+          <span class="mask"><span class="word" id="s1-w2">wants</span></span>
+          <span class="mask"><span class="word" id="s1-w3">your</span></span>
+          <span class="mask"><span class="word accent" id="s1-w4">attention.<span class="s1-bar" id="s1-bar"></span></span></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== SCENE 2 (0:03–0:08): Black + Glowing Waveform + Curved 3D Barrel Grid ==================== -->
+    <section class="scene" id="s2">
+      <div class="s2-rim"></div>
+      <!-- Glowing horizontal 120 BPM waveform -->
+      <canvas id="s2-wave" width="1920" height="420"></canvas>
+
+      <!-- Curved 3D barrel-distorted viewport with dashed white grid lines -->
+      <div class="s2-barrel-wrap" id="s2-barrel">
+        <svg class="s2-grid-svg" viewBox="0 0 1600 840" preserveAspectRatio="none" aria-hidden="true">
+          <defs>
+            <linearGradient id="rimStroke" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#FF7A33" stop-opacity="0.95" />
+              <stop offset="50%" stop-color="#FFFFFF" stop-opacity="0.55" />
+              <stop offset="100%" stop-color="#FF5A1F" stop-opacity="0.95" />
+            </linearGradient>
+            <filter id="glowOrange" x="-15%" y="-15%" width="130%" height="130%">
+              <feGaussianBlur stdDeviation="8" result="b" />
+              <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+            </filter>
+          </defs>
+          <!-- Barrel-distorted dashed vertical curves -->
+          <g class="grid-lines" stroke="rgba(255,255,255,0.22)" stroke-width="1.5" stroke-dasharray="7 9" fill="none">
+            <path d="M 220 42 Q 155 420 220 798" />
+            <path d="M 410 30 Q 365 420 410 810" />
+            <path d="M 605 22 Q 582 420 605 818" />
+            <path d="M 800 20 L 800 820" />
+            <path d="M 995 22 Q 1018 420 995 818" />
+            <path d="M 1190 30 Q 1235 420 1190 810" />
+            <path d="M 1380 42 Q 1445 420 1380 798" />
+            <!-- Barrel-distorted dashed horizontal curves -->
+            <path d="M 55 155 Q 800 95 1545 155" />
+            <path d="M 38 290 Q 800 250 1562 290" />
+            <path d="M 32 420 L 1568 420" />
+            <path d="M 38 550 Q 800 590 1562 550" />
+            <path d="M 55 685 Q 800 745 1545 685" />
+          </g>
+          <!-- Curved barrel outer frame with warm glowing rim -->
+          <path d="M 90 52 Q 800 -6 1510 52 Q 1578 420 1510 788 Q 800 846 90 788 Q 22 420 90 52 Z"
+                fill="rgba(8,8,10,0.48)" stroke="url(#rimStroke)" stroke-width="2.5" filter="url(#glowOrange)" />
+          <!-- Inner dashed reticle -->
+          <path d="M 118 76 Q 800 24 1482 76 Q 1542 420 1482 764 Q 800 816 118 764 Q 58 420 118 76 Z"
+                fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="1.25" stroke-dasharray="10 10" />
+        </svg>
+
+        <!-- Rapidly snapping content inside the curved viewport -->
+        <div class="s2-snap" id="s2-badge-0">
+          <div class="s2-kicker">EMOTIONAL TRIGGER DETECTED</div>
+          <div class="mega-badge rage">
+            <span class="mb-ico">
+              <svg viewBox="0 0 12 12" fill="currentColor"><path d="M7.3.7 2.5 6.9h2.8l-.8 4.4L9.5 5H6.6z"/></svg>
+            </span>
+            <span class="mb-label">Rage</span>
+            <span class="mb-score">82</span>
+          </div>
+          <p class="s2-quote">“Senator <mark>DESTROYS</mark> rival in <mark>brutal</mark> viral clash”</p>
+        </div>
+
+        <div class="s2-snap" id="s2-badge-1">
+          <div class="s2-kicker">ALARM FRAMING DETECTED</div>
+          <div class="mega-badge fear">
+            <span class="mb-ico">
+              <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 1.5 11 10.2H1z"/><path d="M6 5v2.2M6 8.8v.1"/></svg>
+            </span>
+            <span class="mb-label">Fear</span>
+            <span class="mb-score">88</span>
+          </div>
+          <p class="s2-quote">“This <mark>common</mark> breakfast food is <mark>silently killing you</mark>”</p>
+        </div>
+
+        <div class="s2-snap" id="s2-badge-2">
+          <div class="s2-kicker">STATUS COMPARISON DETECTED</div>
+          <div class="mega-badge envy">
+            <span class="mb-ico">
+              <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.35"><path d="M1 6s1.9-3.4 5-3.4S11 6 11 6 9.1 9.4 6 9.4 1 6 1 6z"/><circle cx="6" cy="6" r="1.5" fill="currentColor" stroke="none"/></svg>
+            </span>
+            <span class="mb-label">Envy</span>
+            <span class="mb-score">76</span>
+          </div>
+          <p class="s2-quote">“22-year-old retires a <mark>millionaire</mark> while you’re <mark>still stuck</mark>”</p>
+        </div>
+
+        <div class="s2-snap s2-feed-snap" id="s2-feed">
+          <div class="feed-window">
+            <div class="feed-bar">
+              <span class="f-dots"><i></i><i></i><i></i></span>
+              <span class="f-url">dailyfeed.news / top-stories</span>
+              <span class="f-pill">DEBAIT LIVE</span>
+            </div>
+            <div class="feed-rows">
+              <div class="feed-row" id="fr-0">
+                <div class="fr-text">Senator <u>DESTROYS</u> rival in brutal viral clash</div>
+                <span class="mini-pill rage">⚡ Rage <b>82</b></span>
+              </div>
+              <div class="feed-row" id="fr-1">
+                <div class="fr-text">This common breakfast food is <u>silently killing you</u></div>
+                <span class="mini-pill fear">▲ Fear <b>88</b></span>
+              </div>
+              <div class="feed-row" id="fr-2">
+                <div class="fr-text">22-year-old retires a <u>millionaire</u> while you’re stuck at 9-to-5</div>
+                <span class="mini-pill envy">◉ Envy <b>76</b></span>
+              </div>
+              <div class="feed-row" id="fr-3">
+                <div class="fr-text">Central bank keeps interest rates unchanged at 4.25%</div>
+                <span class="mini-pill clean">✓ Clean</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== SCENE 3 (0:08–0:10): Dark Diagonal Light-Sweep ==================== -->
+    <section class="scene" id="s3">
+      <div class="s3-sweep" id="s3-sweep"></div>
+      <div class="s3-sweep-2" id="s3-sweep-2"></div>
+      <div class="s3-grid"></div>
+      <div class="s3-copy" id="s3-copy">
+        <div class="s3-l1"><span id="s3-w0">What</span> <span id="s3-w1">if</span> <span id="s3-w2">your</span> <span id="s3-w3">feed</span></div>
+        <div class="s3-l2"><span id="s3-w4">had</span> <span id="s3-w5">a</span> <span class="s3-accent" id="s3-w6">label?</span></div>
+      </div>
+    </section>
+
+    <!-- ==================== SCENE 4 (0:10–0:17): 3D Floating, Fanning & Stacking UI Cards ==================== -->
+    <section class="scene" id="s4">
+      <div class="s4-bg-glow" id="s4-glow"></div>
+      <div class="s4-floor"></div>
+      <div class="s4-caption" id="s4-cap">NUTRITION FACTS FOR YOUR FEED</div>
+      <div class="s4-stage" id="s4-stage">
+        <!-- Card 1: Ingredients Breakdown Card (Fear 88) -->
+        <article class="ui-card card-ing" id="c-ing">
+          <div class="card-rim"></div>
+          <div class="c-head">
+            <div class="c-badge fear">
+              <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 1.5 11 10.2H1z"/><path d="M6 5v2.2M6 8.8v.1"/></svg>
+            </div>
+            <div class="c-titles">
+              <b>Fear bait</b>
+              <span>Written to make you afraid · Not a fact-check</span>
+            </div>
+            <div class="c-meter">
+              <svg viewBox="0 0 56 56">
+                <circle class="m-t" cx="28" cy="28" r="23" />
+                <circle class="m-f" id="c-ring-f" cx="28" cy="28" r="23" />
+              </svg>
+              <b id="c-ring-num">88</b>
+            </div>
+          </div>
+          <p class="c-orig">This <mark>common</mark> breakfast food is <mark>silently killing you</mark></p>
+          <div class="c-sec-label">WHY IT PULLS YOU IN</div>
+          <ul class="c-rows">
+            <li><span>silently killing you</span><small>fear of hidden harm</small></li>
+            <li><span>common</span><small>personalizes urgency</small></li>
+          </ul>
+          <div class="c-foot">
+            <span class="c-src"><i></i>On-device AI</span>
+            <span class="c-cta">Apply rewrite →</span>
+          </div>
+        </article>
+
+        <!-- Card 2: Debaited Clean Rewrite Card -->
+        <article class="ui-card card-rewrite" id="c-rewrite">
+          <div class="card-rim"></div>
+          <div class="rw-top">
+            <span class="rw-pill">✓ Debaited</span>
+            <span class="rw-tag">Safe wording swap</span>
+          </div>
+          <div class="rw-block">
+            <div class="rw-kicker">ORIGINAL HEADLINE</div>
+            <p class="rw-old">This common breakfast food is silently killing you</p>
+          </div>
+          <div class="rw-divider"><span></span><b>REWRITTEN CALMLY</b><span></span></div>
+          <div class="rw-block rw-new-box">
+            <div class="rw-kicker accent">HONEST REWRITE</div>
+            <p class="rw-new">Health concerns raised about this common breakfast food</p>
+          </div>
+          <div class="c-foot">
+            <span class="c-src"><i></i>No invented facts</span>
+            <span class="c-ghost">Show original</span>
+          </div>
+        </article>
+
+        <!-- Card 3: Weekly Mind Facts Nutrition Label (40% Bait) -->
+        <article class="ui-card card-facts" id="c-facts">
+          <div class="card-rim"></div>
+          <div class="mf-head">
+            <div>
+              <div class="mf-brand">Weekly Mind Facts</div>
+              <div class="mf-sub">Nutrition label · Last 7 days</div>
+            </div>
+            <span class="mf-chip">Real numbers</span>
+          </div>
+          <div class="mf-rule thick"></div>
+          <div class="mf-hero">
+            <div class="mf-big"><b id="mf-pct">40</b><span>%</span></div>
+            <div class="mf-hero-meta">
+              <b>of your feed was bait</b>
+              <span>1,240 headlines checked · 318 debaited</span>
+            </div>
+          </div>
+          <div class="mf-stack-bar">
+            <span class="b-rage" style="width:19%"></span>
+            <span class="b-fear" style="width:13%"></span>
+            <span class="b-envy" style="width:8%"></span>
+            <span class="b-clean" style="width:60%"></span>
+          </div>
+          <div class="mf-grid">
+            <div><span>Rage</span><b>19%</b></div>
+            <div><span>Fear</span><b>13%</b></div>
+            <div><span>Envy</span><b>8%</b></div>
+            <div><span>Clean</span><b>60%</b></div>
+          </div>
+          <div class="mf-rule"></div>
+          <div class="mf-bars">
+            <span style="height:56%"></span><span style="height:44%"></span><span style="height:68%"></span>
+            <span style="height:34%"></span><span class="calm" style="height:22%"></span><span style="height:48%"></span><span style="height:52%"></span>
+          </div>
+          <div class="mf-foot">Calmest day: <b>Friday</b> · 22% bait</div>
+        </article>
+
+        <!-- Card 4: Chrome On-Device Badge (Gemini Nano) -->
+        <article class="ui-card card-nano" id="c-nano">
+          <div class="card-rim"></div>
+          <div class="nano-top">
+            <div class="nano-emblem">
+              <svg viewBox="0 0 32 32" fill="none">
+                <circle cx="16" cy="16" r="13" stroke="url(#nanoG)" stroke-width="2.4" />
+                <circle cx="16" cy="16" r="5" fill="#FF7A33" />
+                <path d="M16 3v5M16 24v5M3 16h5M24 16h5" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+                <defs><linearGradient id="nanoG" x1="0" y1="0" x2="32" y2="32"><stop stop-color="#FF5A1F"/><stop offset="1" stop-color="#FFFFFF"/></linearGradient></defs>
+              </svg>
+            </div>
+            <div>
+              <div class="nano-kicker">BUILT INTO CHROME</div>
+              <div class="nano-title">Gemini Nano</div>
+            </div>
+            <span class="nano-live"><i></i>LOCAL</span>
+          </div>
+          <p class="nano-desc">Runs directly on your device with <b>Local Only</b> mode and Firebase AI Logic hybrid fallback.</p>
+          <div class="nano-pills">
+            <span>On-device AI</span>
+            <span>Zero tracking</span>
+            <span>App Check</span>
+          </div>
+          <div class="nano-stat">
+            <span>CLOUD LEAKS IN LOCAL ONLY</span>
+            <b>0</b>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- ==================== SCENE 5 (0:17–0:21): White Flash + Rapid Word-by-Word Slam ==================== -->
+    <section class="scene" id="s5">
+      <div class="s5-vignette"></div>
+      <div class="s5-lines" id="s5-lines"></div>
+      <div class="s5-shock" id="s5-shock"></div>
+      <div class="s5-stage">
+        <div class="s5-group" id="s5-g0">
+          <span class="s5-word" id="s5-r0">Read</span>
+          <span class="s5-word" id="s5-r1">the</span>
+          <span class="s5-word" id="s5-r2">news.</span>
+        </div>
+        <div class="s5-group" id="s5-g1">
+          <span class="s5-word" id="s5-n0">Not</span>
+          <span class="s5-word" id="s5-n1">the</span>
+        </div>
+        <div class="s5-group" id="s5-g2">
+          <span class="s5-word s5-bait" id="s5-b0">bait.</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== SCENE 6 (0:21–0:24): Black + Glowing Debait Liquid Orb + Lockup ==================== -->
+    <section class="scene" id="s6">
+      <div class="s6-halo" id="s6-halo"></div>
+      <div class="s6-ring" id="s6-ring"></div>
+      <div class="s6-orb-shell" id="s6-orb-shell">
+        <canvas id="s6-orb" width="480" height="480"></canvas>
+      </div>
+      <div class="s6-brand" id="s6-brand">Debait<span class="s6-dot">.</span></div>
+      <div class="s6-triad">
+        <span id="s6-t0">On-device.</span>
+        <span class="s6-sep" id="s6-p0">·</span>
+        <span id="s6-t1">Private.</span>
+        <span class="s6-sep" id="s6-p1">·</span>
+        <span id="s6-t2">Free.</span>
+      </div>
+      <div class="s6-sub" id="s6-sub">Chrome Extension · Firebase AI Logic + Gemini Nano</div>
+    </section>
+
+    <!-- Global flash-cut + warm rim + subtle optical grain overlays -->
+    <div id="flash"></div>
+    <div id="grain"></div>
+  </div>
+  <script type="module" src="./ad.js"></script>
+</body>
+</html>

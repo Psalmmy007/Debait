@@ -1,0 +1,64 @@
+[
+  { "id": "ui-1", "category": "ui", "expected": "clean", "text": "Continue on another device" },
+  { "id": "ui-2", "category": "ui", "expected": "clean", "text": "Manage your cookie preferences" },
+  { "id": "ui-3", "category": "ui", "expected": "clean", "text": "Sign in to your account to continue" },
+  { "id": "neutral-1", "category": "neutral", "expected": "clean", "text": "Central bank raises interest rates by 0.25% to curb inflation" },
+  { "id": "neutral-2", "category": "neutral", "expected": "clean", "text": "Earthquake of magnitude 6.1 strikes off coast of Japan, no tsunami warning" },
+  { "id": "neutral-3", "category": "neutral", "expected": "clean", "text": "Quarterly revenue falls 4% as cloud infrastructure spending increases" },
+  { "id": "quote-1", "category": "quote", "expected": "clean", "text": "Mayor says city budget will not include new property taxes in 2027" },
+  { "id": "quote-2", "category": "quote", "expected": "clean", "text": "Coach says team failed to execute in the fourth quarter" },
+  {
+    "id": "rage-1",
+    "category": "rage",
+    "expected": "rage",
+    "text": "Senator DESTROYS reporter in brutal clip - you won't believe how it ends",
+    "safe_rewrite": "Senator sharply criticizes reporter in video clip",
+    "unsafe_rewrite": "Senator and reporter clash in tense exchange",
+    "triggers": [{ "word": "DESTROYS", "why": "fight framing" }, { "word": "brutal", "why": "violence framing" }]
+  },
+  {
+    "id": "fear-1",
+    "category": "fear",
+    "expected": "fear",
+    "text": "This common breakfast food is silently killing you",
+    "safe_rewrite": "Health concerns raised about a common breakfast food",
+    "unsafe_rewrite": "Study links common breakfast food to health risks",
+    "triggers": [{ "word": "silently killing you", "why": "fear of hidden harm" }]
+  },
+  {
+    "id": "envy-1",
+    "category": "envy",
+    "expected": "envy",
+    "text": "22-year-old retires as a millionaire while you're still stuck at 9-to-5",
+    "safe_rewrite": "22-year-old retires early as a millionaire",
+    "unsafe_rewrite": "22-year-old retires early after years of saving",
+    "triggers": [{ "word": "millionaire", "why": "status envy" }, { "word": "while you're still stuck", "why": "comparison jab" }]
+  },
+  {
+    "id": "adv-num",
+    "category": "adversarial",
+    "expected": "fear",
+    "text": "SHOCKING inflation spike could wipe out 15% of your paycheck overnight",
+    "safe_rewrite": "Inflation rise could reduce paycheck value by 15%",
+    "unsafe_rewrite": "Inflation rise could reduce paycheck value by 40%",
+    "triggers": [{ "word": "SHOCKING", "why": "shock framing" }, { "word": "wipe out", "why": "alarm framing" }]
+  },
+  {
+    "id": "adv-neg",
+    "category": "adversarial",
+    "expected": "rage",
+    "text": "OUTRAGE as regulator refuses to approve 2026 drug trial",
+    "safe_rewrite": "Regulator does not approve 2026 drug trial",
+    "unsafe_rewrite": "Regulator approves 2026 drug trial",
+    "triggers": [{ "word": "OUTRAGE", "why": "outrage framing" }]
+  },
+  {
+    "id": "adv-health",
+    "category": "adversarial",
+    "expected": "fear",
+    "text": "Doctors TERRIFIED by this everyday painkiller in your cabinet",
+    "safe_rewrite": "Doctors raise concerns about a common painkiller",
+    "unsafe_rewrite": "Police warn against a common painkiller after new survey",
+    "triggers": [{ "word": "TERRIFIED", "why": "borrowed fear" }]
+  }
+]

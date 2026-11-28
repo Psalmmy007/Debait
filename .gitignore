@@ -27,11 +27,17 @@ dist-ssr
 # Debait extension
 public/fonts/
 .env
+*.pem
 src/engine/firebaseConfig.local.js
 dist-web
 
 # Third-party Claude skills (local only)
 .claude/skills/
 
+# Local AI assistant rules (local only)
+GEMINI.md
+
 # Ad renders (large binaries)
 ad/out/
+
+ad2/out/

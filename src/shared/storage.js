@@ -11,14 +11,18 @@ export const DEFAULT_SETTINGS = {
 };
 
 export async function getSettings() {
-  const { settings } = await chrome.storage.local.get('settings');
-  return { ...DEFAULT_SETTINGS, ...(settings || {}) };
+  try {
+    const { settings } = await chrome.storage.local.get('settings');
+    return { ...DEFAULT_SETTINGS, ...(settings || {}) };
+  } catch {
+    return { ...DEFAULT_SETTINGS };
+  }
 }
 
 export async function setSettings(patch) {
   const current = await getSettings();
   const next = { ...current, ...patch };
-  await chrome.storage.local.set({ settings: next });
+  try { await chrome.storage.local.set({ settings: next }); } catch { /* extension reloaded */ }
   return next;
 }
 

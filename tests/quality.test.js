@@ -20,9 +20,9 @@ test('BBC childbirth rewrite cannot weaken never go away into persist over time'
   assert.equal(normalizeResult(output('The notable health effects of childbirth that persist over time'), bbcChildbirth).honest_rewrite, bbcChildbirth);
 });
 
-test('removing a claim adjective cannot be established as safe from headline text alone', () => {
+test('calming sensational wording while preserving verbatim quotes and factual permanence is permitted', () => {
   const candidate = "'It blew my mind': The health effects of childbirth that never go away";
-  assert.equal(preserveRewrite(bbcChildbirth, candidate, 'fear'), bbcChildbirth);
+  assert.equal(preserveRewrite(bbcChildbirth, candidate, 'fear'), candidate);
 });
 
 for (const [name, original, proposed] of [
@@ -48,10 +48,10 @@ test('Clean preserves the exact original, including punctuation and whitespace',
   assert.equal(normalizeResult(output('Council approves funding', 'clean'), original).honest_rewrite, original);
 });
 
-test('retaining lexical details does not make an unsupported synonym safe', () => {
+test('calm rewrite preserving attribution, uncertainty and duration is permitted', () => {
   const original = 'Researchers say this alarming trend may last 5 years';
-  const proposed = 'Researchers say this concerning trend may last 5 years';
-  assert.equal(preserveRewrite(original, proposed, 'fear'), original);
+  const proposed = 'Researchers say this trend may last 5 years';
+  assert.equal(preserveRewrite(original, proposed, 'fear'), proposed);
 });
 
 test('the real prompt requires conservative classification and preservation without harmful substitutions', () => {

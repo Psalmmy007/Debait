@@ -49,3 +49,27 @@ test('an external edit during restoration keeps the new headline without animati
   assert.equal(await operation, false);
   assert.equal(rec.el.textContent, 'The host published a different headline');
 });
+
+test('non-prefix calm rewrite on Google Search YouTube result swaps and restores cleanly while preserving link identity', async () => {
+  const original = 'A Poor Cleaner Was Forced Into One Night With a Billionaire...';
+  const rewrite = 'Drama story about a cleaner and a billionaire';
+  const node = { data: original };
+  const anchor = { href: 'https://www.youtube.com/watch?v=demo123', listener: () => 'ok' };
+  const el = {
+    contains: n => n === node,
+    get textContent() { return node.data; },
+    replaceChildren() { throw new Error('Must preserve DOM element/listener identity'); },
+  };
+  globalThis.matchMedia = () => ({ matches: true });
+  globalThis.NodeFilter = { SHOW_TEXT: 4 };
+  globalThis.document = { createTreeWalker: () => { let read = false; return { nextNode: () => read ? null : (read = true, node) }; } };
+  const rec = { state: 'scored', el, text: original, result: { kind: 'envy', score: 85, honest_rewrite: rewrite, source: 'cloud' } };
+  assert.equal(await swapToRewrite(rec), true);
+  assert.equal(rec.el.textContent, rewrite);
+  assert.equal(rec.state, 'debaited');
+  assert.equal(anchor.href, 'https://www.youtube.com/watch?v=demo123');
+  assert.equal(anchor.listener(), 'ok');
+  assert.equal(await swapToOriginal(rec), true);
+  assert.equal(rec.el.textContent, original);
+  assert.equal(rec.state, 'scored');
+});
