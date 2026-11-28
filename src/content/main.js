@@ -62,16 +62,8 @@ async function start() {
 
   const overlay = createOverlay();
   const orb = createOrb(overlay, {
-    onClick: (origin) => toggleDebaitPage(origin).then(() => panel.open()).catch(report),
+    onClick: (origin) => toggleDebaitPage(origin).catch(report),
     onDoubleClick: () => { closeCard(); panel.toggle(); },
-    onTripleClick: async () => {
-      if (!VOICE_ENABLED) return;
-      closeCard();
-      panel.close();
-      const s = await getSettings();
-      await setSettings({ voice: !s.voice });
-      if (s.voice) onCallState({ state: 'ended' });
-    },
   });
   const panel = createSettingsPanel(overlay.panelLayer, {
     getPage: pageCounts,

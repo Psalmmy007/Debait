@@ -1,4 +1,3 @@
-import { VOICE_ENABLED } from '../../shared/release.js';
 import guideCss from '../../shared/guide.css?inline';
 // The floating layer: one Shadow DOM root holding the orb, the card and the settings panel,
 // plus a second host for the page-wide wave (it needs its own blend mode to invert the page).
@@ -30,7 +29,7 @@ export function createOverlay() {
     <div class="orb-wrap" data-state="idle">
       <span class="orb-shadow"></span>
       <svg class="orb-ring" viewBox="0 0 68 68" aria-hidden="true"><circle class="track" cx="34" cy="34" r="32"/><circle class="arc" cx="34" cy="34" r="32"/></svg>
-      <button class="orb" aria-label="Debait this page">
+      <button class="orb" aria-label="Debait this page. Click to toggle debait, double-click or Shift+Enter to open panel.">
         <span class="orb-body"><span class="orb-fallback"></span><canvas class="orb-gl"></canvas></span>
       </button>
       <span class="orb-badge"></span>
@@ -49,9 +48,37 @@ export function createOverlay() {
 }
 
 // ============================================================
-// ORB: drag anywhere, click = Debait page, double-click = settings
+// ORB: drag anywhere, 1 click = toggle Debait on page, 2 clicks = toggle panel
 // ============================================================
-export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
+export const ORB_CLICK_DELAY_MS = 230;
+
+export function createOrbClickController({ onSingleClick, onDoubleClick, delayMs = ORB_CLICK_DELAY_MS }) {
+  let clickTimer = null;
+  let clicks = 0;
+  function cancel() {
+    if (clickTimer !== null) {
+      clearTimeout(clickTimer);
+      clickTimer = null;
+    }
+    clicks = 0;
+  }
+  function tap(origin) {
+    clicks++;
+    if (clicks >= 2) {
+      cancel();
+      onDoubleClick?.(origin);
+      return;
+    }
+    clickTimer = setTimeout(() => {
+      clickTimer = null;
+      clicks = 0;
+      onSingleClick?.(origin);
+    }, delayMs);
+  }
+  return { tap, cancel };
+}
+
+export function createOrb(overlay, { onClick, onDoubleClick }) {
   const wrap = overlay.orbWrap;
   const orb = wrap.querySelector('.orb');
   const badge = wrap.querySelector('.orb-badge');
@@ -138,11 +165,17 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
 
   const cancelJs = () => orb.getAnimations().forEach((a) => { if (!('animationName' in a)) a.cancel(); });
 
+  // ---- click vs double-click controller (snappy debounce, no triple-tap) ----
+  const clickController = createOrbClickController({
+    onSingleClick: (origin) => onClick?.(origin),
+    onDoubleClick: (origin) => onDoubleClick?.(origin),
+  });
+
   // ---- drag: the ball leans into the motion and the smoke inside lags behind ----
   let drag = null;
   orb.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
-    orb.setPointerCapture(e.pointerId);
+    orb.setPointerCapture?.(e.pointerId);
     drag = {
       id: e.pointerId,
       dx: e.clientX - pos.x,
@@ -156,7 +189,7 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
       vx: 0,
       vy: 0,
     };
-    orb.animate([{ transform: 'scale(1)' }, { transform: 'scale(0.92)' }], { duration: reducedMotion() ? 0 : 140, easing: 'ease-out', fill: 'forwards' });
+    orb.animate?.([{ transform: 'scale(1)' }, { transform: 'scale(0.92)' }], { duration: reducedMotion() ? 0 : 140, easing: 'ease-out', fill: 'forwards' });
   });
 
   orb.addEventListener('pointermove', (e) => {
@@ -164,6 +197,7 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
     if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 5) return;
     if (!drag.moved) {
       drag.moved = true;
+      clickController.cancel();
       wrap.classList.add('dragging');
     }
     const now = performance.now();
@@ -188,50 +222,40 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
   const release = (e) => {
     if (!drag || e.pointerId !== drag.id) return;
     const wasDrag = drag.moved;
+    const cancelled = e.type === 'pointercancel';
     drag = null;
     wrap.classList.remove('dragging');
     const from = orb.style.transform || 'scale(0.92)';
     orb.style.transform = '';
     cancelJs();
     gl?.setVelocity(0, 0);
-    orb.animate(
+    orb.animate?.(
       [{ transform: from }, { transform: 'scale(1.06, 0.95)', offset: 0.35 }, { transform: 'scale(0.98, 1.02)', offset: 0.7 }, { transform: 'scale(1)' }],
       { duration: reducedMotion() ? 0 : 600, easing: 'ease-out' },
     );
     if (wasDrag) {
       ratio = toRatio();
-      chrome.storage.local.set({ orbPos: ratio });
+      chrome.storage?.local?.set({ orbPos: ratio });
+    } else if (cancelled) {
+      clickController.cancel();
     } else {
-      tap();
+      clickController.tap(center());
     }
   };
   orb.addEventListener('pointerup', release);
   orb.addEventListener('pointercancel', release);
 
-  // 1 click = Debait the page, 2 clicks = settings, 3 clicks = talk to Debait (voice call).
-  // Waits a moment after the last click to count them.
-  let clickTimer = null;
-  let clicks = 0;
-  function tap() {
-    clicks++;
-    clearTimeout(clickTimer);
-    clickTimer = setTimeout(() => {
-      const n = clicks;
-      clicks = 0;
-      if (n >= 3) onTripleClick?.(center());
-      else if (n === 2) onDoubleClick(center());
-      else onClick(center());
-    }, 260);
-  }
   orb.addEventListener('contextmenu', (e) => {
     e.preventDefault();
-    onDoubleClick(center());
+    clickController.cancel();
+    onDoubleClick?.(center());
   });
   orb.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      if (e.shiftKey) onDoubleClick(center());
-      else onClick(center());
+      clickController.cancel();
+      if (e.shiftKey) onDoubleClick?.(center());
+      else onClick?.(center());
     }
   });
 
@@ -239,7 +263,7 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
     return { x: pos.x + diameter() / 2, y: pos.y + diameter() / 2 };
   }
 
-  const HINT = VOICE_ENABLED ? '<em><kbd>2×</kbd> settings &nbsp; <kbd>3×</kbd> talk to Debait</em>' : '<em><kbd>2×</kbd> settings</em>';
+  const HINT = '<em><kbd>1×</kbd> toggle debait &nbsp; <kbd>2×</kbd> panel</em>';
   let lastCount = -1;
   return {
     center,
@@ -264,7 +288,8 @@ export function createOrb(overlay, { onClick, onDoubleClick, onTripleClick }) {
       wrap.dataset.emotion = statusOnly ? '' : feedback?.category || '';
       const mood = statusOnly ? (feedback.state === 'busy' ? 'busy' : 'idle') : feedback?.category === 'clean' ? 'calm' : state;
       gl?.setMood(mood);
-      orb.setAttribute('aria-label', `Debait this page. ${feedback?.label || 'Page status'}. Shift+Enter opens settings.`);
+      const actionLabel = state === 'calm' ? 'Click to restore original headlines' : 'Click to debait this page';
+      orb.setAttribute('aria-label', `${actionLabel}. ${feedback?.label || 'Page status'}. Double-click or Shift+Enter opens panel.`);
       const count = state === 'calm' ? debaited : bait;
       badge.textContent = String(count);
       badge.classList.toggle('show', count > 0);
