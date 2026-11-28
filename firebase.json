@@ -15,7 +15,7 @@
         "headers": [
           {
             "key": "Content-Security-Policy",
-            "value": "frame-ancestors chrome-extension://__DEBAIT_EXTENSION_ID__;"
+            "value": "frame-ancestors chrome-extension://bbklheihmdpphnggkmknbjeeogkffocl;"
           },
           {
             "key": "Cache-Control",

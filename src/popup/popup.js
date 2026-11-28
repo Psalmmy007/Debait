@@ -1,19 +1,22 @@
 import { recentProblems } from '../shared/problems.js';
 import { summarizeWeek } from '../sidepanel/statistics.js';
-import { createIngredientsGuide } from '../shared/ingredientsView.js';
-import '@fontsource-variable/plus-jakarta-sans';
 import '@fontsource-variable/inter';
-import '@fontsource-variable/bricolage-grotesque';
 import { MSG } from '../engine/contract.js';
 import { getSettings, setSettings, getRecentStats, DEFAULT_SETTINGS } from '../shared/storage.js';
 
 const $ = (s) => document.querySelector(s);
-$('#guide').append(createIngredientsGuide());
 let todayRevision = 0;
 let engineRevision = 0;
 let problemsRevision = 0;
 let privateDevelopmentToken = null;
 const SRC_LABEL = { 'on-device': 'On-device', cloud: 'Cloud', mock: 'Mock engine', none: 'Not verified' };
+
+function setNote(selector, text) {
+  const el = $(selector);
+  const msg = typeof text === 'string' ? text.trim() : '';
+  el.textContent = msg;
+  el.hidden = !msg;
+}
 
 async function renderToday() {
   const revision = ++todayRevision;
@@ -23,14 +26,20 @@ async function renderToday() {
     const { sum: today, bait, percentage, complete } = summarizeWeek(days);
     countUp($('#pct'), percentage(bait));
     $('#pct').nextElementSibling.hidden = percentage(bait) === null;
-    $('#sub').textContent = !complete ? 'Category data is incomplete; no reliable percentage is available'
-      : today.total ? `of ${today.total} analyzed headline${today.total === 1 ? '' : 's'} today were flagged`
-      : 'No headlines analyzed yet today';
+    $('#sub').textContent = !complete ? 'Incomplete data'
+      : today.total ? `${today.total.toLocaleString()} headline${today.total === 1 ? '' : 's'}`
+      : 'No headlines yet';
     for (const k of ['rage', 'fear', 'envy', 'clean']) {
       $(`#bar [data-k='${k}']`).style.width = `${percentage(today[k]) ?? 0}%`;
       $(`#legend [data-k='${k}'] b`).textContent = complete ? today[k] : '—';
     }
-  } catch { if (revision === todayRevision) { $('#pct').textContent = '—'; $('#pct').nextElementSibling.hidden = true; $('#sub').textContent = 'Reading statistics are temporarily unavailable.'; } }
+  } catch {
+    if (revision === todayRevision) {
+      $('#pct').textContent = '—';
+      $('#pct').nextElementSibling.hidden = true;
+      $('#sub').textContent = 'Stats unavailable';
+    }
+  }
 }
 
 async function renderEngine() {
@@ -42,19 +51,19 @@ async function renderEngine() {
     if (!res?.ok) throw new Error('Engine status could not be verified. Check the extension setup and retry.');
     const s = res.status || { source: 'none', ready: false };
     chip.dataset.src = s.source;
-    chip.querySelector('span').textContent = SRC_LABEL[s.source] || s.source;
+    chip.querySelector('span').textContent = s.source === 'none' ? 'Not verified' : SRC_LABEL[s.source] || s.source;
     chip.title = s.message || '';
-    $('#engineNote').textContent = s.message || (s.source === 'none' ? 'No inference source has been verified yet.' : 'Source reported by the current AI engine.');
+    const hasError = !s.ready || s.source === 'none';
+    setNote('#engineNote', hasError ? (s.message || 'No inference source has been verified yet.') : '');
     $('#turnOn').hidden = !s.canDownloadDevice;
     // Setup must remain discoverable even when inference has not produced a successful result.
     // Never display the private token as ordinary popup text or in screenshots.
     privateDevelopmentToken = typeof res.debugToken === 'string' && res.debugToken.trim() ? res.debugToken : null;
     $('#setup').hidden = !privateDevelopmentToken;
     $('#token').textContent = privateDevelopmentToken ? 'Private development token (hidden)' : '';
-    chip.querySelector('span').textContent = s.source === 'none' ? 'Not verified' : SRC_LABEL[s.source] || s.source;
   } catch (error) {
     if (revision !== engineRevision) return;
-    $('#engineNote').textContent = error.message;
+    setNote('#engineNote', error.message);
     $('#setup').hidden = true;
     privateDevelopmentToken = null;
     $('#token').textContent = '';
@@ -72,7 +81,7 @@ async function renderSwitches() {
     input.addEventListener('change', async () => {
       input.disabled = true;
       try { await setSettings({ [input.dataset.setting]: input.checked }); await renderEngine(); }
-      catch { input.checked = !input.checked; $('#engineNote').textContent = 'The setting could not be saved. Please try again.'; }
+      catch { input.checked = !input.checked; setNote('#engineNote', 'The setting could not be saved. Please try again.'); }
       finally { input.disabled = false; }
     });
   }
@@ -84,19 +93,24 @@ $('#debaitPage').addEventListener('click', async () => {
     [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     $('#debaitPage').disabled = true;
     $('#debaitPage').textContent = 'Working…';
-    $('#pageStatus').textContent = 'Analyzing eligible headlines and applying accepted safe alternatives. Some headlines may remain unchanged.';
+    setNote('#pageStatus', '');
     const result = await chrome.tabs.sendMessage(tab.id, { type: 'debait/togglePage' });
-    if (!result?.ok) { $('#pageStatus').textContent = result?.error || 'The page action could not complete.'; $('#debaitPage').textContent = 'Debait this page'; $('#debaitPage').disabled = false; return; }
-    $('#pageStatus').textContent = result.note || `Applied ${result.rewrote || 0} safe rewrite(s).`;
+    if (!result?.ok) {
+      setNote('#pageStatus', result?.error || 'The page action could not complete.');
+      $('#debaitPage').textContent = 'Debait this page';
+      $('#debaitPage').disabled = false;
+      return;
+    }
+    setNote('#pageStatus', result.note || `Applied ${result.rewrote || 0} safe rewrite(s).`);
     $('#debaitPage').textContent = result.rewrote ? 'Restore originals' : 'Debait this page';
     $('#debaitPage').disabled = false;
   } catch (error) {
     $('#debaitPage').disabled = false;
     const url = tab?.url || '';
     $('#debaitPage').textContent = 'Debait this page';
-    $('#pageStatus').textContent = /^(chrome|edge|about|chrome-extension):|chromewebstore|chrome\.google\.com\/webstore/.test(url)
+    setNote('#pageStatus', /^(chrome|edge|about|chrome-extension):|chromewebstore|chrome\.google\.com\/webstore/.test(url)
       ? 'Chrome does not allow extensions on this page'
-      : `${error.message || 'The page could not be reached.'} Refresh this page after reloading the extension.`;
+      : `${error.message || 'The page could not be reached.'} Refresh this page after reloading the extension.`);
   }
 });
 
@@ -117,6 +131,7 @@ $('#turnOn').addEventListener('click', async () => {
       },
     });
     session.destroy();
+    await chrome.runtime.sendMessage({ type: MSG.INIT }).catch(() => {});
     btn.textContent = 'Model downloaded; inference not yet verified';
   } catch (err) {
     btn.textContent = err.message.length > 60 ? 'Could not download Gemini Nano' : err.message;
@@ -127,9 +142,14 @@ $('#turnOn').addEventListener('click', async () => {
 });
 
 $('#openFacts').addEventListener('click', async () => {
-  const win = await chrome.windows.getCurrent();
-  await chrome.sidePanel.open({ windowId: win.id });
-  window.close();
+  try {
+    const win = await chrome.windows.getCurrent();
+    await chrome.sidePanel.open({ windowId: win.id });
+    window.close();
+  } catch {
+    chrome.tabs.create({ url: chrome.runtime.getURL('src/sidepanel/index.html') });
+    window.close();
+  }
 });
 
 function countUp(el, to) {
@@ -165,7 +185,7 @@ $('#copyToken').addEventListener('click', async () => {
   // Close the page panel when the popup opens instead of stacking both controls.
   if (tab?.id) chrome.tabs.sendMessage(tab.id, { type: 'debait/close-settings-panel' }).catch(() => {});
   let host = '';
-  try { host = new URL(tab.url).hostname.replace(/^www./, ''); } catch { /* chrome:// pages */ }
+  try { if (tab?.url && /^https?:/.test(tab.url)) host = new URL(tab.url).hostname.replace(/^www./, ''); } catch { /* chrome:// pages */ }
   if (!host) { $('.site').hidden = true; return; }
   $('#host').textContent = host;
   const s = await getSettings();
@@ -201,7 +221,12 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
   if (changes.stats) renderToday();
   if (changes.debaitErrors) renderProblems().catch(() => {});
-  if (changes.settings) { for (const input of document.querySelectorAll('[data-setting]')) input.checked = !!({ ...DEFAULT_SETTINGS, ...changes.settings.newValue })[input.dataset.setting]; renderEngine(); }
+  if (changes.settings) {
+    for (const input of document.querySelectorAll('[data-setting]')) {
+      input.checked = !!({ ...DEFAULT_SETTINGS, ...changes.settings.newValue })[input.dataset.setting];
+    }
+    renderEngine();
+  }
 });
 renderToday();
 renderEngine();

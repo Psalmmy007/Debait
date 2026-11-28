@@ -375,16 +375,27 @@ test('Local Only never mounts the hosted iframe or touches Hosting/reCAPTCHA, an
   assert.equal(fnIdx.includes('issueAppCheckToken'), false, 'functions/index.js must not export issueAppCheckToken');
   assert.ok(fnIdx.includes('export const mintLiveVoiceToken') && fnIdx.includes('enforceAppCheck: true'));
 
-  // Hosting page & firebase.json CSP headers are wired properly
+  // Hosting page & firebase.json CSP headers are wired properly and match pinned manifest.key ID
+  const { createHash } = await import('node:crypto');
+  const { default: manifest, EXTENSION_ID } = await import('../manifest.config.js');
+  const { DEBAIT_EXTENSION_ID, DEFAULT_ALLOWED_ORIGINS } = await import('../hosting/attestCore.js');
+  assert.equal(typeof manifest.key, 'string');
+  const derivedHex = createHash('sha256').update(Buffer.from(manifest.key, 'base64')).digest('hex').slice(0, 32);
+  const derivedId = [...derivedHex].map((c) => String.fromCharCode(97 + parseInt(c, 16))).join('');
+  assert.equal(derivedId, EXTENSION_ID);
+  assert.equal(DEBAIT_EXTENSION_ID, EXTENSION_ID);
+  assert.deepEqual(DEFAULT_ALLOWED_ORIGINS, [`chrome-extension://${EXTENSION_ID}`]);
+
   const attestHtml = fs.readFileSync('hosting/attest.html', 'utf8');
   assert.ok(attestHtml.includes('ReCaptchaEnterpriseProvider') && attestHtml.includes('createAttestHost'));
+  assert.ok(attestHtml.includes(`chrome-extension://${EXTENSION_ID}`));
   const fbCfg = JSON.parse(fs.readFileSync('firebase.json', 'utf8'));
   assert.equal(fbCfg.hosting?.public, 'hosting');
   const attestRule = fbCfg.hosting?.headers?.find((h) => h.source === '/attest.html');
   assert.ok(attestRule, 'firebase.json must define headers for /attest.html');
   const csp = attestRule.headers.find((h) => h.key === 'Content-Security-Policy')?.value || '';
   const cc = attestRule.headers.find((h) => h.key === 'Cache-Control')?.value || '';
-  assert.match(csp, /^frame-ancestors chrome-extension:\/\//);
+  assert.equal(csp, `frame-ancestors chrome-extension://${EXTENSION_ID};`);
   assert.equal(cc, 'no-store');
   assert.equal(fbCfg.firestore?.rules, 'firestore.rules');
   assert.equal(fbCfg.functions?.[0]?.source, 'functions');

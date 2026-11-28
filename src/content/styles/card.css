@@ -1,131 +1,64 @@
-/* Ingredients card: an Apple-style popover. */
+/* Ingredients card: an Apple-style popover for one headline. */
 .card {
   position: fixed;
-  width: 368px;
+  width: 344px;
   max-width: calc(100vw - 24px);
-  padding: 20px;
-  border-radius: 22px;
+  max-height: calc(100vh - 24px);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+  padding: 16px;
+  border-radius: 20px;
   background: var(--material);
-  backdrop-filter: blur(40px) saturate(1.8);
-  -webkit-backdrop-filter: blur(40px) saturate(1.8);
+  backdrop-filter: blur(30px) saturate(1.8);
+  -webkit-backdrop-filter: blur(30px) saturate(1.8);
   color: var(--label);
   font: 400 14px/1.45 var(--font);
   letter-spacing: -0.005em;
   box-shadow: var(--shadow);
   pointer-events: auto;
   transform-origin: top left;
-  transition: transform 0.3s var(--ease);
-  will-change: transform;
+  scrollbar-width: thin;
 }
 .card.flip { transform-origin: bottom left; }
+.card:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
-.card-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
-.card-kicker { font: 600 13px/1 var(--font); color: var(--label-2); letter-spacing: -0.01em; }
-.card-kind { margin-top: 9px; }
-/* inside the card, the kind capsule follows the card's appearance */
-.card-kind .tag { --bg: var(--button); --fg: var(--button-label); cursor: default; box-shadow: none; padding-right: 9px; }
-.card-kind .tag:hover { transform: none; }
+/* verdict: symbol, kind, and the score ring */
+.c-top { display: flex; align-items: center; gap: 11px; }
+.c-icon { display: grid; place-items: center; width: 36px; height: 36px; flex: none; border-radius: 50%; background: var(--ink); color: var(--on-ink); }
+.c-icon svg { width: 15px; height: 15px; }
+.card[data-kind='clean'] .c-icon { background: var(--fill); color: var(--label); }
+.c-title { flex: 1; min-width: 0; }
+.c-title b { display: block; font: 700 17px/1.15 var(--font); letter-spacing: -0.02em; }
+.c-title span { display: block; margin-top: 2px; font-size: 12.5px; color: var(--label-2); }
+.c-ring { position: relative; width: 48px; height: 48px; flex: none; }
+.c-ring svg { width: 48px; height: 48px; transform: rotate(-90deg); }
+.c-ring circle { fill: none; stroke-width: 4.5; }
+.c-ring .t { stroke: var(--fill); }
+.c-ring .f { stroke: var(--ink); stroke-linecap: round; }
+.c-ring b { position: absolute; inset: 0; display: grid; place-items: center; font: 700 15px/1 var(--font); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 
-/* score ring */
-.gauge { position: relative; width: 64px; height: 64px; flex: none; }
-.gauge svg { width: 64px; height: 64px; transform: rotate(-90deg); }
-.gauge circle { fill: none; stroke-width: 5; }
-.gauge .track { stroke: var(--fill); }
-.gauge .fill { stroke: var(--label); stroke-linecap: round; }
-.gauge b {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  align-content: center;
-  font: 700 21px/1 var(--font-display);
-  letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums;
+.c-head { margin: 14px 2px 0; font: 600 15.5px/1.38 var(--font); letter-spacing: -0.012em; text-wrap: pretty; }
+.c-head mark { color: inherit; background: var(--mark); border-radius: 4px; padding: 0 3px; }
+
+.c-sec { margin-top: 16px; }
+.c-sec .h { margin-left: 4px; }
+.c-row { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; padding: 10px 0; border-bottom: 0.5px solid var(--sep); font-size: 13.5px; }
+.c-row:last-child { border-bottom: 0; }
+.c-row b { font-weight: 600; }
+.c-row span { color: var(--label-2); text-align: right; font-size: 13px; }
+.c-row .none { color: var(--label-2); text-align: left; }
+
+/* bait vs honest: a segmented control and the chosen wording */
+.c-alt { margin: 10px 4px 0; font: 500 15px/1.42 var(--font); letter-spacing: -0.01em; text-wrap: pretty; }
+.c-alt.bait { color: var(--label-2); }
+
+.c-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 16px; }
+.c-src { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font: 500 11.5px/1.2 var(--font); color: var(--label-2); }
+.c-src i { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--label-3); }
+.c-src[data-src='on-device'] i, .c-src[data-src='cloud'] i { background: var(--label); }
+.c-btns { display: flex; gap: 8px; flex: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .card, .card *, .tag { transition: none !important; animation: none !important; }
 }
-.gauge b small { display: block; margin-top: 2px; font: 500 10px/1 var(--font); color: var(--label-3); letter-spacing: 0; }
-
-.card-headline { margin: 16px 0 0; font: 600 18px/1.32 var(--serif); color: var(--label); letter-spacing: -0.01em; text-wrap: pretty; }
-.card-headline mark { color: inherit; background: var(--mark); border-radius: 4px; padding: 0 2px; }
-
-.card-section { margin-top: 18px; }
-.card-section h4 { margin: 0 0 8px 2px; font: 600 13px/1 var(--font); color: var(--label-2); letter-spacing: -0.01em; }
-
-/* grouped list, like Settings */
-.ingredients { list-style: none; margin: 0; padding: 0 14px; border-radius: 14px; background: var(--fill-2); }
-.ingredients li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 11px 0; border-bottom: 0.5px solid var(--sep); }
-.ingredients li:last-child { border-bottom: 0; }
-.ingredients .w { font-weight: 600; color: var(--label); }
-.ingredients .why { color: var(--label-2); text-align: right; font-size: 13px; }
-.ingredients .none { color: var(--label-2); }
-
-.honest {
-  padding: 13px 14px;
-  border-radius: 14px;
-  background: var(--surface);
-  color: var(--label);
-  font: 500 16px/1.4 var(--serif);
-  box-shadow: 0 0 0 0.5px var(--hairline), 0 1px 3px rgba(0, 0, 0, 0.06);
-  text-wrap: pretty;
-}
-
-.card-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 18px; }
-.source { display: inline-flex; align-items: center; gap: 6px; font: 500 12px/1 var(--font); color: var(--label-3); }
-.source i { width: 6px; height: 6px; border-radius: 50%; background: var(--toggle-on); }
-.source[data-src='mock'] i { background: var(--label-3); }
-.source[data-src='cloud'] i { background: #0a84ff; }
-.btns { display: flex; gap: 8px; }
-
-/* capsule buttons */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 34px;
-  padding: 0 15px;
-  border: 0;
-  border-radius: 999px;
-  background: var(--fill);
-  color: var(--label);
-  font: 600 13.5px/1 var(--font);
-  letter-spacing: -0.01em;
-  cursor: pointer;
-  transition: transform 0.3s var(--spring), background 0.2s var(--ease), opacity 0.2s var(--ease);
-}
-.btn:hover { background: color-mix(in srgb, var(--label) 14%, transparent); }
-.btn:active { transform: scale(0.96); }
-.btn:focus-visible { outline: 2px solid #0071e3; outline-offset: 2px; }
-.btn.primary { background: var(--button); color: var(--button-label); }
-.btn.primary:hover { background: var(--button); opacity: 0.86; }
-.btn svg { width: 12px; height: 12px; }
-
-/* score ring in the kind's color */
-.card[data-kind='rage'] .gauge .fill { stroke: var(--rage); }
-.card[data-kind='fear'] .gauge .fill { stroke: var(--fear); }
-.card[data-kind='envy'] .gauge .fill { stroke: var(--envy); }
-.card[data-kind='clean'] .gauge .fill { stroke: var(--clean); }
-
-/* Both versions are readable; no clipping slider or assertion of verified truth. */
-.card { overflow-wrap: anywhere; }
-.comparison-label { margin: 16px 0 6px; font: 600 13px/1.3 var(--font); color: var(--label-2); }
-.card-headline { margin-top: 0; }
-.card [data-rewrite-source], .card [data-assistance-status] { font-size: 12px; line-height: 1.5; color: var(--label-2); }
-.card [data-explanation] { margin-top: 12px; padding: 12px 14px; border-radius: 14px; background: var(--fill-2); font: 400 14px/1.5 var(--font); }
-.card [data-explanation] p { margin: 0 0 10px; }
-.card [data-explanation] p:last-child { margin-bottom: 0; }
-.card .card-section > .btn { margin: 0 4px 6px 0; white-space: normal; height: auto; min-height: 34px; padding-block: 9px; }
-.card-foot { flex-wrap: wrap; }
-.btns { flex-wrap: wrap; }
-.btn:disabled { opacity: 0.55; cursor: default; }
-.card:focus-visible { outline: 2px solid #0071e3; outline-offset: 2px; }
-.transformation-note { color: var(--label-2); font-size: 12px; line-height: 1.5; }
-@media (prefers-reduced-motion: reduce) { .card, .card *, .tag { transition: none !important; animation: none !important; } }
-/* Keep a short trigger readable beside a longer explanation. */
-.ingredients li { display: grid; grid-template-columns: minmax(72px, 0.7fr) minmax(0, 1.3fr); }
-@media (prefers-reduced-motion: reduce) { .card { transform: none !important; } }
-
-/* A Clean assessment is one full-width message, not a two-column trigger row. */
-.ingredients .none-row { display: block; }
-.ingredients .none { display: block; font-size: 14px; line-height: 1.5; }
-.card [data-assistance-status] { font-size: 13px; line-height: 1.5; }
-.card [data-assistance-status]:empty { margin: 0; }
-.card [data-explanation] { font-size: 15px; line-height: 1.55; }

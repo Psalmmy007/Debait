@@ -1,8 +1,7 @@
 import { VOICE_ENABLED } from '../../shared/release.js';
 import { focusPopover } from './focus.js';
-import { createIngredientsGuide } from '../../shared/ingredientsView.js';
 import { summarizeWeek } from '../../sidepanel/statistics.js';
-// Settings panel: double-click (or right-click) the orb.
+// The column: double-click (or right-click) the orb.
 // It opens out of the orb and folds back into it when closed.
 import { MSG } from '../../engine/contract.js';
 import { getSettings, setSettings, getRecentStats } from '../../shared/storage.js';
@@ -13,19 +12,16 @@ import { setHTML } from './html.js';
 const OUT = 'cubic-bezier(0.16, 1, 0.3, 1)';
 
 const SWITCHES = [
-  ...(VOICE_ENABLED ? [{ key: 'voice', title: 'Talk to Debait', hint: 'A live voice call with Gemini. Ask anything about this page.' }] : []),
-  { key: 'showTags', title: 'Show tags', hint: 'Labels and highlights on headlines' },
-  { key: 'autoDebait', title: 'Debait automatically', hint: 'Apply only safe alternatives on enabled sites' },
-  { key: 'localOnly', title: 'Local only', hint: 'Never send headlines to the cloud' },
-  { key: 'showOrb', title: 'Show the orb', hint: 'Bring it back from the toolbar popup' },
+  { key: 'showTags', title: 'Show tags' },
+  { key: 'autoDebait', title: 'Debait automatically', hint: 'Rewrite bait as it appears' },
+  { key: 'localOnly', title: 'Local only', hint: 'Keep every headline on this device' },
+  { key: 'showOrb', title: 'Show the orb' },
 ];
+if (VOICE_ENABLED) {
+  SWITCHES.splice(2, 0, { key: 'voice', title: 'Voice assistant', hint: 'Live voice call with Gemini' });
+}
 
-const LEGEND = [
-  ['rage', 'Rage', '#fff'],
-  ['fear', 'Fear', '#a1a1aa'],
-  ['envy', 'Envy', '#5f5f68'],
-  ['clean', 'Clean', 'repeating-linear-gradient(-45deg, rgba(255,255,255,.45) 0 2px, transparent 2px 4px)'],
-];
+const LEGEND = [['rage', 'Rage'], ['fear', 'Fear'], ['envy', 'Envy'], ['clean', 'Clean']];
 
 /**
  * @param layer       shadow-root container for the panel
@@ -42,6 +38,7 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
   let openRevision = 0;
   let engineRevision = 0;
   let todayRevision = 0;
+  const host = location.hostname.replace(/^www\./, '');
 
   function clipFrames(open) {
     // a circle that grows out of the orb (in the panel's own coordinates)
@@ -68,65 +65,56 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
     el = document.createElement('aside');
     el.className = 'panel';
     el.setAttribute('role', 'dialog');
-    el.setAttribute('aria-label', 'Debait settings');
+    el.setAttribute('aria-label', 'Debait');
 
     setHTML(el, `
-      <div class="p-head">
-        <div class="p-brand"><span class="p-logo"></span><div><b>Debait</b><small>Nutrition facts for your feed</small></div></div>
-        <button class="icon-btn" data-act="close" aria-label="Close settings">${ICON.close}</button>
-      </div>
-
-      <div class="p-meta">
-        <span class="chip" data-src="none"><i></i><span>Checking AI…</span></span>
-        <span class="p-site">${location.hostname.replace(/^www\./, '')}</span>
-      </div>
-
-      <p class="p-engine-note" role="status" aria-live="polite"></p>
-
-      <section class="p-hero">
-        <span class="p-eyebrow">Today’s Feed</span>
-        <div class="p-today"><b><span data-v="todayPct">0</span><small>%</small></b></div>
-        <span class="p-today-line" data-v="todayLine">of analyzed headlines were flagged</span>
-        <div class="p-bar">${LEGEND.map(([k]) => `<span data-k="${k}"></span>`).join('')}</div>
-        <div class="p-legend">${LEGEND.map(([k, name]) => `<span><i data-k="${k}"></i>${name} <b data-v="${k}">0</b></span>`).join('')}</div>
-      </section>
-
-      <section class="p-sec">
-        <h4>This page</h4>
-        <div class="p-split">
-          <div class="p-num"><b data-v="bait">0</b><span>bait</span></div>
-          <div class="p-num"><b data-v="debaited">0</b><span>debaited</span></div>
-          <div class="p-num dim"><b data-v="scanned">0</b><span>read</span></div>
+      <header class="p-head">
+        <div>
+          <h2 class="p-title">Debait</h2>
+          <p class="p-engine" data-src="none"><i></i><span>Checking the AI…</span></p>
         </div>
-        <button class="btn primary p-main" data-act="toggle">Debait this page</button>
+        <button class="p-x" data-act="close" aria-label="Close">${ICON.close}</button>
+      </header>
+
+      <p class="p-engine-note" role="status" aria-live="polite" hidden></p>
+
+      <section class="p-card">
+        <h4 class="h">This page<span>${host}</span></h4>
+        <div class="p-big"><b data-v="bait">0</b><span><em data-v="baitWord">bait headlines</em><span data-v="pageLine">Looking for headlines</span></span></div>
+        <button class="btn primary wide" data-act="toggle">Debait this page</button>
       </section>
 
+      <section class="p-card">
+        <h4 class="h">Today<span data-v="todayLine">No headlines yet</span></h4>
+        <div class="p-today"><b><span data-v="todayPct">0</span><small>%</small></b><span>of headlines were bait</span></div>
+        <div class="bar">${LEGEND.map(([k]) => `<span data-k="${k}"></span>`).join('')}</div>
+        <div class="p-legend">${LEGEND.map(([k, name]) => `<span><i class="sq" data-k="${k}"></i>${name} <b data-v="${k}">0</b></span>`).join('')}</div>
+      </section>
 
-
-      <section class="p-sec">
-        <h4>Settings</h4>
-          <label class="p-row">
-            <span>Run on this site<small>${location.hostname.replace(/^www\./, '')}</small></span>
-            <input type="checkbox" data-site ${settings.disabledSites.includes(location.hostname.replace(/^www\./, '')) ? '' : 'checked'} />
-            <span class="sw"></span>
-          </label>
+      <h4 class="h p-out">Settings</h4>
+      <div class="group">
+        <label class="row">
+          <span>Run on ${host}</span>
+          <input type="checkbox" data-site ${settings.disabledSites.includes(host) ? '' : 'checked'} />
+          <span class="sw"></span>
+        </label>
         ${SWITCHES.map((s) => `
-          <label class="p-row">
-            <span>${s.title}<small>${s.hint}</small></span>
+          <label class="row">
+            <span>${s.title}${s.hint ? `<small>${s.hint}</small>` : ''}</span>
             <input type="checkbox" data-setting="${s.key}" ${settings[s.key] ? 'checked' : ''} />
             <span class="sw"></span>
           </label>`).join('')}
         <label class="p-size" for="debait-orb-size">
-          <span>Orb size <small data-v="orbSize">${Math.round((settings.orbSize || 1) * 100)}%</small></span>
+          <span>Orb size<small data-v="orbSize">${Math.round((settings.orbSize || 1) * 100)}%</small></span>
           <input id="debait-orb-size" type="range" min="0.75" max="1.6" step="0.05" value="${settings.orbSize || 1}" data-size aria-label="Orb size" />
         </label>
-      </section>
+      </div>
 
-      <button class="p-link" data-act="facts">Weekly Mind Facts ${ICON.arrow}</button>
-      <p class="p-note" role="status" aria-live="polite" hidden></p>
-      <p class="p-foot"><kbd>2×</kbd> click the orb <span aria-hidden="true">·</span> <kbd>Esc</kbd> to close</p>`);
+      <div class="group">
+        <button class="row" data-act="facts">Weekly Mind Facts ${ICON.chev}</button>
+      </div>
+      <p class="p-note" role="status" aria-live="polite" hidden></p>`);
 
-    el.insertBefore(createIngredientsGuide(), el.querySelector('.p-foot'));
     layer.appendChild(el);
     restoreFocus = focusPopover(el);
 
@@ -148,16 +136,15 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
 
     onOpenChange?.(true);
     refresh();
-    loadToday().catch(() => { if (el) el.querySelector('[data-v="todayLine"]').textContent = 'Reading statistics are temporarily unavailable.'; });
+    loadToday().catch(() => { if (el) el.querySelector('[data-v="todayLine"]').textContent = 'Stats unavailable'; });
     loadEngine();
 
     if (!reducedMotion()) {
-      el.animate(clipFrames(true), { duration: 700, easing: OUT });
-      const parts = el.querySelectorAll('.p-head, .p-meta, .p-sec h4, .p-split, .p-main, .p-today, .p-bar, .p-legend, .p-row, .p-link, .p-foot');
-      parts.forEach((p, i) => {
+      el.animate(clipFrames(true), { duration: 600, easing: OUT });
+      el.querySelectorAll('.p-head, .p-card, .p-out, .group').forEach((p, i) => {
         p.animate(
-          [{ opacity: 0, transform: 'translateY(8px)', filter: 'blur(4px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }],
-          { duration: 520, delay: 60 + i * 28, easing: OUT, fill: 'backwards' },
+          [{ opacity: 0, transform: 'translateY(8px) scale(0.98)' }, { opacity: 1, transform: 'none' }],
+          { duration: 460, delay: 70 + i * 40, easing: OUT, fill: 'backwards' },
         );
       });
     }
@@ -187,7 +174,7 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
     document.removeEventListener('pointerdown', onOutside, true);
     document.removeEventListener('keydown', onKey, true);
     if (!reducedMotion()) {
-      await el.animate(clipFrames(false), { duration: 380, easing: 'cubic-bezier(0.7, 0, 0.84, 0)', fill: 'forwards' }).finished.catch(() => {});
+      await el.animate(clipFrames(false), { duration: 340, easing: 'cubic-bezier(0.7, 0, 0.84, 0)', fill: 'forwards' }).finished.catch(() => {});
     }
     el.remove();
     el = null;
@@ -216,7 +203,7 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
       if (!res?.ok && el) {
         const note = el.querySelector('.p-note');
         note.hidden = false;
-        note.textContent = 'Click the Debait icon in the toolbar, then "Open Weekly Mind Facts".';
+        note.textContent = 'Click the Debait icon in the toolbar, then Weekly Mind Facts.';
       }
     }
   }
@@ -228,7 +215,6 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
       return;
     }
     if (e.target.dataset?.site !== undefined) {
-      const host = location.hostname.replace(/^www\./, '');
       const cur = await getSettings();
       const off = new Set(cur.disabledSites);
       if (e.target.checked) off.delete(host); else off.add(host);
@@ -238,7 +224,12 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
     const key = e.target.dataset?.setting;
     if (!key) return;
     try { await setSettings({ [key]: e.target.checked }); }
-    catch { e.target.checked = !e.target.checked; const note = el?.querySelector('.p-note'); if (note) { note.hidden = false; note.textContent = 'The setting could not be saved. Please try again.'; } return; }
+    catch {
+      e.target.checked = !e.target.checked;
+      const note = el?.querySelector('.p-note');
+      if (note) { note.hidden = false; note.textContent = 'The setting could not be saved. Please try again.'; }
+      return;
+    }
     await loadEngine();
     if (key === 'showOrb' && !e.target.checked) close();
   }
@@ -246,20 +237,19 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
   /** Updates the "This page" numbers and the main button. */
   function refresh() {
     if (!el) return;
-    const { bait, debaited, scanned, rewritable = bait, pending = 0, busy = false, notice = '', automatic = false } = getPage();
+    const { bait, debaited, scanned, rewritable = bait, pending = 0, busy = false } = getPage();
     el.querySelector('[data-v="bait"]').textContent = bait;
-    el.querySelector('[data-v="debaited"]').textContent = debaited;
-    el.querySelector('[data-v="scanned"]').textContent = scanned;
-    const btn = el.querySelector('.p-main');
+    el.querySelector('[data-v="baitWord"]').textContent = `bait headline${bait === 1 ? '' : 's'}`;
+    el.querySelector('[data-v="pageLine"]').textContent = scanned
+      ? `of ${scanned} read${debaited ? `, ${debaited} debaited` : ''}`
+      : 'Looking for headlines';
+    const btn = el.querySelector('[data-act="toggle"]');
     const restore = rewritable === 0 && debaited > 0;
     btn.classList.toggle('primary', !restore);
-    setHTML(btn, restore
+    btn.textContent = restore
       ? 'Restore originals'
-      : pending ? 'Analyze and Debait this page' : rewritable ? `Apply ${rewritable} safe rewrite${rewritable === 1 ? '' : 's'} ${ICON.arrow}` : bait ? 'No safe page rewrites available' : 'No flagged headlines to rewrite');
+      : pending ? 'Debait this page' : rewritable ? `Debait ${rewritable} headline${rewritable === 1 ? '' : 's'}` : 'Nothing to debait here';
     btn.disabled = busy || (!restore && !pending && !rewritable);
-    const note = el.querySelector('.p-note');
-    note.hidden = !notice && !automatic;
-    note.textContent = notice || (automatic ? 'Auto-Debait is on for enabled sites; only safe alternatives are applied.' : '');
   }
 
   async function loadToday() {
@@ -268,13 +258,16 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
     const t = summary.sum;
     if (!el || revision !== todayRevision) return;
     const bait = t.rage + t.fear + t.envy;
-    el.querySelector('[data-v="todayPct"]').textContent = summary.percentage(bait) ?? '—';
-    el.querySelector('[data-v="todayLine"]').textContent = !summary.complete ? 'Category data is incomplete' : t.total
-      ? `of ${t.total.toLocaleString()} analyzed headlines were flagged`
-      : 'No headlines read yet today';
-    for (const k of ['rage', 'fear', 'envy', 'clean']) {
+    const pct = summary.percentage(bait);
+    const pctEl = el.querySelector('[data-v="todayPct"]');
+    pctEl.textContent = pct ?? '—';
+    pctEl.nextElementSibling.hidden = pct === null;
+    el.querySelector('[data-v="todayLine"]').textContent = !summary.complete ? 'Incomplete data' : t.total
+      ? `${t.total.toLocaleString()} headline${t.total === 1 ? '' : 's'}`
+      : 'No headlines yet';
+    for (const [k] of LEGEND) {
       el.querySelector(`[data-v="${k}"]`).textContent = summary.complete ? t[k] : '—';
-      const bar = el.querySelector(`.p-bar [data-k="${k}"]`);
+      const bar = el.querySelector(`.bar [data-k="${k}"]`);
       requestAnimationFrame(() => { bar.style.width = `${summary.percentage(t[k]) ?? 0}%`; });
     }
   }
@@ -282,20 +275,25 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
   async function loadEngine() {
     const revision = ++engineRevision;
     const res = await chrome.runtime.sendMessage({ type: MSG.STATUS }).catch(() => null);
-    if (!el) return;
-    if (revision !== engineRevision) return;
-    const s = res?.ok ? res.status || { source: 'none' } : { source: 'none', message: 'AI status could not be verified.' };
-    const chip = el.querySelector('.chip');
+    if (!el || revision !== engineRevision) return;
+    const s = res?.ok ? res.status || { source: 'none', ready: false } : { source: 'none', ready: false, message: 'AI status could not be verified.' };
+    const chip = el.querySelector('.p-engine');
     chip.dataset.src = s.source;
     chip.querySelector('span').textContent = SOURCE[s.source] || s.source;
     chip.title = s.message || '';
-    el.querySelector('.p-engine-note').textContent = s.message || (s.source === 'none' ? 'No inference source has been verified yet.' : '');
+    const engineNote = el.querySelector('.p-engine-note');
+    const hasError = !res?.ok || !s.ready || s.source === 'none';
+    const errText = hasError ? (s.message || 'AI status could not be verified.') : '';
+    engineNote.textContent = errText;
+    engineNote.hidden = !errText;
   }
 
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local' || !el) return;
     if (changes.settings) {
-      getSettings().then(settings => { if (el) for (const input of el.querySelectorAll('[data-setting]')) input.checked = !!settings[input.dataset.setting]; }).catch(() => {});
+      getSettings().then((settings) => {
+        if (el) for (const input of el.querySelectorAll('[data-setting]')) input.checked = !!settings[input.dataset.setting];
+      }).catch(() => {});
       loadEngine();
     }
     if (changes.stats) loadToday().catch(() => {});

@@ -93,8 +93,15 @@ export const EXCLUDED_SITES = [
   '*://chat.deepseek.com/*',
 ];
 
+// Public RSA SPKI key pinning a deterministic Chrome extension ID across unpacked installs
+// (private .pem key is stored strictly outside the repository; never commit private keys).
+export const EXTENSION_ID = 'bbklheihmdpphnggkmknbjeeogkffocl';
+const MANIFEST_PUBLIC_KEY =
+  'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwDVRCaL79SXx5Bhg5+g1Jc51kylIKvzc5m040RMwqSYG2AeEegeYkrFIOGRsqATxFV6q6GonVv4iP4/qJVfBYgb6G58Bvic1BVhJongEngN/vnfBVhxngs9Ks4mZ82af3WPi+WaFlj8HvI/7LLZPCF3W+eBL7jto1VYoNBYD+e8ZcTYgVxmub+BO78esFuOuVYzr7F5rTE4JC/1/fOv4kbz/7Hp3h/cDedvfwWKCAfIGIdftpn6MbQMjm9IFShry19AuXkVNa5otj/gbiqK14X3YIEGkA2PoIFMBfORG+QSVqZVTalb25Y5EVS3/MxUZ+H9eFhLg0sTCh/FkSV5K/QIDAQAB';
+
 export default defineManifest({
   manifest_version: 3,
+  key: MANIFEST_PUBLIC_KEY,
   name: 'Debait',
   version: pkg.version,
   description: 'Nutrition facts for your feed. Explains headline framing and offers safe neutral wording with hybrid AI.',

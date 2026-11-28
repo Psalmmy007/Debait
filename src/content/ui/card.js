@@ -1,13 +1,21 @@
+// The Ingredients card: why a headline is bait, word by word, what actually happened, and one action.
 import { focusPopover } from './focus.js';
-import { shareHeadline } from './share.js';
 import { hasMeaningfulRewrite } from '../../engine/qualityPolicy.js';
-// The Ingredients card: why a headline is bait, word by word, plus safe wording and plain-language assistance.
 import { reducedMotion } from './page.js';
 import { setHTML } from './html.js';
-import { ICON, LABEL, SOURCE } from './icons.js';
+import { ICON, SOURCE } from './icons.js';
+import { shareHeadline } from './share.js';
 
 const OUT = 'cubic-bezier(0.16, 1, 0.3, 1)';
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+const KIND = { rage: 'Rage bait', fear: 'Fear bait', envy: 'Envy bait', clean: 'Clean' };
+const WHY = {
+  rage: 'Written to make you angry',
+  fear: 'Written to make you afraid',
+  envy: 'Written to make you feel behind',
+  clean: 'Plain and factual',
+};
 
 function markTriggers(text, triggers) {
   let html = esc(text);
@@ -28,9 +36,9 @@ export function closeCard() {
   cleanup();
   if (reducedMotion()) return el.remove();
   el.animate(
-    [{ opacity: 1, transform: 'none', filter: 'blur(0)' }, { opacity: 0, transform: 'translateY(-4px) scale(0.97)', filter: 'blur(4px)' }],
-    { duration: 180, easing: 'ease-in' },
-  ).finished.then(() => el.remove());
+    [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(0.96)' }],
+    { duration: 150, easing: 'ease-in' },
+  ).finished.catch(() => {}).finally(() => el.remove());
 }
 
 /**
@@ -38,58 +46,52 @@ export function closeCard() {
  * @param rec    headline record {text, result, state}
  * @param rect   bounding rect of the tag that was clicked
  */
-export function openCard(layer, rec, rect, { onDebait, onRestore, onAssist }) {
+export function openCard(layer, rec, rect, { onDebait, onRestore }) {
   if (current?.rec === rec) return closeCard();
   closeCard();
 
   const r = rec.result;
   const debaited = rec.state === 'debaited';
   const clean = r.kind === 'clean';
-  let available = !clean && hasMeaningfulRewrite(rec.text, r.honest_rewrite);
+  const isMock = r.source === 'mock';
+  const canRewrite = !clean && !isMock && r.rewrite_safe !== false && hasMeaningfulRewrite(rec.text, r.honest_rewrite);
   const el = document.createElement('div');
   el.className = 'card';
-  // Functional containment for variable-length explanations; existing styling remains.
-  el.style.maxHeight = 'calc(100vh - 24px)';
-  el.style.overflowY = 'auto';
   el.dataset.kind = r.kind;
   el.setAttribute('role', 'dialog');
-  el.setAttribute('aria-label', 'Debait ingredients');
+  el.setAttribute('aria-label', `${KIND[r.kind]}, bait score ${r.score} out of 100`);
 
   const rows = r.triggers.length
-    ? r.triggers.map((t) => `<li><span class="w">${esc(t.word)}</span><span class="why">${esc(t.why)}</span></li>`).join('')
-    : '<li class="none-row"><span class="none">No supported Rage, Fear or Envy framing identified.</span></li>';
+    ? r.triggers.map((t) => `<div class="c-row"><b>${esc(t.word)}</b><span>${esc(t.why)}</span></div>`).join('')
+    : '<div class="c-row"><span class="none">No manipulative words. It sticks to the facts.</span></div>';
 
-  const C = 2 * Math.PI * 30; // gauge circumference
+  const C = 2 * Math.PI * 19.5; // ring circumference
   setHTML(el, `
-    <div class="card-head">
-      <div>
-        <div class="card-kicker">Ingredients</div>
-        <div class="card-kind"><span class="tag" data-kind="${r.kind}"><span class="ico">${ICON[r.kind]}</span><span class="label">${LABEL[r.kind]}</span></span></div>
-      </div>
-      <div class="gauge" aria-label="Bait score ${r.score} out of 100">
-        <svg viewBox="0 0 68 68"><circle class="track" cx="34" cy="34" r="30"/><circle class="fill" cx="34" cy="34" r="30" stroke-dasharray="${C}" stroke-dashoffset="${C}"/></svg>
-        <b><span class="num">${r.score}</span><small>score</small></b>
+    <div class="c-top">
+      <span class="c-icon">${ICON[r.kind]}</span>
+      <div class="c-title"><b>${KIND[r.kind]}</b><span>${WHY[r.kind]} · Wording check, not a fact-check</span></div>
+      <div class="c-ring" aria-hidden="true">
+        <svg viewBox="0 0 48 48"><circle class="t" cx="24" cy="24" r="19.5"/><circle class="f" cx="24" cy="24" r="19.5" stroke-dasharray="${C}" stroke-dashoffset="${C}"/></svg>
+        <b class="num">${r.score}</b>
       </div>
     </div>
-    <h4 class="comparison-label">Original headline</h4>
-    <p class="card-headline" aria-label="Original headline">${markTriggers(rec.text, r.triggers)}</p>
-    <div class="card-section"><h4>${clean ? 'Framing assessment' : 'Why it pulls you in'}</h4><ul class="ingredients">${rows}</ul></div>
-    ${clean ? '' : `<div class="card-section"><h4>Suggested neutral wording</h4><div class="honest">${available ? esc(r.honest_rewrite) : 'No safe alternative available'}</div><p data-rewrite-source>Wording suggestion only. Not a fact-check. Source: ${esc(SOURCE[rec.rewriteSource || r.source])}.</p></div>`}
-    <div class="card-section">
-      ${!clean && !debaited ? '<button class="btn" data-act="request-rewrite">Request neutral wording</button>' : ''}
-      <button class="btn" data-act="explain">Explain Simply</button>
-      <p data-assistance-status role="status" aria-live="polite"></p>
-      <div data-explanation hidden></div>
-    </div>
-    ${debaited ? `<p class="transformation-note">${rec.autoApplied ? "Auto-Debait applied this safe alternative." : "A safe alternative is applied."} You can restore the original below.</p>` : ''}
-    <div class="card-foot">
-      <span class="source" data-src="${esc(r.source)}" title="Classification source"><i></i>${esc(SOURCE[r.source] || r.source)}</span>
-      <div class="btns">
-        ${available && r.source !== 'mock' ? '<button class="btn" data-act="share" title="Share a wording suggestion (not fact-checked)">Share image</button>' : ''}
-        ${clean || (!available && !debaited) ? '<button class="btn" data-act="close">Close</button>' : debaited
+    <p class="c-head">${markTriggers(rec.text, r.triggers)}</p>
+    <div class="c-sec"><h4 class="h">${clean ? 'Hooks' : 'Why it hooks you'}</h4><div class="group">${rows}</div></div>
+    ${clean ? '' : `<div class="c-sec">
+      <div class="seg" role="tablist" aria-label="Compare wording">
+        <button role="tab" aria-selected="true" data-v="honest">Honest</button>
+        <button role="tab" aria-selected="false" data-v="bait">Bait</button>
+      </div>
+      <p class="c-alt" aria-live="polite">${esc(canRewrite ? r.honest_rewrite : 'No verified neutral rewrite available')}</p>
+    </div>`}
+    <div class="c-foot">
+      <span class="c-src" data-src="${esc(r.source)}"><i></i>${esc(SOURCE[r.source] || r.source)}</span>
+      ${canRewrite || debaited ? `<div class="c-btns">
+        ${canRewrite ? `<button class="btn round" data-act="share" aria-label="Share as an image" title="Share as an image">${ICON.share}</button>` : ''}
+        ${debaited
           ? '<button class="btn" data-act="restore">Show original</button>'
-          : `<button class="btn" data-act="close">Keep</button><button class="btn primary" data-act="debait">Apply rewrite ${ICON.arrow}</button>`}
-      </div>
+          : '<button class="btn primary" data-act="debait">Debait it</button>'}
+      </div>` : ''}
     </div>`);
 
   layer.appendChild(el);
@@ -109,111 +111,49 @@ export function openCard(layer, rec, rect, { onDebait, onRestore, onAssist }) {
   el.style.top = `${top}px`;
   el.style.transformOrigin = `${rect.left + rect.width / 2 - left}px ${el.classList.contains('flip') ? '100%' : '0'}`;
 
-  const fill = el.querySelector('.gauge .fill');
-  const num = el.querySelector('.gauge .num');
+  const fill = el.querySelector('.c-ring .f');
+  const num = el.querySelector('.c-ring .num');
   const target = C * (1 - r.score / 100);
   if (reducedMotion()) {
     fill.style.strokeDashoffset = String(target);
   } else {
-    // rises from the tag in 3D, then the details settle in one by one
     el.animate(
-      [
-        { opacity: 0, transform: 'perspective(900px) rotateX(-14deg) translateY(-6px) scale(0.94)', filter: 'blur(6px)' },
-        { opacity: 1, transform: 'perspective(900px) rotateX(0) translateY(0) scale(1)', filter: 'blur(0)' },
-      ],
-      { duration: 520, easing: OUT },
+      [{ opacity: 0, transform: 'scale(0.94)' }, { opacity: 1, transform: 'none' }],
+      { duration: 280, easing: OUT },
     );
-    el.querySelectorAll('.card-headline, .card-section h4, .ingredients li, .honest, .card-foot').forEach((p, i) => {
-      p.animate(
-        [{ opacity: 0, transform: 'translateY(6px)', filter: 'blur(3px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }],
-        { duration: 460, delay: 70 + i * 40, easing: OUT, fill: 'backwards' },
-      );
-    });
-    fill.animate([{ strokeDashoffset: C }, { strokeDashoffset: target }], { duration: 900, delay: 120, easing: OUT, fill: 'forwards' });
-    countUp(num, r.score, 900, 120);
+    fill.animate([{ strokeDashoffset: C }, { strokeDashoffset: target }], { duration: 900, delay: 80, easing: OUT, fill: 'forwards' });
+    countUp(num, r.score, 900, 80);
   }
 
-  // a gentle 3D tilt that follows the cursor
-  el.addEventListener('pointermove', (e) => {
-    if (reducedMotion() || e.pointerType === 'touch' || el.scrollHeight > el.clientHeight || el.offsetHeight > innerHeight - 48) return;
-    const r = el.getBoundingClientRect();
-    const x = (e.clientX - r.left) / r.width - 0.5;
-    const y = (e.clientY - r.top) / r.height - 0.5;
-    el.style.transform = `perspective(900px) rotateX(${(-y * 4).toFixed(2)}deg) rotateY(${(x * 4).toFixed(2)}deg)`;
-  });
-  el.addEventListener('pointerleave', () => { el.style.transform = ''; });
-
   el.addEventListener('click', async (e) => {
+    const tab = e.target.closest('.seg button');
+    if (tab) {
+      const bait = tab.dataset.v === 'bait';
+      el.querySelectorAll('.seg button').forEach((b) => b.setAttribute('aria-selected', String(b === tab)));
+      const alt = el.querySelector('.c-alt');
+      alt.textContent = bait ? rec.text : (canRewrite ? r.honest_rewrite : 'No verified neutral rewrite available');
+      alt.classList.toggle('bait', bait);
+      return;
+    }
     const act = e.target.closest('[data-act]')?.dataset.act;
-    if (act === 'request-rewrite' || act === 'explain') {
-      if (!onAssist || rec.assistPending) return;
-      const buttons = [...el.querySelectorAll('[data-act="request-rewrite"], [data-act="explain"]')];
-      buttons.forEach(button => { button.disabled = true; });
-      const status = el.querySelector('[data-assistance-status]');
-      status.textContent = act === 'explain' ? 'Explaining the headline…' : 'Requesting safe neutral wording…';
-      try {
-        const result = await onAssist(act === 'explain' ? 'explain' : 'rewrite');
-        if (current?.el !== el) return;
-        if (act === 'request-rewrite') {
-          available = hasMeaningfulRewrite(rec.text, result.honest_rewrite);
-          el.querySelector('.honest').textContent = available ? result.honest_rewrite : 'No safe alternative available';
-          el.querySelector('[data-rewrite-source]').textContent = `Wording suggestion only. Not a fact-check. Source: ${SOURCE[result.source]}.`;
-          status.textContent = `${available ? 'A proposed alternative is ready. Compare it with the original before applying.' : 'No safe alternative available. The original is unchanged.'} Source: ${SOURCE[result.source]}.`;
-          let apply = el.querySelector('[data-act="debait"]');
-          if (available && !apply) {
-            apply = document.createElement('button'); apply.className = 'btn primary'; apply.dataset.act = 'debait'; apply.textContent = 'Apply rewrite';
-            el.querySelector('.btns').append(apply);
-          }
-          if (!available) apply?.remove();
-          let share = el.querySelector('[data-act="share"]');
-          if (available && !share && r.source !== 'mock') {
-            share = document.createElement('button'); share.className = 'btn'; share.dataset.act = 'share';
-            share.textContent = 'Share image'; share.title = 'Share a wording suggestion (not fact-checked)';
-            el.querySelector('.btns').prepend(share);
-          }
-          if (!available) share?.remove();
-        } else {
-          const content = el.querySelector('[data-explanation]'); content.replaceChildren(); content.hidden = false;
-          const paragraph = text => { const p = document.createElement('p'); p.textContent = text; content.append(p); };
-          paragraph(`Simple explanation: ${result.simple_explanation}`);
-          for (const definition of result.definitions) paragraph(`General definition — ${definition.term}: ${definition.meaning}`);
-          paragraph(`Missing context: ${result.missing_context}`);
-          paragraph(`Headline wording only. Not a fact-check. Source: ${SOURCE[result.source]}.`);
-          status.textContent = 'Explanation ready. The page headline has not been changed.';
-        }
-      } catch (error) {
-        if (current?.el === el) status.textContent = `${error.message}${Number.isFinite(error.retryAt) ? ` Try again after ${new Date(error.retryAt).toLocaleTimeString()}.` : ''}`;
-      } finally {
-        buttons.forEach(button => { button.disabled = false; });
-        if (current?.el === el) {
-          const bounds = el.getBoundingClientRect();
-          if (bounds.bottom > innerHeight - 12) el.style.top = `${Math.max(12, innerHeight - bounds.height - 12)}px`;
-        }
-      }
+    if (act === 'debait' && canRewrite) {
+      const btn = e.target.closest('[data-act]');
+      btn.disabled = true;
+      try { if (await onDebait()) closeCard(); } finally { btn.disabled = false; }
     }
-    if (act === 'share') {
-      const button = e.target.closest('[data-act]');
-      if (!available || r.source === 'mock' || !hasMeaningfulRewrite(rec.text, rec.result.honest_rewrite)) return;
-      button.disabled = true;
-      const status = el.querySelector('[data-assistance-status]');
-      try {
-        const outcome = await shareHeadline({ bait: rec.text, honest: rec.result.honest_rewrite, kind: r.kind, score: r.score });
-        if (current?.el === el) status.textContent = outcome === 'copied' ? 'Image copied. Wording suggestion only, not a fact-check.' : 'Share image saved. Wording suggestion only, not a fact-check.';
-      } catch { if (current?.el === el) status.textContent = 'The image could not be shared. No headline was changed.'; }
-      finally { button.disabled = false; }
+    if (act === 'restore') {
+      const btn = e.target.closest('[data-act]');
+      btn.disabled = true;
+      try { if (await onRestore()) closeCard(); } finally { btn.disabled = false; }
     }
-    if ((act === 'debait' && available) || act === 'restore') {
-      const button = e.target.closest('[data-act]'); button.disabled = true;
-      const status = el.querySelector('[data-assistance-status]');
-      status.textContent = act === 'restore' ? 'Restoring original wording…' : 'Applying the accepted rewrite…';
-      try {
-        const changed = await (act === 'restore' ? onRestore() : onDebait());
-        if (changed) closeCard();
-        else status.textContent = 'The headline changed or its markup cannot be safely edited. No text was replaced. Open its current tag and try again.';
-      } catch { status.textContent = 'The page action could not complete. The original wording remains available.'; }
-      finally { button.disabled = false; }
+    if (act === 'share' && canRewrite) {
+      const btn = e.target.closest('[data-act="share"]');
+      btn.disabled = true;
+      shareHeadline({ bait: rec.text, honest: r.honest_rewrite, kind: r.kind, score: r.score })
+        .then((how) => { btn.title = how === 'copied' ? 'Image copied' : 'Image saved'; setHTML(btn, ICON.check); })
+        .catch(() => { btn.title = 'Could not share'; })
+        .finally(() => { btn.disabled = false; });
     }
-    if (act === 'close') closeCard();
   });
 
   const onDown = (e) => {

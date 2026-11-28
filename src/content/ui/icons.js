@@ -11,8 +11,10 @@ export const ICON = {
   clean: `<svg viewBox="0 0 12 12" ${stroke} stroke-width="1.7"><path d="M2.4 6.4 4.9 8.9l4.7-5.6"/></svg>`,
   check: `<svg viewBox="0 0 12 12" ${stroke} stroke-width="1.7"><path d="M2.4 6.4 4.9 8.9l4.7-5.6"/></svg>`,
   dots: '<svg viewBox="0 0 12 12" fill="currentColor"><circle cx="2" cy="6" r="1.3"/><circle cx="6" cy="6" r="1.3"/><circle cx="10" cy="6" r="1.3"/></svg>',
-  close: `<svg viewBox="0 0 12 12" ${stroke} stroke-width="1.6"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7"/></svg>`,
+  close: `<svg viewBox="0 0 12 12" ${stroke} stroke-width="1.6"><path d="M3 3l6 6M9 3l-6 6"/></svg>`,
+  share: `<svg viewBox="0 0 12 12" ${stroke} stroke-width="1.4"><path d="M6 7.5V1.5M3.6 3.8 6 1.4l2.4 2.4M2.5 6.2v4.3h7V6.2"/></svg>`,
   arrow: `<svg viewBox="0 0 12 12" ${stroke} stroke-width="1.6"><path d="M2 6h8M6.5 2.5 10 6l-3.5 3.5"/></svg>`,
+  chev: `<svg class="chev" viewBox="0 0 8 13" ${stroke} stroke-width="1.7"><path d="M1.5 1.5 6.5 6.5l-5 5"/></svg>`,
 };
 
 export const LABEL = { rage: 'Rage', fear: 'Fear', envy: 'Envy', clean: 'Clean' };

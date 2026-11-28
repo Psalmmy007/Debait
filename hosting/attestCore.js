@@ -9,6 +9,8 @@ export const MSG_READY = 'debait/app-check-ready';
 export const MSG_TOKEN_REQUEST = 'debait/app-check-token-request';
 export const MSG_TOKEN_RESPONSE = 'debait/app-check-token-response';
 export const CHROME_EXTENSION_ORIGIN_RE = /^chrome-extension:\/\/[a-p]{32}$/;
+export const DEBAIT_EXTENSION_ID = 'bbklheihmdpphnggkmknbjeeogkffocl';
+export const DEFAULT_ALLOWED_ORIGINS = [`chrome-extension://${DEBAIT_EXTENSION_ID}`];
 export const FALLBACK_TTL_MS = 50 * 60 * 1000; // conservative fallback if JWT exp cannot be decoded
 
 /** True when a placeholder config value has not been replaced before deployment. */
@@ -63,7 +65,7 @@ export function createAttestHost({
   sdk,
   firebaseConfig,
   siteKey,
-  allowedOrigins,
+  allowedOrigins = DEFAULT_ALLOWED_ORIGINS,
   now = () => Date.now(),
 }) {
   if (!win || !win.parent || win.parent === win) {

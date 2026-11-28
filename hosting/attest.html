@@ -19,11 +19,11 @@
     // Configure before deploying Firebase Hosting (`firebase deploy --only hosting --project debait-d6d5d`):
     // 1. Replace __DEBAIT_RECAPTCHA_SITE_KEY__ with the public reCAPTCHA Enterprise site key registered
     //    for web app 1:63438015732:web:54ab25a947b03005efa2a1 on debait-d6d5d.
-    // 2. Replace __DEBAIT_EXTENSION_ID__ here AND in firebase.json's frame-ancestors CSP header
-    //    with the pinned 32-char Chrome extension ID.
+    // 2. DEBAIT_ALLOWED_ORIGINS is pinned to the deterministic Chrome extension ID matching
+    //    manifest.config.js ("key") and firebase.json (frame-ancestors CSP).
     const DEBAIT_RECAPTCHA_SITE_KEY = '__DEBAIT_RECAPTCHA_SITE_KEY__';
     const DEBAIT_ALLOWED_ORIGINS = [
-      'chrome-extension://__DEBAIT_EXTENSION_ID__',
+      'chrome-extension://bbklheihmdpphnggkmknbjeeogkffocl',
     ];
 
     const firebaseConfig = {
