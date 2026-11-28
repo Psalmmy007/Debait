@@ -3,7 +3,7 @@
 import { initializeApp, SDK_VERSION } from 'firebase/app';
 import { initializeAppCheck, CustomProvider, getToken } from 'firebase/app-check';
 import { getAI, getGenerativeModel, GoogleAIBackend, InferenceMode, Schema } from 'firebase/ai';
-import { firebaseConfig, CLOUD_MODEL, APP_CHECK_TOKEN_URL } from './firebaseConfig.js';
+import { firebaseConfig, CLOUD_MODEL, APP_CHECK_ATTEST_URL } from './firebaseConfig.js';
 
 import { createFirebaseAccess, installationFromWorker } from './authPolicy.js';
 import { createProductionAppCheckProvider } from './appCheckProvider.js';
@@ -13,11 +13,10 @@ import { deviceAvailability } from './device.js';
 import { assistanceCloudSchemas, assistanceDeviceSchemas } from './assistance.js';
 import { headlinePrompt } from './qualityPolicy.js';
 
-// Production uses the server-side Firebase Admin App Check custom-token issuer (issueAppCheckToken)
-// so release builds enforce App Check without shipping debug tokens or service-account credentials.
+// Production uses Firebase's official ReCaptchaEnterpriseProvider on Firebase Hosting
+// (attest.html) embedded lazily inside the MV3 offscreen document—zero debug tokens or secrets.
 const productionProvider = createProductionAppCheckProvider({
-  endpoint: import.meta.env?.VITE_DEBAIT_APP_CHECK_URL || APP_CHECK_TOKEN_URL,
-  appId: firebaseConfig.appId,
+  attestUrl: import.meta.env?.VITE_DEBAIT_APP_CHECK_ATTEST_URL || APP_CHECK_ATTEST_URL,
 });
 
 const access = createFirebaseAccess({

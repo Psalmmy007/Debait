@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="referrer" content="no-referrer" />
+  <title>Debait App Check Attestation</title>
+</head>
+<body>
+  <noscript>JavaScript is required for Firebase App Check attestation.</noscript>
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/13.3.0/firebase-app.js';
+    import {
+      initializeAppCheck,
+      ReCaptchaEnterpriseProvider,
+      getToken,
+    } from 'https://www.gstatic.com/firebasejs/13.3.0/firebase-app-check.js';
+    import { createAttestHost } from './attestCore.js';
+
+    // Configure before deploying Firebase Hosting (`firebase deploy --only hosting --project debait-d6d5d`):
+    // 1. Replace __DEBAIT_RECAPTCHA_SITE_KEY__ with the public reCAPTCHA Enterprise site key registered
+    //    for web app 1:63438015732:web:54ab25a947b03005efa2a1 on debait-d6d5d.
+    // 2. Replace __DEBAIT_EXTENSION_ID__ here AND in firebase.json's frame-ancestors CSP header
+    //    with the pinned 32-char Chrome extension ID.
+    const DEBAIT_RECAPTCHA_SITE_KEY = '__DEBAIT_RECAPTCHA_SITE_KEY__';
+    const DEBAIT_ALLOWED_ORIGINS = [
+      'chrome-extension://__DEBAIT_EXTENSION_ID__',
+    ];
+
+    const firebaseConfig = {
+      apiKey: 'AIzaSyAjyYbK_Tc4s3ZqSbPBYblEJefkg0-l47A',
+      authDomain: 'debait-d6d5d.firebaseapp.com',
+      projectId: 'debait-d6d5d',
+      storageBucket: 'debait-d6d5d.firebasestorage.app',
+      messagingSenderId: '63438015732',
+      appId: '1:63438015732:web:54ab25a947b03005efa2a1',
+    };
+
+    const host = createAttestHost({
+      win: window,
+      sdk: { initializeApp, initializeAppCheck, ReCaptchaEnterpriseProvider, getToken },
+      firebaseConfig,
+      siteKey: DEBAIT_RECAPTCHA_SITE_KEY,
+      allowedOrigins: DEBAIT_ALLOWED_ORIGINS,
+    });
+
+    if (!host.active) {
+      document.body.textContent = 'This endpoint is only available inside the Debait Chrome extension.';
+    }
+  </script>
+</body>
+</html>

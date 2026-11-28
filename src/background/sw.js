@@ -101,8 +101,8 @@ async function ensureOffscreen() {
     creating = chrome.offscreen
       .createDocument({
         url: OFFSCREEN_URL,
-        reasons: ['DOM_PARSER', 'USER_MEDIA', 'AUDIO_PLAYBACK'],
-        justification: 'Runs the on-device AI (Prompt API) and Firebase AI Logic to score headlines, and the live voice call (microphone and spoken replies).',
+        reasons: ['DOM_PARSER', 'IFRAME_SCRIPTING', 'USER_MEDIA', 'AUDIO_PLAYBACK'],
+        justification: 'Runs the on-device AI (Prompt API), hosted reCAPTCHA Enterprise App Check attestation iframe for cloud Firebase AI Logic, and voice lifecycle.',
       })
       .finally(() => { creating = null; });
   }
