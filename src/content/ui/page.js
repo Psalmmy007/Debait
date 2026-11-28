@@ -134,13 +134,20 @@ export async function swapToRewrite(rec, { delay = 0, canApply = () => true } = 
   if (!canRewriteRecord(rec) || !canApply()) return false;
   if (!hasMeaningfulRewrite(rec.el.innerText || rec.el.textContent || '', rec.result.honest_rewrite)) return false;
   const entries = headlineNodes(rec.el).map(node => ({ node, text: node.data }));
+  if (!entries.length) return false;
   const from = entries.map(e => e.text).join('');
-  // The existing policy accepts prefix deletion only. Apply that deletion to text
-  // nodes rather than replacing links, attributes, listeners, or surrounding markup.
+  const target = rec.result.honest_rewrite.trim();
+  // Preserve DOM element, link, attribute, and event-listener identity by editing text nodes in place.
   const prefix = from.match(/^\s*(?:You\s+won['’]t\s+believe\s+this|You\s+will\s+not\s+believe\s+this|Click\s+to\s+find\s+out):\s+/i);
-  if (!prefix || normalizeRewriteText(from.slice(prefix[0].length)) !== normalizeRewriteText(rec.result.honest_rewrite)) return false;
-  let remaining = prefix[0].length;
-  const after = entries.map(({ text }) => { const removed = Math.min(remaining, text.length); remaining -= removed; return text.slice(removed); });
+  let after;
+  let primaryIdx = entries.findIndex(e => e.text.trim().length > 0);
+  if (primaryIdx < 0) primaryIdx = 0;
+  if (prefix && normalizeRewriteText(from.slice(prefix[0].length)) === normalizeRewriteText(target)) {
+    let remaining = prefix[0].length;
+    after = entries.map(({ text }) => { const removed = Math.min(remaining, text.length); remaining -= removed; return text.slice(removed); });
+  } else {
+    after = entries.map((_, i) => (i === primaryIdx ? target : ''));
+  }
   let interrupted = false;
   let previous = entries.map(e => e.node.data);
   const write = value => {
@@ -149,7 +156,7 @@ export async function swapToRewrite(rec, { delay = 0, canApply = () => true } = 
       interrupted = true;
     }
     if (interrupted) return;
-    entries.forEach(({ node }, i) => { node.data = i === 0 ? value : ''; });
+    entries.forEach(({ node }, i) => { node.data = i === primaryIdx ? value : ''; });
     previous = entries.map(e => e.node.data);
   };
   rec.animating = true;
@@ -162,7 +169,7 @@ export async function swapToRewrite(rec, { delay = 0, canApply = () => true } = 
     }
     entries.forEach(({ node }, i) => { node.data = after[i]; });
     rec.original = entries;
-    rec.rewrittenText = after.join('').replace(/\s+/g, ' ').trim();
+    rec.rewrittenText = (rec.el.innerText || rec.el.textContent || after.join('')).replace(/\s+/g, ' ').trim();
     rec.state = 'debaited';
     return true;
   } finally { rec.animating = false; }

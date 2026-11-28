@@ -17,6 +17,7 @@ const MARGIN = 16;
 const viewW = () => document.documentElement.clientWidth || innerWidth;
 
 export function createOverlay() {
+  for (const stale of document.querySelectorAll('debait-root, debait-fx')) stale.remove();
   const host = document.createElement('debait-root');
   // Inline !important beats any page CSS that might target our host element.
   host.style.cssText =

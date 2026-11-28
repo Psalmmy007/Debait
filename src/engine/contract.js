@@ -39,7 +39,7 @@ export const KINDS = ['rage', 'fear', 'envy', 'clean'];
 // Minimum manipulation score (0-100) for high-confidence bait threshold helpers.
 export const BAIT_THRESHOLD = 60;
 // Shared score cache version enforcing Local Only source isolation and rewrite-integrity guards.
-export const CACHE_VERSION = 5;
+export const CACHE_VERSION = 6;
 export const NO_SUMMARY_TEXT = 'Not enough text on this page to summarize.';
 export const NO_SAFE_REWRITE = 'No verified neutral rewrite available';
 

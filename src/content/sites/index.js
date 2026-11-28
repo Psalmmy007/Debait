@@ -140,4 +140,30 @@ export function getAdapter(hostname) {
   return adapters.find((a) => a.match(hostname)) || generic;
 }
 
+/**
+ * Enforces 1 headline per nested DOM hierarchy and per placement anchor:
+ * - Removes duplicate element references.
+ * - Drops outer containers when a nested descendant is also matched (keeps innermost).
+ * - Keeps at most one headline per resolved placement anchor (e.g. Google's `.yuRUbf`).
+ */
+export function dedupeHeadlines(elements, place) {
+  const unique = [];
+  const seenEl = new Set();
+  for (const el of elements || []) {
+    if (!el || seenEl.has(el)) continue;
+    seenEl.add(el);
+    unique.push(el);
+  }
+  const innermost = unique.filter((el) => !unique.some((other) => other !== el && el.contains?.(other)));
+  const seenAnchors = new Set();
+  const out = [];
+  for (const el of innermost) {
+    const anchor = place?.(el) || el;
+    if (seenAnchors.has(anchor)) continue;
+    seenAnchors.add(anchor);
+    out.push(el);
+  }
+  return out;
+}
+
 export { textOf };

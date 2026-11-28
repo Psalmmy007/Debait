@@ -300,7 +300,7 @@ test('website content scripts cannot supply or obtain trusted installation metad
   assert.equal(response.ok, false); assert.equal(response.installType, undefined);
 });
 
-for (const version of [undefined, 'old-policy', 'quality-semantic-prefix-v3']) {
+for (const version of [undefined, 'old-policy', 'quality-semantic-prefix-v3', 'quality-classification-evidence-v4']) {
   test(`outdated quality cache is invalidated before reuse: ${version}`, async t => {
     const stats = { '2026-11-01': { total: 3, fear: 3, seen: ['existing'] } };
     const f = await fixture(t, { scoreCacheVersion: version === undefined ? null : version,
@@ -308,13 +308,13 @@ for (const version of [undefined, 'old-policy', 'quality-semantic-prefix-v3']) {
     if (version === undefined) delete f.data.scoreCacheVersion;
     const response = await f.send({ type: 'debait/score', texts: ['headline'] });
     assert.equal(response.ok, true); assert.equal(response.cacheHits, 0);
-    assert.equal(response.results[0].honest_rewrite, 'headline');
-    assert.equal(response.results[0].rewriteReason, 'semantic_change_risk');
+    assert.equal(response.results[0].honest_rewrite, 'Calmer headline');
+    assert.equal(response.results[0].rewriteReason, 'alternative');
     assert.equal(f.data.scoreCacheVersion, QUALITY_POLICY_VERSION);
     assert.deepEqual(f.data.scoreCache, []);
     assert.deepEqual(f.data.stats['2026-11-01'], stats['2026-11-01']);
     t.mock.timers.tick(1000); await tick();
-    assert.equal(f.data.scoreCache[0][1].honest_rewrite, 'headline');
+    assert.equal(f.data.scoreCache[0][1].honest_rewrite, 'Calmer headline');
     assert.equal(f.data.scoreCacheVersion, QUALITY_POLICY_VERSION);
   });
 }

@@ -6,10 +6,10 @@ import { sendRuntimeMessage } from '../shared/messaging.js';
 // Debait content script: finds headlines, gets them scored, and runs the on-page UI.
 import { MSG } from '../engine/contract.js';
 import { getSettings, onSettingsChange } from '../shared/storage.js';
-import { getAdapter, textOf } from './sites/index.js';
+import { getAdapter, dedupeHeadlines, textOf } from './sites/index.js';
 import { injectPageStyles, paintHighlights, swapToRewrite, swapToOriginal } from './ui/page.js';
 import { createOverlay, createOrb, playRipple } from './ui/overlay.js';
-import { createTag } from './ui/tag.js';
+import { createTag, cleanupOrphanedTags } from './ui/tag.js';
 import { openCard, closeCard } from './ui/card.js';
 import { createSettingsPanel } from './ui/settings.js';
 import { setSettings } from '../shared/storage.js';
@@ -44,6 +44,7 @@ async function start() {
     if (next.disabledSites.includes(host) !== settings.disabledSites.includes(host)) location.reload();
   });
   if (settings.disabledSites.includes(host)) return; // switched off for this site
+  cleanupOrphanedTags(document);
   injectPageStyles();
 
   /** @type {Map<Element, {el, text, result, state, tag, original}>} */
@@ -189,19 +190,33 @@ async function start() {
   function scan() {
     if (settings.disabledSites.includes(host)) return;
     for (const [el, rec] of records) if (!el.isConnected) { rec.tag?.remove(); io.unobserve(el); records.delete(el); }
-    for (const el of adapter.find(document)) {
+    const candidates = dedupeHeadlines(adapter.find(document), adapter.place);
+    const activeAnchors = new Set();
+    for (const [el] of records) activeAnchors.add(adapter.place?.(el) || el);
+    for (const el of candidates) {
       if (el.closest('debait-tag, debait-root, blockquote, p, pre, code, [contenteditable=true]')) continue;
+      const anchor = adapter.place?.(el) || el;
       const existing = records.get(el);
       if (existing) {
         // sites like X reuse elements for new posts: rescore if the text changed
         if (existing.animating || textOf(el) === (existing.state === 'debaited' ? existing.rewrittenText : existing.text)) continue;
         existing.tag?.remove();
+        activeAnchors.delete(anchor);
         records.delete(el);
+      } else {
+        // Never mount a second badge on an ancestor/descendant of a tracked headline or on a shared anchor.
+        if (activeAnchors.has(anchor)) continue;
+        let overlaps = false;
+        for (const [trackedEl] of records) {
+          if (trackedEl.contains(el) || el.contains(trackedEl)) { overlaps = true; break; }
+        }
+        if (overlaps) continue;
       }
       const text = textOf(el);
       if (text.length < MIN_LEN || text.length > MAX_LEN) continue;
-      const rec = { el, text, result: null, state: 'pending', tag: null, original: null };
+      const rec = { el, anchor, text, result: null, state: 'pending', tag: null, original: null };
       records.set(el, rec);
+      activeAnchors.add(anchor);
       mountTag(rec);
       io.observe(el);
     }
@@ -209,7 +224,7 @@ async function start() {
   }
 
   function mountTag(rec) {
-    rec.tag = createTag(adapter.place?.(rec.el) || rec.el, {
+    rec.tag = createTag(rec.anchor || adapter.place?.(rec.el) || rec.el, {
       onClick: (rect) => {
         if (!rec.result) return;
         paint(rec);
@@ -388,7 +403,14 @@ async function start() {
     closeCard();
     const all = [...records.values()].filter(r => r.result);
     if (all.some(r => r.animating)) return { rewrote: 0, restored: 0, note: 'Rewriting is still in progress' };
-    const bait = restoreOnly ? [] : all.filter(canRewriteRecord);
+    let bait = restoreOnly ? [] : all.filter(canRewriteRecord);
+    if (!restoreOnly && !bait.length) {
+      const needsRewrite = all.filter(r => r.state === 'scored' && r.result.kind !== 'clean' && r.result.source !== 'mock' && !canRewriteRecord(r));
+      for (const rec of needsRewrite) {
+        try { await requestAssistance(rec, 'rewrite'); } catch { /* leave original if assistance unavailable */ }
+      }
+      bait = all.filter(canRewriteRecord);
+    }
     const done = all.filter(r => r.state === 'debaited');
     if (bait.length) {
       if (notice === 'No safe alternative available') notice = '';
@@ -432,7 +454,7 @@ async function start() {
           if (records.get(rec.el) !== rec) return;
           rec.result = null; rec.rewriteSource = null; rec.failed = false; rec.retryStopped = false;
           rec.analysisRetries = 0; rec.pacingDeferrals = 0;
-          rec.tag?.remove(); mountTag(rec);
+          if (rec.tag) { rec.tag.resetPending(); rec.tag.setVisible(settings.showTags); } else { mountTag(rec); }
           rec.queued = true; if (!queue.includes(rec)) queue.push(rec);
           flushSoon();
         })().catch(report);
@@ -478,9 +500,18 @@ async function start() {
   scan();
   let scanTimer = null;
   // rescan at most every 600ms while the page changes (infinite scroll, live updates)
+  const isDebaitNode = (n) => n?.nodeType === 1 && (n.tagName === 'DEBAIT-TAG' || n.tagName === 'DEBAIT-ROOT' || n.tagName === 'DEBAIT-FX');
+  const isDebaitMutation = (m) => {
+    const t = m.target.nodeType === 3 ? m.target.parentElement : m.target;
+    if (t?.closest?.('debait-tag, debait-root, debait-fx')) return true;
+    return m.type === 'childList'
+      && (m.addedNodes.length > 0 || m.removedNodes.length > 0)
+      && [...m.addedNodes].every(isDebaitNode)
+      && [...m.removedNodes].every(isDebaitNode);
+  };
   new MutationObserver((muts) => {
     if (scanTimer) return;
-    if (muts.every(m => (m.target.nodeType === 3 ? m.target.parentElement : m.target)?.closest?.('debait-tag, debait-root'))) return;
+    if (muts.every(isDebaitMutation)) return;
     scanTimer = setTimeout(() => { scanTimer = null; scan(); }, 600);
   }).observe(document.body, { childList: true, subtree: true, characterData: true });
 }

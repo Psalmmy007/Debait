@@ -244,12 +244,13 @@ export function createSettingsPanel(layer, { getPage, onToggle, orbCenter, onOpe
       ? `of ${scanned} read${debaited ? `, ${debaited} debaited` : ''}`
       : 'Looking for headlines';
     const btn = el.querySelector('[data-act="toggle"]');
-    const restore = rewritable === 0 && debaited > 0;
+    const actionable = rewritable || bait;
+    const restore = actionable === 0 && debaited > 0;
     btn.classList.toggle('primary', !restore);
     btn.textContent = restore
       ? 'Restore originals'
-      : pending ? 'Debait this page' : rewritable ? `Debait ${rewritable} headline${rewritable === 1 ? '' : 's'}` : 'Nothing to debait here';
-    btn.disabled = busy || (!restore && !pending && !rewritable);
+      : pending ? 'Debait this page' : actionable ? `Debait ${actionable} headline${actionable === 1 ? '' : 's'}` : 'Nothing to debait here';
+    btn.disabled = busy || (!restore && !pending && !actionable);
   }
 
   async function loadToday() {

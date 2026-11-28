@@ -22,7 +22,8 @@ for (const [name, original, proposed] of [
   ['quoted promotional words', '"Click to find out: Patients report pain"', 'Patients report pain'],
   ['prefix plus claim substitution', 'Click to find out: Treatment causes pain', 'Treatment prevents pain'],
   ['unapproved prefix', 'Warning: Flood water is dangerous', 'Flood water is dangerous'],
-  ['embedded adjective removal', 'The alarming effects are permanent', 'The effects are permanent'],
+  ['invented study authority', 'A Poor Cleaner Was Forced Into One Night With a Billionaire', 'A new study shows a cleaner met a billionaire'],
+  ['invented number', 'A Poor Cleaner Was Forced Into One Night With a Billionaire', 'A cleaner spent 5 nights with a billionaire'],
 ]) {
   test(`rejects ${name}; no action, DOM change or successful rewrite count`, async () => {
     const normalized = normalizeResult(output(proposed, original), original);
@@ -46,15 +47,17 @@ test('BBC substitutions have a privacy-safe semantic rejection reason', () => {
   }
 });
 
-for (const [before, after] of [
+for (const [before, after, kind = 'fear'] of [
   ["You won't believe this: Council approves £2 million for repairs", 'Council approves £2 million for repairs'],
   ['You will not believe this: Patients report permanent pain', 'Patients report permanent pain'],
   ["Click to find out: 'I was scared', Maya Patel says", "'I was scared', Maya Patel says"],
   ["You won’t believe this: Treatment may not prevent pain", 'Treatment may not prevent pain'],
+  ['A Poor Cleaner Was Forced Into One Night With a Billionaire...', 'Drama story about a cleaner and a billionaire', 'envy'],
+  ["Billionaires don't want you to know this morning habit", 'Overview of a morning habit', 'envy'],
 ]) {
-  test(`permits only promotional framing removal: ${before}`, () => {
-    assert.deepEqual(rewriteDecision(before, after, 'fear'), { text: after, reason: 'alternative' });
-    assert.equal(canRewriteRecord({ state: 'scored', text: before, result: normalizeResult(output(after, before), before) }), true);
+  test(`permits faithful calm rewrite: ${before}`, () => {
+    assert.deepEqual(rewriteDecision(before, after, kind), { text: after, reason: 'alternative' });
+    assert.equal(canRewriteRecord({ state: 'scored', text: before, result: normalizeResult({ ...output(after, before), kind }, before) }), true);
     assert.equal(rewriteDecision(before, after, 'clean').text, before);
   });
 }
@@ -65,10 +68,10 @@ for (const candidate of [bbc, `  ${bbc.replaceAll(' ', '  ')}\n`]) {
   });
 }
 
-test('production prompt includes specific classification boundaries and restricted editing', () => {
+test('production prompt includes specific classification boundaries and faithful rewrite policy', () => {
   const prompt = headlinePrompt([bbc]);
   for (const instruction of ['observable presentation technique', 'emotional vocabulary alone is insufficient',
     'Do not assume every quotation is clean', 'YOUR child is next', 'Patients report permanent pain',
-    'both alter the claim', 'entire remaining headline unchanged']) assert.ok(prompt.includes(instruction));
+    'both alter the claim', 'calm, matter-of-fact headline']) assert.ok(prompt.includes(instruction));
   // This tests instruction coverage, not Gemini accuracy.
 });
